@@ -35,9 +35,33 @@ git clone https://github.com/GoogleCloudPlatform/microservices-demo.git
 cd microservices-demo
 
 kubectl apply -f release/kubernetes-manifests.yaml
-kubectl get pods
 
+#!/bin/bash
 
-echo "${BG_RED}${BOLD}Congratulations For Completing The Lab !!! - ePus.DEV ${RESET}"
+check_all_pods_until_done() {
+  while true; do
+    # Get the list of all pods and their status across all namespaces
+    pod_status=$(kubectl get pods --all-namespaces --no-headers | awk '{print $4}')
+
+    # Check if all pods are in Running or Completed state
+    if echo "$pod_status" | grep -qvE "Running|Completed"; then
+      echo "Waiting for all pods to complete..."
+      sleep 5  # Wait for 5 seconds before checking again
+    else
+      echo "All pods have completed."
+      break
+    fi
+  done
+}
+
+# Call the function to check all pods across all namespaces
+check_all_pods_until_done
+
+export EXTERNAL_IP=$(kubectl get service frontend-external -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+echo $EXTERNAL_IP
+
+curl -o /dev/null -s -w "%{http_code}\n"  http://${EXTERNAL_IP}
+
+echo "${BG_RED}${BOLD}Congratulations For Completing Task 1 & 2 !!! - ePus.DEV ${RESET}"
 
 #-----------------------------------------------------end----------------------------------------------------------#
