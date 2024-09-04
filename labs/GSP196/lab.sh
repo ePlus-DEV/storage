@@ -47,6 +47,6 @@ gcloud sql instances patch flights --authorized-networks $ADDRESS --quiet
 
 gcloud sql databases create bts --instance=flights
 
-echo "${BG_RED}${BOLD}Congratulations For Completing Task 1 & 2 !!! - ePus.DEV ${RESET}"
+echo "${BG_RED}${BOLD}Congratulations For Completing!!! - ePus.DEV ${RESET}"
 
 #-----------------------------------------------------end----------------------------------------------------------#
