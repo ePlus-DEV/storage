@@ -23,7 +23,7 @@ BOLD=`tput bold`
 RESET=`tput sgr0`
 #----------------------------------------------------start--------------------------------------------------#
 
-echo "${BG_MAGENTA}${BOLD}Starting Execution - ePus.DEV ${RESET}"
+echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV ${RESET}"
 
 git clone \
    https://github.com/GoogleCloudPlatform/data-science-on-gcp/
@@ -47,6 +47,6 @@ gcloud sql instances patch flights --authorized-networks $ADDRESS --quiet
 
 gcloud sql databases create bts --instance=flights
 
-echo "${BG_RED}${BOLD}Congratulations For Completing!!! - ePus.DEV ${RESET}"
+echo "${BG_RED}${BOLD}Congratulations For Completing!!! - ePlus.DEV ${RESET}"
 
 #-----------------------------------------------------end----------------------------------------------------------#
