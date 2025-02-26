@@ -28,6 +28,10 @@ echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV ${RESET}"
 export PROJECT_ID=$(gcloud config get-value project)
 bq query --use_legacy_sql=false "SELECT DISTINCT p.product_name, p.price FROM \`$PROJECT_ID.Inventory.products\` AS p INNER JOIN \`$PROJECT_ID.Inventory.category\` AS c ON p.category_id = c.category_id WHERE p.category_id = 1;"
 
+bq query --use_legacy_sql=false " CREATE VIEW \`$PROJECT_ID.Inventory.Product_View\` AS SELECT DISTINCT p.product_name, p.price FROM \`$PROJECT_ID.Inventory.products\` AS p INNER JOIN \`$PROJECT_ID.Inventory.category\` AS c ON p.category_id = c.category_id WHERE p.category_id = 1; "
+
+bq show --format=prettyjson $PROJECT_ID:Inventory.Product_View
+
 echo "${BG_RED}${BOLD}Congratulations For Completing!!! - ePlus.DEV ${RESET}"
 
 #-----------------------------------------------------end----------------------------------------------------------#
