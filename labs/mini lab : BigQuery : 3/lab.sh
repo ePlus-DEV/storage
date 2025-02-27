@@ -25,13 +25,24 @@ RESET=`tput sgr0`
 
 echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV ${RESET}"
 
-export PROJECT_ID=$(gcloud config get-value project)
-bq query --use_legacy_sql=false "SELECT DISTINCT p.product_name, p.price FROM \`$PROJECT_ID.Inventory.products\` AS p INNER JOIN \`$PROJECT_ID.Inventory.category\` AS c ON p.category_id = c.category_id WHERE p.category_id = 1;"
+PROJECT_ID=`gcloud config get-value project`
 
-bq query --use_legacy_sql=false " CREATE VIEW \`$PROJECT_ID.Inventory.Product_View\` AS SELECT DISTINCT p.product_name, p.price FROM \`$PROJECT_ID.Inventory.products\` AS p INNER JOIN \`$PROJECT_ID.Inventory.category\` AS c ON p.category_id = c.category_id WHERE p.category_id = 1; "
+bq ls --format=json $PROJECT_ID:Inventory
 
-bq show --format=prettyjson $PROJECT_ID:Inventory.Product_View
+bq query --use_legacy_sql=false "
+SELECT DISTINCT products.product_name, products.price
+FROM \`$PROJECT_ID.Inventory.products\` AS products
+INNER JOIN \`$PROJECT_ID.Inventory.category\` AS category
+ON products.category_id = category.category_id
+WHERE products.category_id = 1;"
 
+bq query --use_legacy_sql=false "
+CREATE VIEW \`$PROJECT_ID.Inventory.Product_View\` AS
+SELECT DISTINCT products.product_name, products.price
+FROM \`$PROJECT_ID.Inventory.products\` AS products
+INNER JOIN \`$PROJECT_ID.Inventory.category\` AS category
+ON products.category_id = category.category_id
+WHERE products.category_id = 1;"
 echo "${BG_RED}${BOLD}Congratulations For Completing!!! - ePlus.DEV ${RESET}"
 
 #-----------------------------------------------------end----------------------------------------------------------#
