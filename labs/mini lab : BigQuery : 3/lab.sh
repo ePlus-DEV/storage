@@ -43,6 +43,7 @@ FROM \`$PROJECT_ID.Inventory.products\` AS products
 INNER JOIN \`$PROJECT_ID.Inventory.category\` AS category
 ON products.category_id = category.category_id
 WHERE products.category_id = 1;"
+
 echo "${BG_RED}${BOLD}Congratulations For Completing!!! - ePlus.DEV ${RESET}"
 
 #-----------------------------------------------------end----------------------------------------------------------#
