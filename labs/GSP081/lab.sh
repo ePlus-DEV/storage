@@ -19,7 +19,7 @@ CYAN="\033[36m"
 # ----- Branding header -----
 echo -e "${MAGENTA}${BOLD}
 ┌─────────────────────────────────────────────────────────┐
-│                 ePlus.dev — Cloud Run Lab               │
+│                 ePlus.DEV — Cloud Run Lab               │
 └─────────────────────────────────────────────────────────┘${RESET}"
 
 # ----- Prereq checks -----
@@ -145,5 +145,5 @@ echo
 YEAR="$(date +%Y)"
 echo -e "${MAGENTA}${BOLD}
 ┌─────────────────────────────────────────────────────────┐
-│  © ${YEAR} ePlus.dev — All rights reserved              │
+│  © ${YEAR} ePlus.DEV — All rights reserved              │
 └─────────────────────────────────────────────────────────┘${RESET}"
