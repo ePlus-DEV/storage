@@ -7,55 +7,46 @@
 
 set -euo pipefail
 
-# ---- Colors ----------------------------------------------------------------
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
 
-die() { echo -e "${RED}✖ $*${NC}" >&2; exit 1; }
-info() { echo -e "${YELLOW}➜ $*${NC}"; }
-ok()   { echo -e "${GREEN}✔ $*${NC}"; }
 
-command -v gcloud >/dev/null 2>&1 || die "gcloud not found in PATH"
-command -v gsutil >/dev/null 2>&1 || die "gsutil not found in PATH"
+# Set text styles
+YELLOW=$(tput setaf 3)
+BOLD=$(tput bold)
+RESET=$(tput sgr0)
 
-info "Active account:"
-gcloud auth list || true
+echo "Please set the below values correctly"
+read -p "${YELLOW}${BOLD}Enter the MESSAGE: ${RESET}" MESSAGE
 
-read -rp "$(echo -e "${CYAN}Enter MESSAGE: ${NC}")" MESSAGE
-[[ -n "$MESSAGE" ]] || die "MESSAGE must not be empty"
+# Export variables after collecting input
+export MESSAGE
+
+export ZONE="$(gcloud compute instances list --project=$DEVSHELL_PROJECT_ID --format='value(ZONE)')"
+
+export REGION=${ZONE%-*}
 
 gcloud services enable appengine.googleapis.com
 
-cat > prepare_disk.sh <<'EOF_END'
+sleep 10
+
+echo $ZONE
+echo $REGION
+
+gcloud compute ssh "lab-setup" --zone=$ZONE --project=$DEVSHELL_PROJECT_ID --quiet --command "git clone https://github.com/GoogleCloudPlatform/python-docs-samples.git"
 
 git clone https://github.com/GoogleCloudPlatform/python-docs-samples.git
-
 cd python-docs-samples/appengine/standard_python3/hello_world
 
-EOF_END
+sed -i "32c\    return \"$MESSAGE\"" main.py
 
-export ZONE=$(gcloud compute instances list lab-setup --format 'csv[no-heading](zone)')
-
-export REGION="${ZONE%-*}"
-
-gcloud compute scp prepare_disk.sh lab-setup:/tmp --project=$DEVSHELL_PROJECT_ID --zone=$ZONE --quiet
-
-gcloud compute ssh lab-setup --project=$DEVSHELL_PROJECT_ID --zone=$ZONE --quiet --command="bash /tmp/prepare_disk.sh"
-
-git clone https://github.com/GoogleCloudPlatform/python-docs-samples.git
-
-cd python-docs-samples/appengine/standard_python3/hello_world
+if [ "$REGION" == "us-east" ]; then
+  REGION="us-east1"
+fi
 
 gcloud app create --region=$REGION
 
-yes | gcloud app deploy
+gcloud app deploy --quiet
 
-sed -i 's/Hello World!/'"$MESSAGE"'/g' main.py
-
-yes | gcloud app deploy
+gcloud compute ssh "lab-setup" --zone=$ZONE --project=$DEVSHELL_PROJECT_ID --quiet --command "git clone https://github.com/GoogleCloudPlatform/python-docs-samples.git"
 
 ok "Lab Complete!"
 echo "© 2025 ePlus.DEV"
