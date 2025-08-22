@@ -18,8 +18,6 @@ echo "Please set the below values correctly"
 read -p "${YELLOW}${BOLD}Enter the MESSAGE: ${RESET}" MESSAGE
 
 # Export variables after collecting input
-export MESSAGE
-
 export ZONE="$(gcloud compute instances list --project=$DEVSHELL_PROJECT_ID --format='value(ZONE)')"
 
 export REGION=${ZONE%-*}
