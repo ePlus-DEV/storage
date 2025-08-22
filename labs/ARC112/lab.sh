@@ -28,43 +28,41 @@ command -v gsutil >/dev/null 2>&1 || die "gsutil not found in PATH"
 info "Active account:"
 gcloud auth list || true
 
-# ---- Ask for ZONE --------------------------------------------------------
-# Set the ZONE variable
-ZONE="$(gcloud compute instances list --project=$DEVSHELL_PROJECT_ID --format='value(ZONE)')"
-[[ -n "$ZONE" ]] || die "ZONE must not be empty"
+# ---- Ask for MESSAGE --------------------------------------------------------
+read -rp "$(echo -e "${CYAN}Enter MESSAGE: ${NC}")" INPUT_MESSAGE
+MESSAGE="${INPUT_MESSAGE}"
+[[ -n "$MESSAGE" ]] || die "MESSAGE must not be empty"
 
-# Enable the App Engine API
+# Set the ZONE variable
 gcloud services enable appengine.googleapis.com
 
+cat > prepare_disk.sh <<'EOF_END'
 
-sleep 10
-# SSH into the lab-setup instance and enable the App Engine API
-gcloud compute ssh --zone "$ZONE" "lab-setup" --project "$DEVSHELL_PROJECT_ID" --quiet --command "gcloud services enable appengine.googleapis.com && git clone https://github.com/GoogleCloudPlatform/python-docs-samples.git
-"
-
-# Clone the sample repository
 git clone https://github.com/GoogleCloudPlatform/python-docs-samples.git
 
-# Navigate to the hello_world directory
 cd python-docs-samples/appengine/standard_python3/hello_world
 
-# Update the main.py file with the message
-sed -i "32c\    return \"$MESSAGE\"" main.py
+EOF_END
 
-# Check and update the REGION variable
-if [ "$REGION" == "us-west" ]; then
-  REGION="us-west1"
-fi
+export ZONE=$(gcloud compute instances list lab-setup --format 'csv[no-heading](zone)')
 
-# Create the App Engine app with the specified service account and region
-gcloud app create --service-account=$DEVSHELL_PROJECT_ID@$DEVSHELL_PROJECT_ID.iam.gserviceaccount.com --region=$REGION
+export REGION="${ZONE%-*}"
 
-# Deploy the App Engine app
-gcloud app deploy --quiet
+gcloud compute scp prepare_disk.sh lab-setup:/tmp --project=$DEVSHELL_PROJECT_ID --zone=$ZONE --quiet
 
+gcloud compute ssh lab-setup --project=$DEVSHELL_PROJECT_ID --zone=$ZONE --quiet --command="bash /tmp/prepare_disk.sh"
 
-gcloud compute ssh --zone "$ZONE" "lab-setup" --project "$DEVSHELL_PROJECT_ID" --quiet --command "gcloud services enable appengine.googleapis.com && git clone https://github.com/GoogleCloudPlatform/python-docs-samples.git
-"
+git clone https://github.com/GoogleCloudPlatform/python-docs-samples.git
+
+cd python-docs-samples/appengine/standard_python3/hello_world
+
+gcloud app create --region=$REGION
+
+yes | gcloud app deploy
+
+sed -i 's/Hello World!/'"$MESSAGE"'/g' main.py
+
+yes | gcloud app deploy
 
 # ---- Summary ---------------------------------------------------------------
 echo -e "\n${GREEN}✔ Lab Complete!${NC}\n"
