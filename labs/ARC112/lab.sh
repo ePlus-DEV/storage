@@ -31,7 +31,7 @@ gcloud auth list || true
 # ---- Ask for ZONE --------------------------------------------------------
 # Set the ZONE variable
 ZONE="$(gcloud compute instances list --project=$DEVSHELL_PROJECT_ID --format='value(ZONE)')"
-[[ -n "$REGION" ]] || die "REGION must not be empty"
+[[ -n "$ZONE" ]] || die "ZONE must not be empty"
 
 # Enable the App Engine API
 gcloud services enable appengine.googleapis.com
