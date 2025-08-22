@@ -29,27 +29,33 @@ read -rp "$(echo -e "${CYAN}Enter MESSAGE: ${NC}")" MESSAGE
 
 gcloud services enable appengine.googleapis.com
 
-# Detect zone & region
-ZONE=$(gcloud compute instances list --filter="name=lab-setup" --format="value(zone)")
-REGION="${ZONE%-*}"
-PROJECT_ID=$(gcloud config get-value project)
-
-# Prepare VM
-cat > prepare_disk.sh <<'EOF'
-git clone https://github.com/GoogleCloudPlatform/python-docs-samples.git
-cd python-docs-samples/appengine/standard_python3/hello_world
-EOF
-
-gcloud compute scp prepare_disk.sh lab-setup:/tmp --project="$PROJECT_ID" --zone="$ZONE" --quiet
-gcloud compute ssh lab-setup --project="$PROJECT_ID" --zone="$ZONE" --quiet --command="bash /tmp/prepare_disk.sh"
+cat > prepare_disk.sh <<'EOF_END'
 
 git clone https://github.com/GoogleCloudPlatform/python-docs-samples.git
+
 cd python-docs-samples/appengine/standard_python3/hello_world
 
-gcloud app create --region="$REGION" --quiet
+EOF_END
 
-sed -i "s/Hello World!/${MESSAGE}/g" main.py
-gcloud app deploy --quiet
+export ZONE=$(gcloud compute instances list lab-setup --format 'csv[no-heading](zone)')
+
+export REGION="${ZONE%-*}"
+
+gcloud compute scp prepare_disk.sh lab-setup:/tmp --project=$DEVSHELL_PROJECT_ID --zone=$ZONE --quiet
+
+gcloud compute ssh lab-setup --project=$DEVSHELL_PROJECT_ID --zone=$ZONE --quiet --command="bash /tmp/prepare_disk.sh"
+
+git clone https://github.com/GoogleCloudPlatform/python-docs-samples.git
+
+cd python-docs-samples/appengine/standard_python3/hello_world
+
+gcloud app create --region=$REGION
+
+yes | gcloud app deploy
+
+sed -i 's/Hello World!/'"$MESSAGE"'/g' main.py
+
+yes | gcloud app deploy
 
 ok "Lab Complete!"
 echo "© 2025 ePlus.DEV"
