@@ -30,7 +30,7 @@ read -rp "$(echo -e "${CYAN}Enter MESSAGE: ${NC}")" MESSAGE
 gcloud services enable appengine.googleapis.com
 
 # Detect zone & region
-ZONE=$(gcloud compute instances list --filter="name=('lab-setup')" --format 'csv[no-heading](zone)')
+ZONE=$(gcloud compute instances list --filter="name=lab-setup" --format="value(zone)")
 REGION="${ZONE%-*}"
 PROJECT_ID=$(gcloud config get-value project)
 
