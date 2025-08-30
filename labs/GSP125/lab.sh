@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ┌─────────────────────────────────────────────────────────────────────────────┐
 # │ ePlus.DEV – Speaking with a Webpage (GCSB Codelab)                          │
-# │ One-shot setup script with interactive config (English)                     │
+# │ One-shot setup script with interactive config (no REGION prompt)            │
 # │ For educational/lab use only. No warranty of any kind.                      │
 # └─────────────────────────────────────────────────────────────────────────────┘
 set -euo pipefail
@@ -16,8 +16,7 @@ err()  { printf "${RED}✗${NC} %s\n" "$*" >&2; }
 need() { command -v "$1" >/dev/null 2>&1 || { err "Missing $1"; exit 1; }; }
 
 prompt() {
-  # prompt "Label" "default" -> echoes selection
-  local label="$1" def="${2:-}"
+  local label="$1" def="${2:-}" ans
   if [[ -n "$def" ]]; then
     read -r -p "$label [$def]: " ans
     echo "${ans:-$def}"
@@ -30,7 +29,7 @@ prompt() {
 # ===== Pre-flight =============================================================
 need gcloud
 
-# Try to auto-detect PROJECT_ID (Cloud Shell or configured gcloud)
+# Auto-detect project if possible
 AUTO_PROJECT="$(gcloud config get-value project 2>/dev/null || true)"
 [[ "$AUTO_PROJECT" == "(unset)" ]] && AUTO_PROJECT="${DEVSHELL_PROJECT_ID:-}"
 
@@ -38,8 +37,8 @@ say "Enter configuration (press Enter to accept defaults):"
 PROJECT_ID="$(prompt 'PROJECT_ID' "${AUTO_PROJECT}")"
 [[ -z "$PROJECT_ID" ]] && { err "PROJECT_ID is required"; exit 1; }
 
-REGION="$(prompt 'REGION' 'us-east1')"
-ZONE="$(prompt 'ZONE (should belong to the REGION above)' 'us-east1-d')"
+ZONE="$(prompt 'ZONE (e.g., us-east1-d)' 'us-east1-d')"
+REGION="${ZONE%-*}"   # derive region from zone (e.g., us-east1 from us-east1-d)
 VM_NAME="$(prompt 'VM_NAME' 'speaking-with-a-webpage')"
 MACHINE="$(prompt 'MACHINE (machine-type)' 'e2-medium')"
 FIREWALL_NAME="$(prompt 'FIREWALL_NAME' 'dev-ports')"
@@ -47,12 +46,12 @@ PORT="$(prompt 'PORT to open in firewall (sample Jetty listens on 8443)' '8443')
 
 say "Confirmation:"
 echo "  PROJECT_ID   = $PROJECT_ID"
-echo "  REGION       = $REGION"
 echo "  ZONE         = $ZONE"
+echo "  REGION       = $REGION (derived from ZONE)"
 echo "  VM_NAME      = $VM_NAME"
 echo "  MACHINE      = $MACHINE"
 echo "  FIREWALL     = $FIREWALL_NAME (tcp:$PORT)"
-echo "  NOTE: The codelab’s Jetty config listens on port 8443. Changing PORT requires updating Jetty config."
+echo "  NOTE: The sample Jetty listens on 8443. Changing PORT requires updating Jetty config."
 read -r -p "Continue? (Y/n): " go; go="${go:-Y}"
 [[ ! "$go" =~ ^[Yy]$ ]] && { warn "Aborted."; exit 0; }
 
@@ -60,6 +59,12 @@ read -r -p "Continue? (Y/n): " go; go="${go:-Y}"
 say "Enabling required APIs (compute, speech)…"
 gcloud services enable compute.googleapis.com speech.googleapis.com --project="$PROJECT_ID" >/dev/null
 ok "APIs enabled."
+
+# Optional: validate zone
+if ! gcloud compute zones describe "$ZONE" --project="$PROJECT_ID" >/dev/null 2>&1; then
+  err "ZONE '$ZONE' is invalid or not accessible for this project."
+  exit 1
+fi
 
 # ===== Firewall ===============================================================
 if gcloud compute firewall-rules describe "$FIREWALL_NAME" --project="$PROJECT_ID" >/dev/null 2>&1; then
@@ -109,7 +114,6 @@ external_ip() {
 print_url() {
   local ip; ip="$(external_ip)"
   if [[ -n "$ip" ]]; then
-    # Jetty listens on 8443 in the sample repo
     say "Open this in your browser (self-signed cert; accept the warning):"
     printf "   https://%s:8443\n" "$ip"
   else
