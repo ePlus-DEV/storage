@@ -42,7 +42,7 @@ while true; do
         break
     else
         sleep 30
-        echo "The Dataflow job is not running. please wait and subscribe to Techcps (https://www.youtube.com/@techcps)."
+        echo "The Dataflow job is not running."
     fi
 done
 
@@ -62,6 +62,6 @@ while true; do
         break
     else
         sleep 30
-        echo "The Dataflow job is not running. subscribe to Techcps (https://www.youtube.com/@techcps)."
+        echo "The Dataflow job is not running."
     fi
 done
