@@ -1,36 +1,17 @@
-#!/bin/bash
-# Define color variables
+gcloud auth list
 
-BLACK=`tput setaf 0`
-RED=`tput setaf 1`
-GREEN=`tput setaf 2`
-YELLOW=`tput setaf 3`
-BLUE=`tput setaf 4`
-MAGENTA=`tput setaf 5`
-CYAN=`tput setaf 6`
-WHITE=`tput setaf 7`
+export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 
-BG_BLACK=`tput setab 0`
-BG_RED=`tput setab 1`
-BG_GREEN=`tput setab 2`
-BG_YELLOW=`tput setab 3`
-BG_BLUE=`tput setab 4`
-BG_MAGENTA=`tput setab 5`
-BG_CYAN=`tput setab 6`
-BG_WHITE=`tput setab 7`
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
-BOLD=`tput bold`
-RESET=`tput sgr0`
-#----------------------------------------------------start--------------------------------------------------#
+gcloud services disable dataflow.googleapis.com --project=$DEVSHELL_PROJECT_ID
 
-echo "${YELLOW}${BOLD}Starting${RESET}" "${GREEN}${BOLD}Execution${RESET}"
+gcloud services enable dataflow.googleapis.com --project=$DEVSHELL_PROJECT_ID
 
-gcloud services disable dataflow.googleapis.com
-
-gcloud services enable dataflow.googleapis.com
-
+sleep 30
 
 bq mk taxirides
+
 bq mk \
 --time_partitioning_field timestamp \
 --schema ride_id:string,point_idx:integer,latitude:float,longitude:float,\
@@ -39,15 +20,25 @@ passenger_count:integer -t taxirides.realtime
 
 gsutil mb gs://$DEVSHELL_PROJECT_ID/
 
-sleep 45
+sleep 30
 
-gcloud dataflow jobs run iotflow \
---gcs-location gs://dataflow-templates/latest/PubSub_to_BigQuery \
---region $REGION \
---worker-machine-type e2-medium \
---staging-location gs://$DEVSHELL_PROJECT_ID/temp \
---parameters inputTopic=projects/pubsub-public-data/topics/taxirides-realtime,outputTableSpec=$DEVSHELL_PROJECT_ID:taxirides.realtime
 
-echo "${RED}${BOLD}Congratulations${RESET}" "${WHITE}${BOLD}for${RESET}" "${GREEN}${BOLD}Completing the Lab !!!${RESET}"
+#!/bin/bash
 
-#-----------------------------------------------------end----------------------------------------------------------#
+while true; do
+    gcloud dataflow jobs run iotflow \
+        --gcs-location gs://dataflow-templates-"$REGION"/latest/PubSub_to_BigQuery \
+        --region "$REGION" \
+        --worker-machine-type e2-medium \
+        --staging-location gs://"$DEVSHELL_PROJECT_ID"/temp \
+        --parameters inputTopic=projects/pubsub-public-data/topics/taxirides-realtime,outputTableSpec="Table Name":taxirides.realtime
+
+    # Check the gcloud dataflow jobs
+    if [ $? -eq 0 ]; then
+        echo "Dataflow job completed and running successfully."
+        break
+    else
+        echo "Dataflow job retrying. Please subscribe to techcps https://www.youtube.com/@techcps"
+        sleep 30
+    fi
+done
