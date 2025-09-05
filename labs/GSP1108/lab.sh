@@ -12,10 +12,6 @@ for line in "${pattern[@]}"
 do
     echo -e "${YELLOW}${line}${NC}"
 done
-echo -e "${CYAN}=====================================${NC}"
-echo -e "   ${YELLOW}Copyright (c) 2025 ePlus.DEV${NC}"
-echo -e "${CYAN}=====================================${NC}\n"
-
 
 gcloud auth list
 
