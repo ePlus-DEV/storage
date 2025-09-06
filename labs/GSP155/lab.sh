@@ -9,6 +9,7 @@ RED=$(tput setaf 1)
 GREEN=$(tput setaf 2)
 YELLOW=$(tput setaf 3)
 CYAN=$(tput setaf 6)
+BOLD=$(tput bold)
 RESET=$(tput sgr0)
 
 log() { echo "${CYAN}==>${RESET} $1"; }
@@ -29,9 +30,9 @@ success "Project ID set: $PROJECT_ID"
 #----------------------------------------------------
 # 2. Ask user for Region/Zone
 #----------------------------------------------------
-echo -n "Enter REGION (example: us-east4): "
+echo -ne "${YELLOW}${BOLD}Enter REGION (example: us-east4): ${RESET}"
 read REGION
-echo -n "Enter ZONE (example: us-east4-a): "
+echo -ne "${YELLOW}${BOLD}Enter ZONE (example: us-east4-a): ${RESET}"
 read ZONE
 
 if [[ -z "$REGION" || -z "$ZONE" ]]; then
