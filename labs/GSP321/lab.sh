@@ -26,8 +26,10 @@ warn () {
 # ==========================================
 # Config
 # ==========================================
-REGION="us-west1"
-ZONE="us-west1-a"
+ZONE=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+REGION=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 PROJECT_ID=$(gcloud config get-value project)
 
 # Require engineer email
