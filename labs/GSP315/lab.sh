@@ -49,17 +49,13 @@ gcloud services enable \
   logging.googleapis.com \
   pubsub.googleapis.com
 
-
-sleep 70
-
+sleep 30
 
 PROJECT_NUMBER=$(gcloud projects describe $DEVSHELL_PROJECT_ID --format='value(projectNumber)')
-
 
 gcloud projects add-iam-policy-binding $DEVSHELL_PROJECT_ID \
     --member=serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com \
     --role=roles/eventarc.eventReceiver
-
 
 sleep 20
 
@@ -71,20 +67,18 @@ gcloud projects add-iam-policy-binding $DEVSHELL_PROJECT_ID \
 
 sleep 20
 
-
 gcloud projects add-iam-policy-binding $DEVSHELL_PROJECT_ID \
     --member=serviceAccount:service-$PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com \
     --role=roles/iam.serviceAccountTokenCreator
 
 sleep 20
 
-
 gsutil mb -l $REGION gs://$DEVSHELL_PROJECT_ID-bucket
 
-gcloud pubsub topics create $TOPIC_NAME
+gcloud pubsub topics create $TOPIC
 
-mkdir quicklab
-cd quicklab
+mkdir lol
+cd lol
 
 cat > index.js <<'EOF_END'
 const functions = require('@google-cloud/functions-framework');
@@ -94,7 +88,7 @@ const gcs = new Storage();
 const { PubSub } = require('@google-cloud/pubsub');
 const imagemagick = require("imagemagick-stream");
 
-functions.cloudEvent('$FUNCTION_NAME', cloudEvent => {
+functions.cloudEvent('$FUNCTION_NAME_NAME', cloudEvent => {
   const event = cloudEvent.data;
 
   console.log(`Event: ${event}`);
@@ -159,7 +153,7 @@ EOF_END
 
 sed -i "8c\functions.cloudEvent('$FUNCTION_NAME', cloudEvent => { " index.js
 
-sed -i "18c\  const topicName = '$TOPIC_NAME';" index.js
+sed -i "18c\  const topicName = '$TOPIC';" index.js
 
 cat > package.json <<EOF_END
 {
@@ -183,17 +177,12 @@ cat > package.json <<EOF_END
   }
 EOF_END
 
-
-
 PROJECT_ID=$(gcloud config get-value project)
 BUCKET_SERVICE_ACCOUNT="${PROJECT_ID}@${PROJECT_ID}.iam.gserviceaccount.com"
 
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member=serviceAccount:$BUCKET_SERVICE_ACCOUNT \
   --role=roles/pubsub.publisher
-
-
-
 
 # Your existing deployment command
 deploy_function() {
@@ -222,8 +211,7 @@ while true; do
     break
   else
     echo "Waiting for Cloud Run service to be created..."
-    echo "[https:/eplus.dev]."
-    sleep 10
+    sleep 20
   fi
 done
 
