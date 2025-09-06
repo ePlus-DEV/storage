@@ -1,6 +1,6 @@
 #!/bin/bash
 #----------------------------------------------------
-# Google Cloud L7 Load Balancer Setup Script
+# Google Cloud L7 Load Balancer Setup Script (Interactive)
 # Author: ePlus.dev (David)
 #----------------------------------------------------
 
@@ -27,10 +27,18 @@ gcloud config set project $PROJECT_ID
 success "Project ID set: $PROJECT_ID"
 
 #----------------------------------------------------
-# 2. Detect Region and Zone
+# 2. Ask user for Region/Zone
 #----------------------------------------------------
-ZONE=$(gcloud compute zones list --format="value(name)" --limit=1)
-REGION=${ZONE%-*}
+echo -n "Enter REGION (example: us-east4): "
+read REGION
+echo -n "Enter ZONE (example: us-east4-a): "
+read ZONE
+
+if [[ -z "$REGION" || -z "$ZONE" ]]; then
+  error "Region and Zone must not be empty!"
+  exit 1
+fi
+
 gcloud config set compute/region $REGION
 gcloud config set compute/zone $ZONE
 success "Region: $REGION | Zone: $ZONE"
