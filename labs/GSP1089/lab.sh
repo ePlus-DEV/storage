@@ -247,8 +247,8 @@ deploy_with_retry slow-function \
   --region $REGION \
   --trigger-http \
   --allow-unauthenticated \
-  --min-instances=1 \
-  --max-instances=4
+  --min-instances 1 \
+  --max-instances 4
 
 # Test Slow Function
 echo
@@ -304,7 +304,9 @@ deploy_with_retry slow-concurrent-function \
   --trigger-http \
   --allow-unauthenticated \
   --min-instances 1 \
-  --max-instances 4
+  --max-instances=4 \
+  --cpu=1 \
+  --concurrency=100
 
 echo "${COLOR_CYAN}${BOLD} ------ PLEASE COMPLETE MANUAL STEP AND VERIFY YOUR PROGRESS OF TASK 7 ${COLOR_RESET}"
 
