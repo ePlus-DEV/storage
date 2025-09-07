@@ -247,6 +247,7 @@ deploy_with_retry slow-function \
   --region $REGION \
   --trigger-http \
   --allow-unauthenticated \
+  --min-instances 1 \
   --max-instances 4
 
 # Test Slow Function
