@@ -1,197 +1,390 @@
-#!/usr/bin/env bash
-set -euo pipefail
+!/bin/bash
+# Define color variables
 
-# =====================================================================
-# Google Cloud Internal TCP/UDP Load Balancer Lab Automator
-# 
-# Automates the setup of an Internal TCP/UDP passthrough Load Balancer.
-# Author: ePlus.DEV
-# Copyright (c) 2025 ePlus.DEV. All rights reserved.
-# =====================================================================
+BLACK=`tput setaf 0`
+RED=`tput setaf 1`
+GREEN=`tput setaf 2`
+YELLOW=`tput setaf 3`
+BLUE=`tput setaf 4`
+MAGENTA=`tput setaf 5`
+CYAN=`tput setaf 6`
+WHITE=`tput setaf 7`
 
-# ================= Colors & helpers =================
-BOLD=$(tput bold || true); RESET=$(tput sgr0 || true)
-RED=$(tput setaf 1 || true); GREEN=$(tput setaf 2 || true); YELLOW=$(tput setaf 3 || true); MAGENTA=$(tput setaf 5 || true)
-ok(){ echo -e "${GREEN}✔${RESET} $*"; }
-warn(){ echo -e "${YELLOW}⚠${RESET} $*"; }
-die(){ echo -e "${RED}✖${RESET} $*"; exit 1; }
-banner(){ echo -e "\n${BOLD}${MAGENTA}==> $*${RESET}\n"; }
+BG_BLACK=`tput setab 0`
+BG_RED=`tput setab 1`
+BG_GREEN=`tput setab 2`
+BG_YELLOW=`tput setab 3`
+BG_BLUE=`tput setab 4`
+BG_MAGENTA=`tput setab 5`
+BG_CYAN=`tput setab 6`
+BG_WHITE=`tput setab 7`
 
-echo -e "${BOLD}${MAGENTA}Starting Execution - Internal ILB Lab Automator${RESET}"
+BOLD=`tput bold`
+RESET=`tput sgr0`
+#----------------------------------------------------start--------------------------------------------------#
 
-# ================= Project =================
-PROJECT_ID="${DEVSHELL_PROJECT_ID:-$(gcloud config get-value project -q || true)}"
-[[ -z "${PROJECT_ID}" ]] && die "No PROJECT_ID found. Please set your gcloud project first."
-gcloud config set project "${PROJECT_ID}" >/dev/null
+echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV ${RESET}"
 
-# ================= Prompt user for zones =================
-REGION="us-east4"
-read -rp "Enter first zone in ${REGION} (e.g., us-east4-a): " ZONE_A
-read -rp "Enter second zone in ${REGION} (different from first, e.g., us-east4-b): " ZONE_B
+#!/bin/bash
+# Define color variables
 
-if [[ -z "${ZONE_A}" || -z "${ZONE_B}" ]]; then
-  die "Both zones must be provided."
-fi
+BLACK=`tput setaf 0`
+RED=`tput setaf 1`
+GREEN=`tput setaf 2`
+YELLOW=`tput setaf 3`
+BLUE=`tput setaf 4`
+MAGENTA=`tput setaf 5`
+CYAN=`tput setaf 6`
+WHITE=`tput setaf 7`
 
-# ================= Static config =================
-VPC_NAME="my-internal-app"
-SUBNET_A="subnet-a"
-SUBNET_B="subnet-b"
+BG_BLACK=`tput setab 0`
+BG_RED=`tput setab 1`
+BG_GREEN=`tput setab 2`
+BG_YELLOW=`tput setab 3`
+BG_BLUE=`tput setab 4`
+BG_MAGENTA=`tput setab 5`
+BG_CYAN=`tput setab 6`
+BG_WHITE=`tput setab 7`
 
-FW_HTTP="app-allow-http"
-FW_HC="app-allow-health-check"
-TEMPLATE_1="instance-template-1"
-TEMPLATE_2="instance-template-2"
-MIG_1="instance-group-1"
-MIG_2="instance-group-2"
-UTIL_VM="utility-vm"
-UTIL_VM_IP="10.10.20.50"
-HC_NAME="my-ilb-health-check"
-BS_NAME="my-ilb-backend"
-ILB_IP_NAME="my-ilb-ip"
-ILB_FR_NAME="my-ilb"
-ILB_FRONTEND_IP="10.10.30.5"
-STARTUP_SCRIPT_URL="gs://cloud-training/gcpnet/ilb/startup.sh"
+BOLD=`tput bold`
+RESET=`tput sgr0`
 
-# ==================================================
-# Task 1: Firewall rules
-# ==================================================
-banner "Task 1: Firewall rules (HTTP + Health Check)"
+# Array of color codes excluding black and white
+TEXT_COLORS=($RED $GREEN $YELLOW $BLUE $MAGENTA $CYAN)
+BG_COLORS=($BG_RED $BG_GREEN $BG_YELLOW $BG_BLUE $BG_MAGENTA $BG_CYAN)
 
-gcloud compute firewall-rules create "${FW_HTTP}" \
-  --network="${VPC_NAME}" \
-  --direction=INGRESS \
-  --action=ALLOW \
-  --rules=tcp:80 \
-  --source-ranges=10.10.0.0/16 \
-  --target-tags=lb-backend \
-  --quiet || warn "Firewall ${FW_HTTP} may already exist."
+# Pick random colors
+RANDOM_TEXT_COLOR=${TEXT_COLORS[$RANDOM % ${#TEXT_COLORS[@]}]}
+RANDOM_BG_COLOR=${BG_COLORS[$RANDOM % ${#BG_COLORS[@]}]}
 
-gcloud compute firewall-rules create "${FW_HC}" \
-  --network="${VPC_NAME}" \
-  --direction=INGRESS \
-  --action=ALLOW \
-  --rules=tcp \
-  --source-ranges=130.211.0.0/22,35.191.0.0/16 \
-  --target-tags=lb-backend \
-  --quiet || warn "Firewall ${FW_HC} may already exist."
+# Function to chnage ZONE auto
+change_zone_automatically() {
 
-# ==================================================
-# Task 2: Instance Templates & MIGs
-# ==================================================
-banner "Task 2: Instance Templates and Managed Instance Groups"
+    # Check if the command was successful
+    if [[ -z "$ZONE_1" ]]; then
+        echo "Could not retrieve the current zone. Exiting."
+        return 1
+    fi
 
-# Template 1
-gcloud compute instance-templates create "${TEMPLATE_1}" \
-  --machine-type=e2-micro \
-  --network="${VPC_NAME}" \
-  --subnet="${SUBNET_A}" \
-  --no-address \
-  --tags=lb-backend \
-  --metadata=startup-script-url="${STARTUP_SCRIPT_URL}" \
-  --quiet || warn "Template ${TEMPLATE_1} may already exist."
+    echo "Current Zone (ZONE_1): $ZONE_1"
 
-# Template 2
-gcloud compute instance-templates create "${TEMPLATE_2}" \
-  --machine-type=e2-micro \
-  --network="${VPC_NAME}" \
-  --subnet="${SUBNET_B}" \
-  --no-address \
-  --tags=lb-backend \
-  --metadata=startup-script-url="${STARTUP_SCRIPT_URL}" \
-  --quiet || warn "Template ${TEMPLATE_2} may already exist."
+    # Extract the zone prefix (everything except the last character)
+    zone_prefix=${ZONE_1::-1}
 
-# MIG 1
-gcloud compute instance-groups managed create "${MIG_1}" \
-  --zone="${ZONE_A}" \
-  --template="${TEMPLATE_1}" \
-  --size=1 \
-  --quiet || warn "MIG ${MIG_1} may already exist."
-gcloud compute instance-groups managed set-autoscaling "${MIG_1}" \
-  --zone="${ZONE_A}" \
-  --min-num-replicas=1 \
-  --max-num-replicas=1 \
-  --target-cpu-utilization=0.8 \
-  --cool-down-period=45
+    # Extract the last character
+    last_char=${ZONE_1: -1}
 
-# MIG 2
-gcloud compute instance-groups managed create "${MIG_2}" \
-  --zone="${ZONE_B}" \
-  --template="${TEMPLATE_2}" \
-  --size=1 \
-  --quiet || warn "MIG ${MIG_2} may already exist."
-gcloud compute instance-groups managed set-autoscaling "${MIG_2}" \
-  --zone="${ZONE_B}" \
-  --min-num-replicas=1 \
-  --max-num-replicas=1 \
-  --target-cpu-utilization=0.8 \
-  --cool-down-period=45
+    # Define a list of valid zone characters
+    valid_chars=("b" "c" "d")
 
-# Utility VM
-gcloud compute instances create "${UTIL_VM}" \
-  --zone="${ZONE_A}" \
-  --machine-type=e2-micro \
-  --subnet="${SUBNET_A}" \
-  --no-address \
-  --private-network-ip="${UTIL_VM_IP}" \
-  --quiet || warn "Utility VM ${UTIL_VM} may already exist."
+    # Find the next valid character in the list
+    new_char=$last_char
+    for char in "${valid_chars[@]}"; do
+        if [[ $char != "$last_char" ]]; then
+            new_char=$char
+            break
+        fi
+    done
 
-# ==================================================
-# Task 3: Internal Load Balancer
-# ==================================================
-banner "Task 3: Internal TCP/UDP Passthrough Load Balancer"
+    # Construct the new zone and store it in ZONE_2
+    ZONE_2="${zone_prefix}${new_char}"
 
-gcloud compute health-checks create tcp "${HC_NAME}" --port=80 \
-  --quiet || warn "Health check ${HC_NAME} may already exist."
+    # Export the new zone to the environment variable
+    export ZONE_2
+    echo "New Zone (ZONE_2) is now set to: $ZONE_2"
+}
 
-gcloud compute backend-services create "${BS_NAME}" \
-  --region="${REGION}" \
-  --load-balancing-scheme=INTERNAL \
-  --protocol=TCP \
-  --health-checks="${HC_NAME}" \
-  --quiet || warn "Backend service ${BS_NAME} may already exist."
+#----------------------------------------------------start--------------------------------------------------#
 
-gcloud compute backend-services add-backend "${BS_NAME}" \
-  --region="${REGION}" \
-  --instance-group="${MIG_1}" \
-  --instance-group-zone="${ZONE_A}" --quiet || true
+echo "${RANDOM_BG_COLOR}${RANDOM_TEXT_COLOR}${BOLD}Starting Execution${RESET}"
 
-gcloud compute backend-services add-backend "${BS_NAME}" \
-  --region="${REGION}" \
-  --instance-group="${MIG_2}" \
-  --instance-group-zone="${ZONE_B}" --quiet || true
+# Step 1: Retrieve default zone and region
+echo "${CYAN}${BOLD}Retrieving default zone and region.${RESET}"
+export ZONE_1=$(gcloud compute project-info describe \
+--format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 
-gcloud compute addresses create "${ILB_IP_NAME}" \
-  --region="${REGION}" \
-  --subnet="${SUBNET_B}" \
-  --addresses="${ILB_FRONTEND_IP}" \
-  --quiet || warn "ILB IP ${ILB_IP_NAME} may already exist."
+export REGION=$(gcloud compute project-info describe \
+--format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
-gcloud compute forwarding-rules create "${ILB_FR_NAME}" \
-  --region="${REGION}" \
-  --load-balancing-scheme=INTERNAL \
-  --network="${VPC_NAME}" \
-  --subnet="${SUBNET_B}" \
-  --address="${ILB_IP_NAME}" \
-  --backend-service="${BS_NAME}" \
-  --ports=80 \
-  --quiet || warn "Forwarding rule ${ILB_FR_NAME} may already exist."
+# Step 2: Create firewall rule to allow HTTP traffic
+echo "${MAGENTA}${BOLD}Creating firewall rule to allow HTTP traffic.${RESET}"
+gcloud compute firewall-rules create app-allow-http \
+    --direction=INGRESS \
+    --priority=1000 \
+    --network=my-internal-app \
+    --action=ALLOW \
+    --rules=tcp:80 \
+    --source-ranges=10.10.0.0/16 \
+    --target-tags=lb-backend
 
-# ==================================================
-# Task 4: Verification
-# ==================================================
-banner "Task 4: Verification / Testing"
+# Step 3: Create firewall rule to allow health checks
+echo "${RED}${BOLD}Creating firewall rule to allow health checks.${RESET}"
+gcloud compute firewall-rules create app-allow-health-check \
+    --direction=INGRESS \
+    --priority=1000 \
+    --network=my-internal-app \
+    --action=ALLOW \
+    --rules=tcp:80 \
+    --source-ranges=130.211.0.0/22,35.191.0.0/16 \
+    --target-tags=lb-backend
 
-echo "Waiting 30s for health checks to stabilize..."
-sleep 30
+# Step 4: Create instance template for subnet-a
+echo "${GREEN}${BOLD}Creating instance template for subnet-a.${RESET}"
+gcloud compute instance-templates create instance-template-1 \
+    --machine-type e2-micro \
+    --network my-internal-app \
+    --subnet subnet-a \
+    --tags lb-backend \
+    --metadata startup-script-url=gs://cloud-training/gcpnet/ilb/startup.sh \
+    --region=$REGION
 
-SSH_BASE=(gcloud compute ssh "${UTIL_VM}" --zone="${ZONE_A}" --quiet --command)
+# Step 5: Create instance template for subnet-b
+echo "${BLUE}${BOLD}Creating instance template for subnet-b.${RESET}"
+gcloud compute instance-templates create instance-template-2 \
+    --machine-type e2-micro \
+    --network my-internal-app \
+    --subnet subnet-b \
+    --tags lb-backend \
+    --metadata startup-script-url=gs://cloud-training/gcpnet/ilb/startup.sh \
+    --region=$REGION
 
-banner "Curl Internal Load Balancer (${ILB_FRONTEND_IP})"
-for i in {1..4}; do
-  echo -e "${YELLOW}Request #$i${RESET}"
-  "${SSH_BASE[@]}" "curl -s ${ILB_FRONTEND_IP} | head -n 10"
-  echo
-done
+# Step 6: Determine and set the secondary zone
+echo "${YELLOW}${BOLD}Determining and setting the secondary zone.${RESET}"
+change_zone_automatically
 
-ok "All done! The field identifying backend location in quiz answers is: Server Location"
+# Step 6: Create instance group 1
+echo "${MAGENTA}${BOLD}Creating managed instance group 1.${RESET}"
+gcloud beta compute instance-groups managed create instance-group-1 \
+    --project=$DEVSHELL_PROJECT_ID \
+    --base-instance-name=instance-group-1 \
+    --size=1 \
+    --template=instance-template-1 \
+    --zone=$ZONE_1 \
+    --list-managed-instances-results=PAGELESS \
+    --no-force-update-on-repair
+
+# Step 7: Set autoscaling for instance group 1
+echo "${CYAN}${BOLD}Setting autoscaling for instance group 1.${RESET}"
+gcloud beta compute instance-groups managed set-autoscaling instance-group-1 \
+    --project=$DEVSHELL_PROJECT_ID \
+    --zone=$ZONE_1 \
+    --cool-down-period=45 \
+    --max-num-replicas=5 \
+    --min-num-replicas=1 \
+    --mode=on \
+    --target-cpu-utilization=0.8
+
+# Step 8: Create instance group 2
+echo "${RED}${BOLD}Creating managed instance group 2.${RESET}"
+gcloud beta compute instance-groups managed create instance-group-2 \
+    --project=$DEVSHELL_PROJECT_ID \
+    --base-instance-name=instance-group-2 \
+    --size=1 \
+    --template=instance-template-2 \
+    --zone=$ZONE_2 \
+    --list-managed-instances-results=PAGELESS \
+    --no-force-update-on-repair
+
+# Step 9: Set autoscaling for instance group 2
+echo "${GREEN}${BOLD}Setting autoscaling for instance group 2.${RESET}"
+gcloud beta compute instance-groups managed set-autoscaling instance-group-2 \
+    --project=$DEVSHELL_PROJECT_ID \
+    --zone=$ZONE_2 \
+    --cool-down-period=45 \
+    --max-num-replicas=5 \
+    --min-num-replicas=1 \
+    --mode=on \
+    --target-cpu-utilization=0.8
+
+# Step 10: Create utility VM
+echo "${BLUE}${BOLD}Creating utility VM.${RESET}"
+gcloud compute instances create utility-vm \
+    --zone $ZONE_1 \
+    --machine-type e2-micro \
+    --network my-internal-app \
+    --subnet subnet-a \
+    --private-network-ip 10.10.20.50
+
+# Step 11: Create health check
+echo "${YELLOW}${BOLD}Creating health check.${RESET}"
+curl -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
+  -d '{
+    "checkIntervalSec": 5,
+    "description": "",
+    "healthyThreshold": 2,
+    "name": "my-ilb-health-check",
+    "region": "projects/'"$DEVSHELL_PROJECT_ID"'/regions/'"$REGION"'",
+    "tcpHealthCheck": {
+      "port": 80,
+      "proxyHeader": "NONE"
+    },
+    "timeoutSec": 5,
+    "type": "TCP",
+    "unhealthyThreshold": 2
+  }' \
+  "https://compute.googleapis.com/compute/beta/projects/$DEVSHELL_PROJECT_ID/regions/$REGION/healthChecks"
+
+sleep 30 
+
+# Step 12: Create backend service
+echo "${MAGENTA}${BOLD}Creating backend service.${RESET}"
+curl -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
+  -d '{
+    "backends": [
+      {
+        "balancingMode": "CONNECTION",
+        "failover": false,
+        "group": "projects/'"$DEVSHELL_PROJECT_ID"'/zones/'"$ZONE_1"'/instanceGroups/instance-group-1"
+      },
+      {
+        "balancingMode": "CONNECTION",
+        "failover": false,
+        "group": "projects/'"$DEVSHELL_PROJECT_ID"'/zones/'"$ZONE_2"'/instanceGroups/instance-group-2"
+      }
+    ],
+    "connectionDraining": {
+      "drainingTimeoutSec": 300
+    },
+    "description": "",
+    "failoverPolicy": {},
+    "healthChecks": [
+      "projects/'"$DEVSHELL_PROJECT_ID"'/regions/'"$REGION"'/healthChecks/my-ilb-health-check"
+    ],
+    "loadBalancingScheme": "INTERNAL",
+    "logConfig": {
+      "enable": false
+    },
+    "name": "my-ilb",
+    "network": "projects/'"$DEVSHELL_PROJECT_ID"'/global/networks/my-internal-app",
+    "protocol": "TCP",
+    "region": "projects/'"$DEVSHELL_PROJECT_ID"'/regions/'"$REGION"'",
+    "sessionAffinity": "NONE"
+  }' \
+  "https://compute.googleapis.com/compute/v1/projects/$DEVSHELL_PROJECT_ID/regions/$REGION/backendServices"
+
+sleep 20
+
+ # Step 13: Create forwarding rule
+echo "${RED}${BOLD}Creating forwarding rule.${RESET}"
+ curl -X POST -H "Content-Type: application/json" \
+ -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
+ -d '{
+   "IPAddress": "10.10.30.5",
+   "IPProtocol": "TCP",
+   "allowGlobalAccess": false,
+   "backendService": "projects/'"$DEVSHELL_PROJECT_ID"'/regions/'"$REGION"'/backendServices/my-ilb",
+   "description": "",
+   "ipVersion": "IPV4",
+   "loadBalancingScheme": "INTERNAL",
+   "name": "my-ilb-forwarding-rule",
+   "networkTier": "PREMIUM",
+   "ports": [
+     "80"
+   ],
+   "region": "projects/'"$DEVSHELL_PROJECT_ID"'/regions/'"$REGION"'",
+   "subnetwork": "projects/'"$DEVSHELL_PROJECT_ID"'/regions/'"$REGION"'/subnetworks/subnet-b"
+ }' \
+ "https://compute.googleapis.com/compute/v1/projects/$DEVSHELL_PROJECT_ID/regions/$REGION/forwardingRules"
+
+echo
+
+# Function to display a random congratulatory message
+function random_congrats() {
+    MESSAGES=(
+        "${GREEN}Congratulations For Completing The Lab! Keep up the great work!${RESET}"
+        "${CYAN}Well done! Your hard work and effort have paid off!${RESET}"
+        "${YELLOW}Amazing job! You’ve successfully completed the lab!${RESET}"
+        "${BLUE}Outstanding! Your dedication has brought you success!${RESET}"
+        "${MAGENTA}Great work! You’re one step closer to mastering this!${RESET}"
+        "${RED}Fantastic effort! You’ve earned this achievement!${RESET}"
+        "${CYAN}Congratulations! Your persistence has paid off brilliantly!${RESET}"
+        "${GREEN}Bravo! You’ve completed the lab with flying colors!${RESET}"
+        "${YELLOW}Excellent job! Your commitment is inspiring!${RESET}"
+        "${BLUE}You did it! Keep striving for more successes like this!${RESET}"
+        "${MAGENTA}Kudos! Your hard work has turned into a great accomplishment!${RESET}"
+        "${RED}You’ve smashed it! Completing this lab shows your dedication!${RESET}"
+        "${CYAN}Impressive work! You’re making great strides!${RESET}"
+        "${GREEN}Well done! This is a big step towards mastering the topic!${RESET}"
+        "${YELLOW}You nailed it! Every step you took led you to success!${RESET}"
+        "${BLUE}Exceptional work! Keep this momentum going!${RESET}"
+        "${MAGENTA}Fantastic! You’ve achieved something great today!${RESET}"
+        "${RED}Incredible job! Your determination is truly inspiring!${RESET}"
+        "${CYAN}Well deserved! Your effort has truly paid off!${RESET}"
+        "${GREEN}You’ve got this! Every step was a success!${RESET}"
+        "${YELLOW}Nice work! Your focus and effort are shining through!${RESET}"
+        "${BLUE}Superb performance! You’re truly making progress!${RESET}"
+        "${MAGENTA}Top-notch! Your skill and dedication are paying off!${RESET}"
+        "${RED}Mission accomplished! This success is a reflection of your hard work!${RESET}"
+        "${CYAN}You crushed it! Keep pushing towards your goals!${RESET}"
+        "${GREEN}You did a great job! Stay motivated and keep learning!${RESET}"
+        "${YELLOW}Well executed! You’ve made excellent progress today!${RESET}"
+        "${BLUE}Remarkable! You’re on your way to becoming an expert!${RESET}"
+        "${MAGENTA}Keep it up! Your persistence is showing impressive results!${RESET}"
+        "${RED}This is just the beginning! Your hard work will take you far!${RESET}"
+        "${CYAN}Terrific work! Your efforts are paying off in a big way!${RESET}"
+        "${GREEN}You’ve made it! This achievement is a testament to your effort!${RESET}"
+        "${YELLOW}Excellent execution! You’re well on your way to mastering the subject!${RESET}"
+        "${BLUE}Wonderful job! Your hard work has definitely paid off!${RESET}"
+        "${MAGENTA}You’re amazing! Keep up the awesome work!${RESET}"
+        "${RED}What an achievement! Your perseverance is truly admirable!${RESET}"
+        "${CYAN}Incredible effort! This is a huge milestone for you!${RESET}"
+        "${GREEN}Awesome! You’ve done something incredible today!${RESET}"
+        "${YELLOW}Great job! Keep up the excellent work and aim higher!${RESET}"
+        "${BLUE}You’ve succeeded! Your dedication is your superpower!${RESET}"
+        "${MAGENTA}Congratulations! Your hard work has brought great results!${RESET}"
+        "${RED}Fantastic work! You’ve taken a huge leap forward today!${RESET}"
+        "${CYAN}You’re on fire! Keep up the great work!${RESET}"
+        "${GREEN}Well deserved! Your efforts have led to success!${RESET}"
+        "${YELLOW}Incredible! You’ve achieved something special!${RESET}"
+        "${BLUE}Outstanding performance! You’re truly excelling!${RESET}"
+        "${MAGENTA}Terrific achievement! Keep building on this success!${RESET}"
+        "${RED}Bravo! You’ve completed the lab with excellence!${RESET}"
+        "${CYAN}Superb job! You’ve shown remarkable focus and effort!${RESET}"
+        "${GREEN}Amazing work! You’re making impressive progress!${RESET}"
+        "${YELLOW}You nailed it again! Your consistency is paying off!${RESET}"
+        "${BLUE}Incredible dedication! Keep pushing forward!${RESET}"
+        "${MAGENTA}Excellent work! Your success today is well earned!${RESET}"
+        "${RED}You’ve made it! This is a well-deserved victory!${RESET}"
+        "${CYAN}Wonderful job! Your passion and hard work are shining through!${RESET}"
+        "${GREEN}You’ve done it! Keep up the hard work and success will follow!${RESET}"
+        "${YELLOW}Great execution! You’re truly mastering this!${RESET}"
+        "${BLUE}Impressive! This is just the beginning of your journey!${RESET}"
+        "${MAGENTA}You’ve achieved something great today! Keep it up!${RESET}"
+        "${RED}You’ve made remarkable progress! This is just the start!${RESET}"
+    )
+
+    RANDOM_INDEX=$((RANDOM % ${#MESSAGES[@]}))
+    echo -e "${BOLD}${MESSAGES[$RANDOM_INDEX]}"
+}
+
+# Display a random congratulatory message
+random_congrats
+
+echo -e "\n"  # Adding one blank line
+
+cd
+
+remove_files() {
+    # Loop through all files in the current directory
+    for file in *; do
+        # Check if the file name starts with "gsp", "arc", or "shell"
+        if [[ "$file" == gsp* || "$file" == arc* || "$file" == shell* ]]; then
+            # Check if it's a regular file (not a directory)
+            if [[ -f "$file" ]]; then
+                # Remove the file and echo the file name
+                rm "$file"
+                echo "File removed: $file"
+            fi
+        fi
+    done
+}
+
+remove_files
+
+
+
+echo "${BG_RED}${BOLD}Congratulations For Completing!!! - ePlus.DEV ${RESET}"
+
+#-----------------------------------------------------end----------------------------------------------------------#
