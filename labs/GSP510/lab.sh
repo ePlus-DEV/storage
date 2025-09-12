@@ -4,13 +4,25 @@
 # Copyright (c) 2025 ePlus.DEV. All rights reserved.
 # ========================================================
 
+# ===== Color Variables =====
+RED=$(tput setaf 1)
+GREEN=$(tput setaf 2)
+YELLOW=$(tput setaf 3)
+BLUE=$(tput setaf 4)
+MAGENTA=$(tput setaf 5)
+CYAN=$(tput setaf 6)
+BOLD=$(tput bold)
+RESET=$(tput sgr0)
+
 # ===== Required Inputs =====
-read -p "Enter Cluster Name (e.g., hello-world-3kxq): " CLUSTER
-read -p "Enter Namespace (e.g., gmp-veiz): " NAMESPACE
-read -p "Enter Artifact Registry Repo (e.g., sandbox-repo): " REPO
+echo "${MAGENTA}${BOLD}>>> Please provide required inputs <<<${RESET}"
+
+read -p "${CYAN}${BOLD}Enter Cluster Name (e.g., hello-world-3kxq): ${RESET}" CLUSTER
+read -p "${CYAN}${BOLD}Enter Namespace (e.g., gmp-veiz): ${RESET}" NAMESPACE
+read -p "${CYAN}${BOLD}Enter Artifact Registry Repo (e.g., sandbox-repo): ${RESET}" REPO
 
 if [[ -z "$CLUSTER" || -z "$NAMESPACE" || -z "$REPO" ]]; then
-  echo "❌ You must provide CLUSTER, NAMESPACE, and REPO!"
+  echo "${RED}${BOLD}❌ You must provide CLUSTER, NAMESPACE, and REPO!${RESET}"
   exit 1
 fi
 
@@ -19,18 +31,19 @@ PROJECT_ID=$(gcloud config get-value project)
 ZONE="europe-west4-a"
 REGION="europe-west4"
 
-echo "=========================================="
-echo " Project ID : $PROJECT_ID"
-echo " Cluster    : $CLUSTER"
-echo " Namespace  : $NAMESPACE"
-echo " Repo       : $REPO"
-echo " Zone       : $ZONE"
-echo " Region     : $REGION"
-echo "=========================================="
+echo "${YELLOW}==========================================${RESET}"
+echo "${GREEN} Project ID : $PROJECT_ID${RESET}"
+echo "${GREEN} Cluster    : $CLUSTER${RESET}"
+echo "${GREEN} Namespace  : $NAMESPACE${RESET}"
+echo "${GREEN} Repo       : $REPO${RESET}"
+echo "${GREEN} Zone       : $ZONE${RESET}"
+echo "${GREEN} Region     : $REGION${RESET}"
+echo "${YELLOW}==========================================${RESET}"
 
 # --------------------------------------------------------
 # Task 1. Create GKE Cluster
 # --------------------------------------------------------
+echo "${BLUE}${BOLD}▶ Task 1: Creating GKE cluster...${RESET}"
 gcloud container clusters create $CLUSTER \
   --zone $ZONE \
   --release-channel regular \
@@ -45,6 +58,7 @@ gcloud container clusters get-credentials $CLUSTER --zone $ZONE
 # --------------------------------------------------------
 # Task 2. Enable Managed Prometheus
 # --------------------------------------------------------
+echo "${BLUE}${BOLD}▶ Task 2: Enabling Managed Prometheus...${RESET}"
 gcloud container clusters update $CLUSTER \
   --zone $ZONE \
   --enable-managed-prometheus
@@ -74,21 +88,23 @@ kubectl apply -f pod-monitoring.yaml -n $NAMESPACE
 # --------------------------------------------------------
 # Task 3. Deploy helloweb (expected error)
 # --------------------------------------------------------
+echo "${BLUE}${BOLD}▶ Task 3: Deploying helloweb (with invalid image)...${RESET}"
 gsutil cp -r gs://spls/gsp510/hello-app/ .
 kubectl apply -f hello-app/manifests/helloweb-deployment.yaml -n $NAMESPACE
 
 # --------------------------------------------------------
 # Task 4. Logs-based metric & alert
 # --------------------------------------------------------
-echo "👉 Manual step required:"
-echo "   1. Go to Logs Explorer."
-echo "   2. Run query: resource.type=\"k8s_container\" severity>=ERROR"
-echo "   3. Create log-based metric: pod-image-errors (Counter)."
-echo "   4. Create Alerting Policy 'Pod Error Alert' with threshold >0."
+echo "${YELLOW}${BOLD}▶ Task 4: Manual step required in Cloud Console!${RESET}"
+echo "  1. Go to Logs Explorer."
+echo "  2. Run query: ${CYAN}resource.type=\"k8s_container\" severity>=ERROR${RESET}"
+echo "  3. Create log-based metric: ${BOLD}pod-image-errors${RESET} (Counter)."
+echo "  4. Create Alerting Policy '${BOLD}Pod Error Alert${RESET}' with threshold >0."
 
 # --------------------------------------------------------
 # Task 5. Fix deployment
 # --------------------------------------------------------
+echo "${BLUE}${BOLD}▶ Task 5: Fixing deployment with correct image...${RESET}"
 sed -i 's|image:.*|image: us-docker.pkg.dev/google-samples/containers/gke/hello-app:1.0|' hello-app/manifests/helloweb-deployment.yaml
 
 kubectl delete deploy helloweb -n $NAMESPACE
@@ -97,6 +113,7 @@ kubectl apply -f hello-app/manifests/helloweb-deployment.yaml -n $NAMESPACE
 # --------------------------------------------------------
 # Task 6. Containerize v2 and deploy
 # --------------------------------------------------------
+echo "${BLUE}${BOLD}▶ Task 6: Building v2 image and deploying...${RESET}"
 # Update main.go manually (line 49 → Version: 2.0.0)
 sed -i 's/Version:.*/Version: 2.0.0"/' hello-app/main.go
 
@@ -116,5 +133,5 @@ kubectl expose deploy helloweb \
   --port 8080 --target-port 8080 \
   -n $NAMESPACE
 
-echo "⏳ Waiting for external IP..."
+echo "${GREEN}${BOLD}✅ Script finished. Check service external IP:${RESET}"
 kubectl get svc helloweb-service-2xml -n $NAMESPACE
