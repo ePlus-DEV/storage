@@ -37,10 +37,10 @@ RANDOM_BG_COLOR=${BG_COLORS[$RANDOM % ${#BG_COLORS[@]}]}
 echo "${RANDOM_BG_COLOR}${RANDOM_TEXT_COLOR}${BOLD}Starting Execution - ePlus.DEV${RESET}"
 
 # Config
-GOOGLE_CLOUD_PROJECT="qwiklabs-gcp-01-xxxxxxx"   # thay bằng Project ID của bạn
-GOOGLE_CLOUD_REGION="us-central1"
-AR_REPO="gemini-repo"
-SERVICE_NAME="gemini-streamlit-app"
+export PROJECT_ID=$(gcloud config get-value project)
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+export AR_REPO="gemini-repo"
+export SERVICE_NAME="gemini-streamlit-app"
 
 echo "=== Clone source code ==="
 git clone https://github.com/GoogleCloudPlatform/generative-ai.git --depth=1
@@ -53,21 +53,21 @@ pip install -r requirements.txt
 
 echo "=== Create Artifact Registry repo ==="
 gcloud artifacts repositories create "$AR_REPO" \
-  --location="$GOOGLE_CLOUD_REGION" \
+  --location="$REGION" \
   --repository-format=Docker || echo "Repo có thể đã tồn tại, bỏ qua..."
 
 echo "=== Build & push image ==="
 gcloud builds submit \
-  --tag "$GOOGLE_CLOUD_REGION-docker.pkg.dev/$GOOGLE_CLOUD_PROJECT/$AR_REPO/$SERVICE_NAME"
+  --tag "$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/$SERVICE_NAME"
 
 echo "=== Deploy to Cloud Run ==="
 gcloud run deploy "$SERVICE_NAME" \
   --port=8080 \
-  --image="$GOOGLE_CLOUD_REGION-docker.pkg.dev/$GOOGLE_CLOUD_PROJECT/$AR_REPO/$SERVICE_NAME" \
+  --image="$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/$SERVICE_NAME" \
   --allow-unauthenticated \
-  --region=$GOOGLE_CLOUD_REGION \
+  --region=$REGION \
   --platform=managed \
-  --project=$GOOGLE_CLOUD_PROJECT \
-  --set-env-vars=GOOGLE_CLOUD_PROJECT=$GOOGLE_CLOUD_PROJECT,GOOGLE_CLOUD_REGION=$GOOGLE_CLOUD_REGION
+  --project=$PROJECT_ID \
+  --set-env-vars=PROJECT_ID=$PROJECT_ID,REGION=$REGION
 
 echo "${RANDOM_BG_COLOR}${RANDOM_TEXT_COLOR}${BOLD}=== Done! Check Cloud Run service URL above. - ePlus.DEV ===${RESET}"
