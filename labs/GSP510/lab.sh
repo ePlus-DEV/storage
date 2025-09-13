@@ -25,9 +25,11 @@ warn(){ echo -e "${YELLOW}${BOLD}[WARN]${RESET} $*"; }
 err() { echo -e "${RED}${BOLD}[ERR]${RESET}  $*" >&2; }
 
 # --------------------------- Config (edit if needed) -------------------
-PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project -q)}"
-ZONE="${ZONE:-us-east1-c}"
-REGION="${REGION:-us-east1}"
+ZONE=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+REGION=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+PROJECT_ID=$(gcloud projects list --format="value(projectId)" --limit=1)
 CLUSTER="hello-world-k9el"
 NAMESPACE="gmp-d252"
 AR_REPO="demo-repo"                            # existing per lab
