@@ -46,7 +46,7 @@ pip install -r requirements.txt
 banner "$YELLOW" "📦 Step 3: Create Artifact Registry repo"
 gcloud artifacts repositories create "$AR_REPO" \
   --location="$REGION" \
-  --repository-format=Docker || echo "${YELLOW}⚠️ Repo có thể đã tồn tại, bỏ qua...${RESET}"
+  --repository-format=Docker || echo "${YELLOW}⚠️ Repo may already exist, ignore...${RESET}"
 
 banner "$BLUE" "⚙️ Step 4: Build & push Docker image"
 gcloud builds submit \
