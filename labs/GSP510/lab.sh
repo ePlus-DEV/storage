@@ -129,13 +129,43 @@ kubectl apply -f hello-app/manifests/helloweb-deployment.yaml -n $NAMESPACE
 # --------------------------------------------------------
 # Task 4. Logs-based metric & alert
 # --------------------------------------------------------
-echo "${YELLOW}${BOLD}▶ Task 4: Manual step required in Console!${RESET}"
-echo "  1. Go to Logs Explorer → filter: resource.type=\"k8s_container\" severity=ERROR"
-echo "  2. Create metric: ${BOLD}pod-image-errors${RESET} (Counter)."
-echo "  3. Go to Monitoring → Alerting → Create policy."
-echo "     Name: ${BOLD}Pod Error Alert${RESET}, Threshold >0, Window 10m, Sum aggregation."
-echo "  4. Disable notification channel."
-echo ">>> Then click 'Check my progress' in Qwiklabs."
+echo "${YELLOW}${BOLD}▶ Task 4: Create a logs-based metric and alerting policy${RESET}"
+
+cat > eplus.json <<EOF_END
+{
+  "displayName": "Pod Error Alert",
+  "userLabels": {},
+  "conditions": [
+    {
+      "displayName": "Kubernetes Pod - logging/user/pod-image-errors",
+      "conditionThreshold": {
+        "filter": "resource.type = \"k8s_pod\" AND metric.type = \"logging.googleapis.com/user/pod-image-errors\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "600s",
+            "crossSeriesReducer": "REDUCE_SUM",
+            "perSeriesAligner": "ALIGN_COUNT"
+          }
+        ],
+        "comparison": "COMPARISON_GT",
+        "duration": "0s",
+        "trigger": {
+          "count": 1
+        },
+        "thresholdValue": 0
+      }
+    }
+  ],
+  "alertStrategy": {
+    "autoClose": "604800s"
+  },
+  "combiner": "OR",
+  "enabled": true,
+  "notificationChannels": []
+}
+EOF_END
+
+gcloud alpha monitoring policies create --policy-from-file="eplus.json"
 
 # --------------------------------------------------------
 # Task 5. Fix helloweb deployment
