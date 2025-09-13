@@ -27,9 +27,11 @@ if [[ -z "$CLUSTER" || -z "$NAMESPACE" || -z "$REPO" ]]; then
 fi
 
 # ===== Environment Variables =====
-PROJECT_ID=$(gcloud config get-value project)
-ZONE="europe-west4-a"
-REGION="europe-west4"
+ZONE=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+REGION=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+PROJECT_ID=$(gcloud projects list --format="value(projectId)" --limit=1)
 
 echo "${YELLOW}==========================================${RESET}"
 echo "${GREEN} Project ID : $PROJECT_ID${RESET}"
