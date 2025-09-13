@@ -117,8 +117,3 @@ echo "║                      ✅ Script Completed!                           �
 echo "║   Now run load test manually to simulate traffic surge.              ║"
 echo "╚════════════════════════════════════════════════════════════════════╝"
 echo "${RESET}"
-
-echo "${YELLOW}Run these commands to start load test:${RESET}"
-echo
-echo "FRONTEND_IP=\$(kubectl get svc frontend-external -n dev -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
-echo 'kubectl exec $(kubectl get pod -n dev | grep loadgenerator | awk "{print \$1}") -it -n dev -- bash -c "export USERS=8000; locust --host=http://$FRONTEND_IP --headless -u 8000"'
