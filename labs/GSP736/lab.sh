@@ -26,7 +26,8 @@ echo
 
 # ──────────────────────────────── ENVIRONMENT ──────────────────────────────── #
 echo -e "${YELLOW}${BOLD}━━━━━━━━━━ 🌍 ENVIRONMENT CONFIGURATION ━━━━━━━━━━${RESET}"
-ZONE=${ZONE:-us-central1}
+
+export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 echo -e "${CYAN}Setting compute zone: ${WHITE}${BOLD}$ZONE${RESET}"
 gcloud config set compute/zone $ZONE >/dev/null
 
