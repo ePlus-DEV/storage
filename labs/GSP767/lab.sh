@@ -1,10 +1,10 @@
 #!/bin/bash
-# =================================================================
+# ===============================================================
 #  © 2025 ePlus.DEV. All rights reserved.
-#  Lab: Optimize Costs in GKE - Full Automation Script
-# =================================================================
+#  GKE Cluster Resize & Pod Scheduling Lab Automation Script
+# ===============================================================
 
-# ---- COLOR ----
+# ---- COLOR SCHEME ----
 RED=$(tput setaf 1)
 GREEN=$(tput setaf 2)
 YELLOW=$(tput setaf 3)
@@ -14,72 +14,66 @@ RESET=$(tput sgr0)
 
 # ---- HEADER ----
 echo "${CYAN}${BOLD}"
-echo "╔════════════════════════════════════════════════════╗"
-echo "║   🚀 ePlus.DEV | Optimize Costs in GKE Script      ║"
-echo "╚════════════════════════════════════════════════════╝"
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║                                                            ║"
+echo "║        🚀 ePlus.DEV | GKE Cluster & Scheduling Script      ║"
+echo "║                                                            ║"
+echo "╚════════════════════════════════════════════════════════════╝"
 echo "${RESET}"
 
-# ---- SETUP ----
-echo "${YELLOW}▶ Setting environment...${RESET}"
+# ---- AUTH & CONFIG ----
+echo "${YELLOW}▶ Checking authentication...${RESET}"
+gcloud auth list
+
+echo "${YELLOW}▶ Setting environment variables...${RESET}"
+export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 export PROJECT_ID=$(gcloud config get-value project)
-export ZONE=us-east1-d
-export REGION=us-east1
+
 gcloud config set compute/zone "$ZONE"
 gcloud config set compute/region "$REGION"
 
-# =====================================================
-# TASK 2. Scale Up Hello App
-# =====================================================
-echo "${CYAN}${BOLD}▶ Task 2: Scale Up Hello App${RESET}"
+echo "${YELLOW}▶ Enabling required API...${RESET}"
+gcloud services enable networkmanagement.googleapis.com
+
+# ---- CLUSTER OPS ----
+echo "${YELLOW}▶ Getting cluster credentials...${RESET}"
 gcloud container clusters get-credentials hello-demo-cluster --zone "$ZONE"
 
-echo "${YELLOW}Scaling hello-server to 2 replicas...${RESET}"
+echo "${YELLOW}▶ Scaling hello-server deployment...${RESET}"
 kubectl scale deployment hello-server --replicas=2
 
-echo "${YELLOW}Resizing node pool if needed...${RESET}"
+echo "${YELLOW}▶ Resizing node pool...${RESET}"
 gcloud container clusters resize hello-demo-cluster \
-  --node-pool my-node-pool \
-  --num-nodes 3 \
-  --zone "$ZONE" --quiet
+  --node-pool my-node-pool --num-nodes 3 --zone "$ZONE" --quiet
 
-# =====================================================
-# TASK 3. Migrate to optimized node pool
-# =====================================================
-echo "${CYAN}${BOLD}▶ Task 3: Migrate to optimized node pool${RESET}"
-
-echo "${YELLOW}Creating optimized node pool (e2-standard-2)...${RESET}"
+echo "${YELLOW}▶ Creating new node pool (larger-pool)...${RESET}"
 gcloud container node-pools create larger-pool \
-  --cluster=hello-demo-cluster \
-  --machine-type=e2-standard-2 \
-  --num-nodes=1 \
-  --zone="$ZONE"
+  --cluster=hello-demo-cluster --machine-type=e2-standard-2 \
+  --num-nodes=1 --zone="$ZONE"
 
-echo "${YELLOW}Cordoning nodes in my-node-pool...${RESET}"
+echo "${YELLOW}▶ Cordoning nodes in my-node-pool...${RESET}"
 for node in $(kubectl get nodes -l cloud.google.com/gke-nodepool=my-node-pool -o=name); do
   kubectl cordon "$node"
 done
 
-echo "${YELLOW}Draining pods from my-node-pool...${RESET}"
+echo "${YELLOW}▶ Draining nodes in my-node-pool...${RESET}"
 for node in $(kubectl get nodes -l cloud.google.com/gke-nodepool=my-node-pool -o=name); do
   kubectl drain --force --ignore-daemonsets --delete-emptydir-data --grace-period=10 "$node"
 done
 
-echo "${YELLOW}Checking pods migration...${RESET}"
-kubectl get pods -o wide
+kubectl get pods -o=wide
 
-echo "${YELLOW}Deleting old node pool...${RESET}"
+echo "${YELLOW}▶ Deleting old node pool (my-node-pool)...${RESET}"
 gcloud container node-pools delete my-node-pool \
-  --cluster hello-demo-cluster \
-  --zone "$ZONE" --quiet
+  --cluster hello-demo-cluster --zone "$ZONE" --quiet
 
-# =====================================================
-# TASK 4. Managing a regional cluster
-# =====================================================
-echo "${CYAN}${BOLD}▶ Task 4: Create Regional Cluster${RESET}"
-gcloud container clusters create regional-demo \
-  --region=$REGION --num-nodes=1
+# ---- REGIONAL CLUSTER ----
+echo "${YELLOW}▶ Creating regional cluster...${RESET}"
+gcloud container clusters create regional-demo --region=$REGION --num-nodes=1
 
-echo "${YELLOW}Creating pod-1...${RESET}"
+# ---- PODS ----
+echo "${YELLOW}▶ Creating pod-1...${RESET}"
 cat << EOF > pod-1.yaml
 apiVersion: v1
 kind: Pod
@@ -94,7 +88,7 @@ spec:
 EOF
 kubectl apply -f pod-1.yaml
 
-echo "${YELLOW}Creating pod-2 (anti-affinity)...${RESET}"
+echo "${YELLOW}▶ Creating pod-2 with anti-affinity...${RESET}"
 cat << EOF > pod-2.yaml
 apiVersion: v1
 kind: Pod
@@ -118,35 +112,18 @@ EOF
 kubectl apply -f pod-2.yaml
 
 sleep 20
-kubectl get pod pod-1 pod-2 -o wide
-
-# =====================================================
-# TASK 5. Optimize cross-zonal traffic
-# =====================================================
-echo "${CYAN}${BOLD}▶ Task 5: Optimize cross-zonal traffic${RESET}"
-
-echo "${YELLOW}Updating pod-2 to use podAffinity (same node)...${RESET}"
-sed -i 's/podAntiAffinity/podAffinity/g' pod-2.yaml
-kubectl delete pod pod-2
-kubectl apply -f pod-2.yaml
-
-sleep 15
-kubectl get pod pod-1 pod-2 -o wide
+kubectl get pod pod-1 pod-2 --output wide
 
 echo
-echo $REGION
+echo "${GREEN}▶ REGION:${RESET} ${CYAN}$REGION${RESET}"
 echo
-echo 
-echo "logName="projects/$PROJECT_ID/logs/compute.googleapis.com%2Fvpc_flows""
-echo
-echo 
-# echo -e "\033[1;33mExamine flow logs\033[0m \033[1;34mhttps://console.cloud.google.com/networking/networks/details/default?project=$DEVSHELL_PROJECT_ID&inv=1&invt=AbzSCA&pageTab=SUBNETS\033[0m"
+echo "${YELLOW}▶ VPC Flow Logs query:${RESET}"
+echo "logName=\"projects/$PROJECT_ID/logs/compute.googleapis.com%2Fvpc_flows\""
 echo
 
 # ---- FOOTER ----
 echo "${GREEN}${BOLD}"
-echo "╔════════════════════════════════════════════════════╗"
-echo "║   ✅ Lab Completed | Optimize Costs in GKE         ║"
-echo "║   © 2025 ePlus.DEV                                 ║"
-echo "╚════════════════════════════════════════════════════╝"
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║   ✅ Script Completed | © 2025 ePlus.DEV                   ║"
+echo "╚════════════════════════════════════════════════════════════╝"
 echo "${RESET}"
