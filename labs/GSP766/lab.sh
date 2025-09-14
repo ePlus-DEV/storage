@@ -20,6 +20,8 @@ echo "║                                                            ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo "${RESET}"
 
+export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+
 # ---- LAB STEPS ----
 echo "${YELLOW}▶ Copying qwiklab files...${RESET}"
 gsutil -m cp -r gs://spls/gsp766/gke-qwiklab ~
