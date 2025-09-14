@@ -135,8 +135,7 @@ kubectl get pod pod-1 pod-2 -o wide
 
 # ---- FOOTER ----
 echo "${GREEN}${BOLD}"
-echo "╔════════════════════════════════════════════════════╗"
-echo "║   ✅ Lab Completed | Optimize Costs in GKE         ║"
-echo "║   © 2025 ePlus.DEV                                 ║"
-echo "╚════════════════════════════════════════════════════╝"
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║   ✅ Script Completed | © 2025 ePlus.DEV                   ║"
+echo "╚════════════════════════════════════════════════════════════╝"
 echo "${RESET}"
