@@ -1,89 +1,86 @@
 #!/bin/bash
-# ====================================================================================
-#  Google Cloud BigQuery Hands-on Lab Script
-#  Author      : Nguyễn Ngọc Minh Hoàng (David)
-#  Website     : https://eplus.dev
-#  Description : End-to-end script for Qwiklabs BigQuery lab tasks
-#  Copyright   : (c) 2025 Nguyễn Ngọc Minh Hoàng. All rights reserved.
-#  License     : For educational/lab use only. Do not use on production systems.
-# ====================================================================================
+BLACK_TEXT=$'\033[0;90m'
+RED_TEXT=$'\033[0;91m'
+GREEN_TEXT=$'\033[0;92m'
+YELLOW_TEXT=$'\033[0;93m'
+BLUE_TEXT=$'\033[0;94m'
+MAGENTA_TEXT=$'\033[0;95m'
+CYAN_TEXT=$'\033[0;96m'
+WHITE_TEXT=$'\033[0;97m'
+RESET_FORMAT=$'\033[0m'
+BOLD_TEXT=$'\033[1m'
+UNDERLINE_TEXT=$'\033[4m'
 
-set -euo pipefail
+clear
 
-# Colors
-BOLD=$(tput bold || true); RESET=$(tput sgr0 || true)
-GREEN=$(tput setaf 2 || true); YELLOW=$(tput setaf 3 || true)
+echo
+echo "${CYAN_TEXT}${BOLD_TEXT}=========================================${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}🚀         INITIATING EXECUTION         🚀${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}=========================================${RESET_FORMAT}"
+echo
 
-banner(){ echo -e "\n${BOLD}${YELLOW}==> $*${RESET}\n"; }
-done_msg(){ echo -e "${GREEN}✔ Completed${RESET}\n"; }
+echo "${YELLOW_TEXT}${BOLD_TEXT}📖 Displaying details for the Shakespeare public dataset...${RESET_FORMAT}"
+bq show bigquery-public-data:samples.shakespeare
+echo 
 
-# Bản quyền
-echo -e "${BOLD}Google Cloud BigQuery Hands-on Lab Script${RESET}"
-echo "Author    : Nguyễn Ngọc Minh Hoàng (David)"
-echo "Website   : https://eplus.dev"
-echo "Copyright : (c) 2025 All rights reserved."
-echo "--------------------------------------------"
-
-# ================= Task 1 =================
-banner "Task 1: Show schema of Shakespeare sample table"
-bq show bigquery-public-data:samples.shakespeare >/dev/null
-done_msg
-
-# ================= Task 2 =================
-banner "Task 2: Help command"
-bq help query >/dev/null
-bq help >/dev/null
-done_msg
-
-# ================= Task 3 =================
-banner "Task 3a: Query substring 'raisin'"
+echo "${YELLOW_TEXT}${BOLD_TEXT}🔍 Searching for words containing 'raisin' in Shakespeare's works...${RESET_FORMAT}"
 bq query --use_legacy_sql=false \
-'SELECT word, SUM(word_count) AS count
- FROM `bigquery-public-data`.samples.shakespeare
- WHERE word LIKE "%raisin%"
- GROUP BY word' >/dev/null
-done_msg
+'SELECT
+  word,
+  SUM(word_count) AS count
+ FROM
+  `bigquery-public-data`.samples.shakespeare
+ WHERE
+  word LIKE "%raisin%"
+ GROUP BY
+  word'
+echo 
 
-banner "Task 3b: Query word 'huzzah'"
+echo "${YELLOW_TEXT}${BOLD_TEXT}🗣️ Checking if the word 'huzzah' appears in the dataset...${RESET_FORMAT}"
 bq query --use_legacy_sql=false \
-'SELECT word
- FROM `bigquery-public-data`.samples.shakespeare
- WHERE word = "huzzah"' >/dev/null
-done_msg
+'SELECT
+  word
+ FROM
+  `bigquery-public-data`.samples.shakespeare
+ WHERE
+  word = "huzzah"'
+echo 
 
-# ================= Task 4 =================
-banner "Task 4a: Create dataset 'babynames'"
-bq mk babynames >/dev/null
-done_msg
+echo "${MAGENTA_TEXT}${BOLD_TEXT}🛠️ Creating a new BigQuery dataset named 'babynames'...${RESET_FORMAT}"
+bq mk babynames
+echo 
 
-banner "Task 4b: Download & unzip baby names"
-curl -s -LO http://www.ssa.gov/OACT/babynames/names.zip || wget -q http://www.ssa.gov/OACT/babynames/names.zip
-unzip -o -q names.zip
-done_msg
+echo "${MAGENTA_TEXT}${BOLD_TEXT}🌐 Downloading the baby names data archive...${RESET_FORMAT}"
+wget https://github.com/ePlus-DEV/storage/blob/main/labs/GSP071/names.zip
+echo 
 
-banner "Task 4c: Load yob2010.txt into table"
-bq load babynames.names2010 yob2010.txt name:string,gender:string,count:integer >/dev/null
-done_msg
+echo "${MAGENTA_TEXT}${BOLD_TEXT}📦 Extracting the downloaded baby names data...${RESET_FORMAT}"
+unzip names.zip
+echo 
 
-# ================= Task 5 =================
-banner "Task 5a: Query top 5 most popular girls names"
-bq query "SELECT name,count FROM babynames.names2010 WHERE gender = 'F' ORDER BY count DESC LIMIT 5" >/dev/null
-done_msg
+echo "${MAGENTA_TEXT}${BOLD_TEXT}📤 Loading the 2010 baby names data (yob2010.txt) into the 'babynames.names2010' table...${RESET_FORMAT}"
+bq load babynames.names2010 yob2010.txt name:string,gender:string,count:integer
+echo 
 
-banner "Task 5b: Query least common boys names"
-bq query "SELECT name,count FROM babynames.names2010 WHERE gender = 'M' ORDER BY count ASC LIMIT 5" >/dev/null
-done_msg
+echo "${GREEN_TEXT}${BOLD_TEXT}📊 Querying the top 5 most popular female names from 2010...${RESET_FORMAT}"
+bq query "SELECT name,count FROM babynames.names2010 WHERE gender = 'F' ORDER BY count DESC LIMIT 5"
+echo 
 
-# ================= Task 6 =================
-banner "Task 6: Quiz Quick Answers"
-echo "Q1: Access BigQuery using → REST API, Command line tool, Web UI"
-echo "Q2: CLI tool for BigQuery → bq"
-done_msg
+echo "${GREEN_TEXT}${BOLD_TEXT}📊 Querying the 5 least common male names from 2010...${RESET_FORMAT}"
+bq query "SELECT name,count FROM babynames.names2010 WHERE gender = 'M' ORDER BY count ASC LIMIT 5"
+echo 
 
-# ================= Task 7 =================
-banner "Task 7: Wait for grader then remove dataset"
-sleep 60
-bq rm -r -f babynames >/dev/null
-done_msg
+echo "${RED_TEXT}${BOLD_TEXT}🧹 Removing the 'babynames' dataset to clean up resources...${RESET_FORMAT}"
+bq rm -r babynames
+echo 
 
-echo -e "${GREEN}${BOLD}🎉 Lab script completed successfully!${RESET}"
+echo "${RED_TEXT}${BOLD_TEXT}🗑️ Deleting the downloaded and extracted local files...${RESET_FORMAT}"
+rm -f names.zip yob2010.txt
+echo 
+
+echo
+echo "${CYAN_TEXT}${BOLD_TEXT}===================================${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}🚀  LAB COMPLETED SUCCESSFULLY  🚀${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}===================================${RESET_FORMAT}"
+echo
+#-----------------------------------------------------end----------------------------------------------------------#
