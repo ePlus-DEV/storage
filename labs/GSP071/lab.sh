@@ -17,7 +17,7 @@ GREEN=$(tput setaf 2 || true); YELLOW=$(tput setaf 3 || true)
 banner(){ echo -e "\n${BOLD}${YELLOW}==> $*${RESET}\n"; }
 done_msg(){ echo -e "${GREEN}✔ Completed${RESET}\n"; }
 
-# Copyright
+# Bản quyền
 echo -e "${BOLD}Google Cloud BigQuery Hands-on Lab Script${RESET}"
 echo "Author    : Nguyễn Ngọc Minh Hoàng (David)"
 echo "Website   : https://eplus.dev"
@@ -29,7 +29,13 @@ banner "Task 1: Show schema of Shakespeare sample table"
 bq show bigquery-public-data:samples.shakespeare >/dev/null
 done_msg
 
-# ================= Task 3a =================
+# ================= Task 2 =================
+banner "Task 2: Help command"
+bq help query >/dev/null
+bq help >/dev/null
+done_msg
+
+# ================= Task 3 =================
 banner "Task 3a: Query substring 'raisin'"
 bq query --use_legacy_sql=false \
 'SELECT word, SUM(word_count) AS count
@@ -38,7 +44,6 @@ bq query --use_legacy_sql=false \
  GROUP BY word' >/dev/null
 done_msg
 
-# ================= Task 3b =================
 banner "Task 3b: Query word 'huzzah'"
 bq query --use_legacy_sql=false \
 'SELECT word
@@ -46,33 +51,30 @@ bq query --use_legacy_sql=false \
  WHERE word = "huzzah"' >/dev/null
 done_msg
 
-# ================= Task 4a =================
+# ================= Task 4 =================
 banner "Task 4a: Create dataset 'babynames'"
 bq mk babynames >/dev/null
 done_msg
 
-# ================= Task 4b =================
 banner "Task 4b: Download & unzip baby names"
 curl -s -LO http://www.ssa.gov/OACT/babynames/names.zip || wget -q http://www.ssa.gov/OACT/babynames/names.zip
 unzip -o -q names.zip
 done_msg
 
-# ================= Task 4c =================
 banner "Task 4c: Load yob2010.txt into table"
 bq load babynames.names2010 yob2010.txt name:string,gender:string,count:integer >/dev/null
 done_msg
 
-# ================= Task 5a =================
+# ================= Task 5 =================
 banner "Task 5a: Query top 5 most popular girls names"
 bq query "SELECT name,count FROM babynames.names2010 WHERE gender = 'F' ORDER BY count DESC LIMIT 5" >/dev/null
 done_msg
 
-# ================= Task 5b =================
 banner "Task 5b: Query least common boys names"
 bq query "SELECT name,count FROM babynames.names2010 WHERE gender = 'M' ORDER BY count ASC LIMIT 5" >/dev/null
 done_msg
 
-# ================= Task 6 (Quiz note) =================
+# ================= Task 6 =================
 banner "Task 6: Quiz Quick Answers"
 echo "Q1: Access BigQuery using → REST API, Command line tool, Web UI"
 echo "Q2: CLI tool for BigQuery → bq"
