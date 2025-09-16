@@ -25,6 +25,9 @@ RESET=`tput sgr0`
 
 echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV ${RESET}"
 
+export REGION=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+
 gcloud services enable \
   dataplex.googleapis.com --project=$DEVSHELL_PROJECT_ID
 
