@@ -23,40 +23,21 @@ BOLD=`tput bold`
 RESET=`tput sgr0`
 #----------------------------------------------------start--------------------------------------------------#
 
-echo "${YELLOW}${BOLD}Starting${RESET}" "${GREEN}${BOLD}Execution - ePlus.DEV${RESET}"
+echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV ${RESET}"
 
-gcloud services enable dataplex.googleapis.com
-
-export PROJECT_ID=$(gcloud config get-value project)
 export REGION=$(gcloud compute project-info describe \
   --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
-gcloud config set compute/region $REGION
+gcloud services enable \
+  dataplex.googleapis.com --project=$DEVSHELL_PROJECT_ID
 
-gcloud dataplex lakes create ecommerce \
-   --location=$REGION \
-   --display-name="Ecommerce" \
-   --description="Ecommerce Domain"
+gcloud dataplex lakes create ecommerce --location=$REGION --display-name="Ecommerce" --description="subscribe to techcps"
 
-gcloud dataplex zones create orders-curated-zone \
-    --location=$REGION \
-    --lake=ecommerce \
-    --display-name="Orders Curated Zone" \
-    --resource-location-type=SINGLE_REGION \
-    --type=CURATED \
-    --discovery-enabled \
-    --discovery-schedule="0 * * * *"
-    
+gcloud dataplex zones create orders-curated-zone --location=$REGION --lake=ecommerce --display-name="Orders Curated Zone" --resource-location-type=SINGLE_REGION --type=CURATED --discovery-enabled --discovery-schedule="0 * * * *"
+
 bq mk --location=$REGION --dataset orders 
 
-gcloud dataplex assets create orders-curated-dataset \
---location=$REGION \
---lake=ecommerce \
---zone=orders-curated-zone \
---display-name="Orders Curated Dataset" \
---resource-type=BIGQUERY_DATASET \
---resource-name=projects/$PROJECT_ID/datasets/orders \
---discovery-enabled 
+gcloud dataplex assets create orders-curated-dataset --location=$REGION --lake=ecommerce --zone=orders-curated-zone --display-name="Orders Curated Dataset" --resource-type=BIGQUERY_DATASET --resource-name=projects/$DEVSHELL_PROJECT_ID/datasets/orders --discovery-enabled 
 
 gcloud dataplex assets delete orders-curated-dataset --location=$REGION --zone=orders-curated-zone --lake=ecommerce --quiet
 
@@ -64,6 +45,6 @@ gcloud dataplex zones delete orders-curated-zone --location=$REGION --lake=ecomm
 
 gcloud dataplex lakes delete ecommerce --location=$REGION --quiet
 
-echo "${RED}${BOLD}Congratulations${RESET}" "${WHITE}${BOLD}for${RESET}" "${GREEN}${BOLD}Completing the Lab !!! - ePlus.DEV${RESET}"
+echo "${BG_RED}${BOLD}Congratulations For Completing!!! - ePlus.DEV ${RESET}"
 
 #-----------------------------------------------------end----------------------------------------------------------#
