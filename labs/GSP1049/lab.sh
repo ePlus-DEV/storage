@@ -93,7 +93,7 @@ gcloud spanner databases execute-sql $DATABASE_ID --instance=$INSTANCE_ID \
  '3320d98e-6437-4515-9e83-137f105f7fbc',
  '6b2b2774-add9-4881-8702-d179af0518d8');"
 
-echo "${GREEN}${BOLD}>>> ✅ At this point, go back to Qwiklabs and click 'Check my progress' for Task 4 before continuing!${RESET}"
+echo "${GREEN}${BOLD}>>> ✅ At this point, go back to GCP and click 'Check my progress' for Task 4 before continuing!${RESET}"
 
 # ------------------------------------------------------------
 # Task 5: Load data with Dataflow
