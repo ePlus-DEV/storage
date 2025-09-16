@@ -14,7 +14,8 @@ BOLD=$(tput bold)
 
 # Setup
 PROJECT_ID=$(gcloud config get-value project)
-REGION=$(gcloud config get-value compute/region)
+REGION=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 INSTANCE_ID="banking-instance"
 DATABASE_ID="banking-db"
 
