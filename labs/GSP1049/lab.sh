@@ -58,6 +58,14 @@ python3 insert.py
 # ------------------------------------------------------------
 # Task 4: Batch insert via client library
 # ------------------------------------------------------------
+echo "${CYAN}>>> [Task 4] Cleaning old Task 4 rows (if any)...${RESET}"
+gcloud spanner databases execute-sql $DATABASE_ID --instance=$INSTANCE_ID \
+ --sql="DELETE FROM Customer WHERE CustomerId IN (
+ 'edfc683f-bd87-4bab-9423-01d1b2307c0d',
+ '1f3842ca-4529-40ff-acdd-88e8a87eb404',
+ '3320d98e-6437-4515-9e83-137f105f7fbc',
+ '6b2b2774-add9-4881-8702-d179af0518d8');"
+
 echo "${CYAN}>>> [Task 4] Batch insert records...${RESET}"
 cat > batch_insert.py <<'EOF'
 from google.cloud import spanner
@@ -93,7 +101,12 @@ gcloud spanner databases execute-sql $DATABASE_ID --instance=$INSTANCE_ID \
  '3320d98e-6437-4515-9e83-137f105f7fbc',
  '6b2b2774-add9-4881-8702-d179af0518d8');"
 
-echo "${GREEN}${BOLD}>>> ✅ At this point, go back to GCP and click 'Check my progress' for Task 4 before continuing!${RESET}"
+echo
+read -p ">>> Did you click 'Check my progress' for Task 4 in Qwiklabs? (Y/n): " CONFIRM
+if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+  echo "⏸ Script stopped. Please check Task 4 in Qwiklabs, then re-run to continue."
+  exit 0
+fi
 
 # ------------------------------------------------------------
 # Task 5: Load data with Dataflow

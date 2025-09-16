@@ -20,7 +20,7 @@ echo -e "${CYAN}============================================================${NC
 PROJECT_ID=$(gcloud config get-value project)
 INSTANCE_ID="banking-instance"
 DATABASE_ID="banking-db"
-REGION="us-east4"
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
 echo -e "${YELLOW}>>> Current Project:${NC} $PROJECT_ID"
 echo -e "${YELLOW}>>> Using Spanner Instance:${NC} $INSTANCE_ID"
