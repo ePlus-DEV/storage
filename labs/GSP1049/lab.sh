@@ -1,57 +1,41 @@
 #!/bin/bash
+# ============================================================
+#  Qwiklabs: Cloud Spanner + Dataflow Lab Automation Script
+#  Author: David Nguyen (ePlus.DEV)
+#  Copyright (c) 2025 David Nguyen. All rights reserved.
+# ============================================================
 
-# Enhanced Color Definitions
-BLACK=$'\033[0;90m'
-RED=$'\033[0;91m'
+# Colors
 GREEN=$'\033[0;92m'
 YELLOW=$'\033[0;93m'
-BLUE=$'\033[0;94m'
-MAGENTA=$'\033[0;95m'
 CYAN=$'\033[0;96m'
-WHITE=$'\033[0;97m'
+RESET=$'\033[0m'
+BOLD=$(tput bold)
 
-BG_BLACK=`tput setab 0`
-BG_RED=`tput setab 1`
-BG_GREEN=`tput setab 2`
-BG_YELLOW=`tput setab 3`
-BG_BLUE=`tput setab 4`
-BG_MAGENTA=`tput setab 5`
-BG_CYAN=`tput setab 6`
-BG_WHITE=`tput setab 7`
+# Setup
+PROJECT_ID=$(gcloud config get-value project)
+REGION=$(gcloud config get-value compute/region)
+INSTANCE_ID="banking-instance"
+DATABASE_ID="banking-db"
 
-BOLD=`tput bold`
-RESET=`tput sgr0`
+echo "${CYAN}${BOLD}>>> Project:${RESET} $PROJECT_ID"
+echo "${CYAN}${BOLD}>>> Region:${RESET} $REGION"
+echo "${CYAN}${BOLD}>>> Instance:${RESET} $INSTANCE_ID"
+echo "${CYAN}${BOLD}>>> Database:${RESET} $DATABASE_ID"
 
-# Header Section
-echo "${BG_MAGENTA}${BOLD}╔═══════════════════════╗${RESET}"
-echo "${BG_MAGENTA}${BOLD}        ePlus.DEV       ${RESET}"
-echo "${BG_MAGENTA}${BOLD}╚═══════════════════════╝${RESET}"
-echo
-echo "${CYAN}${BOLD}          Expert Tutorial by David Nguyen              ${RESET}"
-echo "${YELLOW}For more GCP monitoring tutorials, visit: https://eplus.dev${RESET}"
-echo
-
-
-
-gcloud auth list
-
-export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
-
-export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-
-gcloud config set compute/region $REGION
-
-export PROJECT_ID=$(gcloud config get-value project)
-
-export PROJECT_ID=$DEVSHELL_PROJECT_ID
-
-
-gcloud spanner databases execute-sql banking-db --instance=banking-instance \
+# ------------------------------------------------------------
+# Task 2: Insert data with DML
+# ------------------------------------------------------------
+echo "${CYAN}>>> [Task 2] Insert single record via DML...${RESET}"
+gcloud spanner databases execute-sql $DATABASE_ID --instance=$INSTANCE_ID \
  --sql="INSERT INTO Customer (CustomerId, Name, Location) VALUES ('bdaaaa97-1b4b-4e58-b4ad-84030de92235', 'Richard Nelson', 'Ada Ohio')"
 
-cat > insert.py <<EOF_CP
+# ------------------------------------------------------------
+# Task 3: Insert via client library (Python)
+# ------------------------------------------------------------
+echo "${CYAN}>>> [Task 3] Insert record via Python client...${RESET}"
+cat > insert.py <<'EOF'
 from google.cloud import spanner
-from google.cloud.spanner_v1 import param_types
 
 INSTANCE_ID = "banking-instance"
 DATABASE_ID = "banking-db"
@@ -62,21 +46,19 @@ database = instance.database(DATABASE_ID)
 
 def insert_customer(transaction):
     row_ct = transaction.execute_update(
-        "INSERT INTO Customer (CustomerId, Name, Location)"
+        "INSERT INTO Customer (CustomerId, Name, Location) "
         "VALUES ('b2b4002d-7813-4551-b83b-366ef95f9273', 'Shana Underwood', 'Ely Iowa')"
     )
     print("{} record(s) inserted.".format(row_ct))
 
 database.run_in_transaction(insert_customer)
-
-EOF_CP
-
+EOF
 python3 insert.py
 
-
-sleep 60
-
-
+# ------------------------------------------------------------
+# Task 4: Batch insert via client library
+# ------------------------------------------------------------
+echo "${CYAN}>>> [Task 4] Batch insert records...${RESET}"
 cat > batch_insert.py <<'EOF'
 from google.cloud import spanner
 
@@ -99,42 +81,46 @@ with database.batch() as batch:
         ],
     )
 
-print("Rows inserted")
+print("✅ Task 4 Batch insert done")
 EOF
-
-
 python3 batch_insert.py
 
+echo "${YELLOW}>>> Verify Task 4 rows...${RESET}"
+gcloud spanner databases execute-sql $DATABASE_ID --instance=$INSTANCE_ID \
+ --sql="SELECT COUNT(*) AS cnt FROM Customer WHERE CustomerId IN (
+ 'edfc683f-bd87-4bab-9423-01d1b2307c0d',
+ '1f3842ca-4529-40ff-acdd-88e8a87eb404',
+ '3320d98e-6437-4515-9e83-137f105f7fbc',
+ '6b2b2774-add9-4881-8702-d179af0518d8');"
 
-sleep 60
+echo "${GREEN}${BOLD}>>> ✅ At this point, go back to Qwiklabs and click 'Check my progress' for Task 4 before continuing!${RESET}"
 
-
-
-
-
-gsutil mb gs://$DEVSHELL_PROJECT_ID
+# ------------------------------------------------------------
+# Task 5: Load data with Dataflow
+# ------------------------------------------------------------
+echo "${CYAN}>>> [Task 5] Preparing GCS bucket for Dataflow...${RESET}"
+gsutil mb gs://$PROJECT_ID || echo "Bucket already exists"
 touch emptyfile
-gsutil cp emptyfile gs://$DEVSHELL_PROJECT_ID/tmp/emptyfile
+gsutil cp emptyfile gs://$PROJECT_ID/tmp/emptyfile
 
-
+echo "${CYAN}>>> Enable Dataflow API...${RESET}"
 gcloud services disable dataflow.googleapis.com --force
 gcloud services enable dataflow.googleapis.com
 
+echo "${CYAN}>>> Running Dataflow job (this will take 12–16 min)...${RESET}"
+JOB_OUTPUT=$(gcloud dataflow jobs run spanner-load \
+  --gcs-location gs://dataflow-templates/latest/GCS_Text_to_Cloud_Spanner \
+  --region=$REGION \
+  --staging-location gs://$PROJECT_ID/tmp \
+  --parameters instanceId=$INSTANCE_ID,databaseId=$DATABASE_ID,importManifest=gs://cloud-training/OCBL372/manifest.json)
 
-sleep 90
+JOB_LINK=$(echo "$JOB_OUTPUT" | grep "https://console.cloud.google.com/dataflow/jobs" | tail -1)
 
-gcloud dataflow jobs run spanner-load --gcs-location gs://dataflow-templates-$REGION/latest/GCS_Text_to_Cloud_Spanner --region $REGION --staging-location gs://$DEVSHELL_PROJECT_ID/tmp/ --parameters instanceId=banking-instance,databaseId=banking-db,importManifest=gs://cloud-training/OCBL372/manifest.json
+echo "${GREEN}>>> Dataflow job submitted.${RESET}"
+echo "${CYAN}View job: $JOB_LINK${RESET}"
 
-echo -e "\033[1;33mCheck Dataflow Job is status\033[0m \033[1;34mhttps://console.cloud.google.com/dataflow/jobs?referrer=search&project=$DEVSHELL_PROJECT_ID\033[0m"
+echo "${YELLOW}>>> After Dataflow finishes, verify row count with:${RESET}"
+echo "gcloud spanner databases execute-sql $DATABASE_ID --instance=$INSTANCE_ID --sql=\"SELECT COUNT(*) FROM Customer;\""
 
 echo
-
-# Completion Message
-echo "${BG_GREEN}${BOLD}╔════════════════════════════════╗${RESET}"
-echo "${BG_GREEN}${BOLD}          LAB COMPLETE!           ${RESET}"
-echo "${BG_GREEN}${BOLD}╚════════════════════════════════╝${RESET}"
-echo
-
-echo "${BLUE}https://eplus.dev${RESET}"
-echo
-echo "${MAGENTA}${BOLD}📊 Happy monitoring with Google Managed Prometheus!${RESET}"
+echo "${GREEN}${BOLD}>>> LAB COMPLETE! 🎉${RESET}"
