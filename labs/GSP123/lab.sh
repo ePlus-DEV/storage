@@ -71,19 +71,19 @@ while [ "$cp_success" = false ]; do
   exit_status=$?
 
   if [ "$exit_status" -eq 0 ]; then
-    echo "Function deployed successfully [https://www.youtube.com/@techcps]"
+    echo "Function deployed successfully [https://eplus.dev]"
     cp_success=true
   else
     echo "Cluster creation failed. Checking if cluster already exists..."
 
     if gcloud dataproc clusters describe "$CLUSTER_NAME" --region "$REGION" &>/dev/null; then
-      echo "Cluster already exists. Deleting. [https://www.youtube.com/@techcps]"
+      echo "Cluster already exists. Deleting. [https://eplus.dev]"
       gcloud dataproc clusters delete "$CLUSTER_NAME" --region "$REGION" --quiet
       echo "Cluster deleted. Retrying in 10 seconds..."
     else
-      echo "Unknown errors. Retrying in 10 seconds[https://www.youtube.com/@techcps]"
+      echo "Unknown errors. Retrying in 10 seconds[https://eplus.dev]"
     fi
-    echo "Please subscribe to techcps [https://www.youtube.com/@techcps]"
+    echo "Please subscribe to techcps [https://eplus.dev]"
     sleep 10
   fi
 done
