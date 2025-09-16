@@ -38,6 +38,8 @@ gcloud config list project
 REGION=$(gcloud compute project-info describe \
   --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
+gcloud config set project $DEVSHELL_PROJECT_ID
+
 gcloud spanner instances create banking-instance \
 --config=regional-$REGION  \
 --description="awesome" \
