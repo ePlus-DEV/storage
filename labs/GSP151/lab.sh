@@ -23,11 +23,9 @@ BOLD=`tput bold`
 RESET=`tput sgr0`
 #----------------------------------------------------start--------------------------------------------------#
 
-${RESET}"
-
 ZONE=$(gcloud compute project-info describe \
   --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
-  
+
 #----------------------------------------------------code--------------------------------------------------#
 
 gcloud sql instances create myinstance \
