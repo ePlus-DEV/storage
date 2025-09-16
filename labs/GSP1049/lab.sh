@@ -103,9 +103,9 @@ gcloud spanner databases execute-sql $DATABASE_ID --instance=$INSTANCE_ID \
  '6b2b2774-add9-4881-8702-d179af0518d8');"
 
 echo
-read -p ">>> Did you click 'Check my progress' for Task 4 in Qwiklabs? (Y/n): " CONFIRM
+read -p ">>> Did you click 'Check my progress' for Task 4 in GCP? (Y/n): " CONFIRM
 if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-  echo "⏸ Script stopped. Please check Task 4 in Qwiklabs, then re-run to continue."
+  echo "⏸ Script stopped. Please check Task 4 in GCP, then re-run to continue."
   exit 0
 fi
 
