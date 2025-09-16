@@ -14,7 +14,8 @@ BOLD=$(tput bold)
 
 # Setup
 PROJECT_ID=$(gcloud config get-value project)
-REGION=$(gcloud config get-value compute/region)
+REGION=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 INSTANCE_ID="banking-instance"
 DATABASE_ID="banking-db"
 
@@ -126,7 +127,6 @@ gcloud dataflow jobs run spanner-load \
   --region $REGION \
   --staging-location gs://$DEVSHELL_PROJECT_ID/tmp/ \
   --parameters instanceId=banking-instance,databaseId=banking-db,importManifest=gs://cloud-training/OCBL372/manifest.json
-
 
 echo "${GREEN}>>> Dataflow job submitted.${RESET}"
 echo "${CYAN}View job in Console:${RESET} https://console.cloud.google.com/dataflow/jobs?referrer=search&project=$DEVSHELL_PROJECT_ID"
