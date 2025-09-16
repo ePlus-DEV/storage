@@ -121,15 +121,15 @@ gcloud services disable dataflow.googleapis.com --force
 gcloud services enable dataflow.googleapis.com
 
 echo "${CYAN}>>> Running Dataflow job (this will take 12–16 min)...${RESET}"
-JOB_ID=$(gcloud dataflow jobs run spanner-load \
-  --gcs-location gs://dataflow-templates/latest/GCS_Text_to_Cloud_Spanner \
-  --region=$REGION \
-  --staging-location gs://$PROJECT_ID/tmp \
-  --format="value(id)" \
-  --parameters instanceId=$INSTANCE_ID,databaseId=$DATABASE_ID,importManifest=gs://cloud-training/OCBL372/manifest.json)
+gcloud dataflow jobs run spanner-load \
+  --gcs-location gs://dataflow-templates-$REGION/latest/GCS_Text_to_Cloud_Spanner \
+  --region $REGION \
+  --staging-location gs://$DEVSHELL_PROJECT_ID/tmp/ \
+  --parameters instanceId=banking-instance,databaseId=banking-db,importManifest=gs://cloud-training/OCBL372/manifest.json
+
 
 echo "${GREEN}>>> Dataflow job submitted.${RESET}"
-echo "${CYAN}View job in Console:${RESET} https://console.cloud.google.com/dataflow/jobs/$REGION/$JOB_ID?project=$PROJECT_ID"
+echo "${CYAN}View job in Console:${RESET} https://console.cloud.google.com/dataflow/jobs?referrer=search&project=$DEVSHELL_PROJECT_ID"
 
 echo "${YELLOW}>>> After Dataflow finishes, verify row count with:${RESET}"
 echo "gcloud spanner databases execute-sql $DATABASE_ID --instance=$INSTANCE_ID --sql=\"SELECT COUNT(*) FROM Customer;\""
