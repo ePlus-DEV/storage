@@ -31,6 +31,10 @@ echo "${CYAN}${BOLD}          Expert Tutorial by David Nguyen              ${RES
 echo "${YELLOW}For more GCP monitoring tutorials, visit: https://eplus.dev${RESET}"
 echo
 
+gcloud auth list
+
+gcloud config list project
+
 REGION=$(gcloud compute project-info describe \
   --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
