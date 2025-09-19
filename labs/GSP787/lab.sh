@@ -114,6 +114,27 @@ bq query --use_legacy_sql=false \
  ORDER BY date ASC
  LIMIT 1"
 
+bq query --use_legacy_sql=false \
+"SELECT
+  DATE(date) AS date
+FROM (
+  SELECT
+    date,
+    SUM(cumulative_deceased) AS total_deaths
+  FROM
+    `bigquery-public-data.covid19_open_data.covid19_open_data`
+  WHERE
+    country_name = 'Italy'
+    AND date >= '2020-01-01'
+  GROUP BY
+    date
+)
+WHERE
+  total_deaths > ${death_threshold}
+ORDER BY
+  date ASC
+LIMIT 1"
+
 # Task 6 - Finding days with zero net new cases
 echo
 echo "${BOLD}${RED}╔════════════════════════════════════════════════════════╗${RESET}"
