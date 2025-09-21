@@ -8,10 +8,11 @@ echo "👉 https://eplus.dev"
 echo "==============================================="
 echo ""
 
-
-export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
-export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-export PROJECT_ID=$(gcloud config get-value project)
+# ----------------------------------------------
+# 1. User Input
+# ----------------------------------------------
+read -p "👉 Enter your GCP Project ID: " PROJECT_ID
+read -p "👉 Enter your Location (e.g., us, us-central1): " LOCATION
 
 # ----------------------------------------------
 # 2. Enable API & Install SDK
