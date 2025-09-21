@@ -23,8 +23,8 @@ function echo_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 function echo_warn()  { echo -e "${YELLOW}[WAITING]${NC} $1"; }
 function echo_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-# Input: Region
-read -p "Enter the region (e.g., us-east4): " REGION
+export REGION=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
 # Fetch Project ID
 PROJECT_ID=$(gcloud config get-value project)
