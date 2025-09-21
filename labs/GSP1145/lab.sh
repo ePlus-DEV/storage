@@ -95,4 +95,8 @@ echo_success "Asset created."
 
 echo_info "Proceed to the UI to apply aspects to table columns."
 
+echo ""
+
+echo ""
+
 echo "${RED}${BOLD}Congratulations${RESET}" "${WHITE}${BOLD}for${RESET}" "${GREEN}${BOLD}Completing the Lab !!! - ePlus.DEV${RESET}"
