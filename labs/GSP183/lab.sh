@@ -60,17 +60,21 @@ git clone https://github.com/GoogleCloudPlatform/training-data-analyst
 echo "=== Step 7: Move into sample app directory ==="
 cd ~/training-data-analyst/courses/developingapps/python/devenv/ || exit 1
 
-echo "=== Step 8: Run sample web server (manual stop with Ctrl+C) ==="
+echo "=== Step 8: Run sample web server (Ctrl+C to stop manually) ==="
 sudo python3 server.py &
-
-echo "Server started in background. Test it using External IP of your VM."
 sleep 10
+echo "Server started in background. Test it using External IP of your VM."
 
 echo "=== Step 9: Install Python requirements ==="
 sudo pip3 install -r requirements.txt --break-system-packages
 
+echo "=== Step 9b: Fix dependency conflicts (upgrade google-auth) ==="
+sudo pip3 install --upgrade "google-auth>=2.14.1,<3.0.0" google-api-python-client --break-system-packages
+
 echo "=== Step 10: List Compute Engine instances ==="
 python3 list-gce-instances.py "$PROJECT_ID" --zone="$ZONE"
+
+echo "=== All tasks completed successfully! ==="
 
 
 echo "${BG_RED}${BOLD}Congratulations For Completing!!! - ePlus.DEV ${RESET}"
