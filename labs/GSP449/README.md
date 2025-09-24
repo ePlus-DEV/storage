@@ -1,3 +1,3 @@
-# Connect to Cloud SQL from an Application in Google Kubernetes Engine - GSP449
+# Fundamentals of Cloud Logging - GSP610
 
-<https://eplus.dev/connect-to-cloud-sql-from-an-application-in-google-kubernetes-engine-gsp449>
+<https://eplus.dev/fundamentals-of-cloud-logging-gsp610>
