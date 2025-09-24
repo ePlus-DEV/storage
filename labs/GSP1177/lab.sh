@@ -67,7 +67,7 @@ banner
 # ----- Quick Config (you may change if needed) -----
 REPO_URL="https://github.com/Redislabs-Solution-Architects/gcp-microservices-demo-qwiklabs.git"
 REPO_DIR="gcp-microservices-demo-qwiklabs"
-GCP_REGION_VAR="europe-west4"
+GCP_REGION_VAR=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 K8S_NAMESPACE="redis"
 # Set ROLLBACK_TEST=true to run rollback tests; set false to skip.
 ROLLBACK_TEST="${ROLLBACK_TEST:-true}"
