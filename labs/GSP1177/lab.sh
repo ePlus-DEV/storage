@@ -49,7 +49,7 @@ ok "Repository cloned"
 section "Create terraform.tfvars"
 cat <<EOF > terraform.tfvars
 gcp_project_id = "$(gcloud config list project --format='value(core.project)')"
-gcp_region = "europe-west4"
+gcp_region = "$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")"
 EOF
 ok "terraform.tfvars created"
 
