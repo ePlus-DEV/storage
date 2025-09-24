@@ -8,12 +8,12 @@ set -euo pipefail
 #   Primary   #0EA5E9  (cyan)
 #   Secondary #22C55E  (green)
 #   Accent    #F59E0B  (yellow)
-#   Dark      #0F172A  (background/heading)
-#   Light     #F8FAFC  (default bg)
+#   Dark      #0F172A
+#   Light     #F8FAFC
 
-C_PRIMARY="\033[36m"   # cyan
-C_SECOND="\033[32m"    # green
-C_ACCENT="\033[33m"    # yellow
+C_PRIMARY="\033[36m"
+C_SECOND="\033[32m"
+C_ACCENT="\033[33m"
 C_BOLD="\033[1m"
 C_RESET="\033[0m"
 
@@ -36,52 +36,105 @@ ok() {
 banner
 
 # -------------------------
-# Step 1. Clone repository
+# Task 1: Provision infra
 # -------------------------
 section "Clone the lab repository"
 git clone https://github.com/Redislabs-Solution-Architects/gcp-microservices-demo-qwiklabs.git
 cd gcp-microservices-demo-qwiklabs
 ok "Repository cloned"
 
-# -------------------------
-# Step 2. Create terraform.tfvars
-# -------------------------
 section "Create terraform.tfvars"
 cat <<EOF > terraform.tfvars
 gcp_project_id = "$(gcloud config list project --format='value(core.project)')"
-gcp_region = "$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")"
+gcp_region = "$(gcloud compute project-info describe --format='value(commonInstanceMetadata.items[google-compute-default-region])')"
 EOF
 ok "terraform.tfvars created"
 
-# -------------------------
-# Step 3. Terraform init/apply
-# -------------------------
 section "Initialize & apply Terraform"
 terraform init
 terraform apply -auto-approve
 ok "Terraform finished"
 
-# -------------------------
-# Step 4. Export Redis Enterprise outputs
-# -------------------------
 section "Export outputs"
 export REDIS_DEST=$(terraform output -raw db_private_endpoint)
 export REDIS_DEST_PASS=$(terraform output -raw db_password)
 export REDIS_ENDPOINT="${REDIS_DEST},user=default,password=${REDIS_DEST_PASS}"
 ok "Redis Enterprise vars set"
 
-# -------------------------
-# Step 5. Connect kubectl
-# -------------------------
 section "Connect kubectl to GKE"
 gcloud container clusters get-credentials \
   $(terraform output -raw gke_cluster_name) \
   --region $(terraform output -raw region)
 ok "kubectl connected"
 
-# -------------------------
-# Step 6. Get External IP
-# -------------------------
-section "Get External IP"
+section "Get External IP of frontend"
 kubectl get service frontend-external -n redis
 echo -e "${C_ACCENT}Open: http://<EXTERNAL-IP>${C_RESET}"
+echo "Add items to cart before migration."
+# End of Task 1
+
+# -------------------------
+# Task 2: Migrate to Redis Enterprise
+# -------------------------
+section "Switch namespace to redis"
+kubectl config set-context --current --namespace=redis
+ok "Namespace set"
+
+section "Show current cartservice env (OSS Redis)"
+kubectl get deployment cartservice -o jsonpath='{.spec.template.spec.containers[0].env}' | jq
+
+section "Create Secret with Redis creds"
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-creds
+type: Opaque
+stringData:
+  REDIS_SOURCE: redis://redis-cart:6379
+  REDIS_DEST: redis://${REDIS_DEST}
+  REDIS_DEST_PASS: ${REDIS_DEST_PASS}
+EOF
+ok "Secret applied"
+
+section "Run migration job (RIOT)"
+kubectl apply -f https://raw.githubusercontent.com/Redislabs-Solution-Architects/gcp-microservices-demo-qwiklabs/main/util/redis-migrator-job.yaml
+ok "Migration job started"
+
+section "Patch cartservice → Redis Enterprise"
+kubectl patch deployment cartservice --patch \
+  "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"server\",\"env\":[{\"name\":\"REDIS_ADDR\",\"value\":\"${REDIS_ENDPOINT}\"}]}]}}}}"
+ok "Cartservice patched"
+
+section "Verify env (now Redis Enterprise)"
+kubectl get deployment cartservice -o jsonpath='{.spec.template.spec.containers[0].env}' | jq
+echo "Refresh browser and verify cart items are still there."
+# End of Task 2
+
+# -------------------------
+# Task 3: Rollback to OSS Redis
+# -------------------------
+section "Rollback cartservice → OSS Redis"
+kubectl patch deployment cartservice --patch \
+  '{"spec":{"template":{"spec":{"containers":[{"name":"server","env":[{"name":"REDIS_ADDR","value":"redis-cart:6379"}]}]}}}}'
+ok "Cartservice rolled back"
+
+section "Verify rollback env"
+kubectl get deployment cartservice -o jsonpath='{.spec.template.spec.containers[0].env}' | jq
+echo "Refresh browser: new items from Redis Enterprise will NOT appear now."
+# End of Task 3
+
+# -------------------------
+# Task 4: Switch back to Redis Enterprise
+# -------------------------
+section "Patch cartservice → Redis Enterprise (PRODUCTION)"
+kubectl patch deployment cartservice --patch \
+  "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"server\",\"env\":[{\"name\":\"REDIS_ADDR\",\"value\":\"${REDIS_ENDPOINT}\"}]}]}}}}"
+ok "Cartservice switched back to Redis Enterprise"
+
+section "Verify final env"
+kubectl get deployment cartservice -o jsonpath='{.spec.template.spec.containers[0].env}' | jq
+
+section "Optional: delete OSS Redis deployment"
+echo "kubectl delete deploy redis-cart"
+echo -e "${C_SECOND}${C_BOLD}✔ DONE. Cartservice now runs on Redis Enterprise (production).${C_RESET}"
