@@ -1,0 +1,31 @@
+{
+  "title": "Insurance Claim Data Extraction",
+  "description": "",
+  "note": "Task 2 prompt for claim extraction (zero-shot).",
+  "parameters": {
+    "temperature": 0.1,
+    "tokenLimits": 1024,
+    "topK": 40,
+    "topP": 0.95,
+    "groundingPromptConfig": {
+      "disabled": true,
+      "groundingConfig": {
+        "sources": [
+          {
+            "type": "UNSPECIFIED"
+          }
+        ]
+      }
+    }
+  },
+  "type": "multimodal_freeform",
+  "prompt": {
+    "role": "user",
+    "parts": [
+      {
+        "text": "You are an AI assistant specializing in parsing and extracting specific data points from unstructured insurance claim notifications. Your goal is to identify and list key information accurately. If a piece of information is not found, clearly state \"Not found\".\n\nClaim Notification Received:\n\"Hi team, just got a call from Mrs. Eleanor Vance, policy #POL458892. She reported a kitchen fire that occurred on May 12th, 2025, around 3 PM. The main damage seems to be to the oven and surrounding cabinets. She mentioned smoke damage in the kitchen and dining area too. She thinks the total damage might be around $7,500. Her contact is 555-0123. No injuries reported, thankfully.\"\n\nExtract the following:\n- Policy Number\n- Claimant Name\n- Date of Loss\n- Time of Loss\n- Type of Loss\n- Brief Description of Damage\n- Estimated Loss Amount\n- Injuries Reported"
+      }
+    ]
+  },
+  "model": "google/gemini-2.5-flash"
+}
