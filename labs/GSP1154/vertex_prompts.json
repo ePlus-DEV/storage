@@ -1,0 +1,31 @@
+{
+  "prompts": [
+    {
+      "name": "Insurance Risk Summary - Prototype",
+      "type": "chat",
+      "system_instructions": "You are an expert AI assistant for an insurance underwriting department. Your primary goal is to help underwriters by accurately and concisely summarizing client information and highlighting potential risk factors. Maintain a professional and objective tone. Focus only on the information provided in the prompt. Do not invent details.",
+      "prompt": "Customer Notes for 'SafeHarbor Warehousing':\n\"The applicant is seeking coverage for their 50,000 sq ft warehouse. The business is 5 years old. The building is a concrete tilt-up structure, originally built in 2010. They store a variety of non-hazardous dry goods.\nFire safety measures include a full sprinkler system, a centrally monitored fire alarm, and documented annual inspections by a certified third party.\nSecurity measures include a 24/7 centrally monitored burglar alarm, comprehensive security camera coverage of the interior and exterior, a fully fenced perimeter, and nightly patrols by a contracted security guard service.\nThe company reports no major property or liability losses in their 5-year history. They have specifically asked to ensure their new automated shelving and retrieval system, installed last month, is adequately covered under the policy.\"\n\nYour Task:\n1. Briefly summarize the key details of the 'SafeHarbor Warehousing' business and its existing safety measures.\n2. Based *only* on the notes provided, identify any immediate questions an underwriter should ask or potential risk factors they should consider further.\nPresent the summary first, then the questions/risk factors as bullet points.",
+      "model": "gemini-2.5-flash",
+      "region": "us-central1",
+      "temperature": 0.2
+    },
+    {
+      "name": "Insurance Claim Data Extraction",
+      "type": "chat",
+      "system_instructions": "You are an AI assistant specializing in parsing and extracting specific data points from unstructured insurance claim notifications. Your goal is to identify and list key information accurately. If a piece of information is not found, clearly state \"Not found\". Output the extracted information in a key: value format, with each key on a new line.",
+      "prompt": "Claim Notification Received:\n\"Hi team, just got a call from Mrs. Eleanor Vance, policy #POL458892. She reported a kitchen fire that occurred on May 12th, 2025, around 3 PM. The main damage seems to be to the oven and surrounding cabinets. She mentioned smoke damage in the kitchen and dining area too. She thinks the total damage might be around $7,500. Her contact is 555-0123. No injuries reported, thankfully.\"\n\nExtract the following:\n- Policy Number\n- Claimant Name\n- Date of Loss\n- Time of Loss\n- Type of Loss\n- Brief Description of Damage\n- Estimated Loss Amount\n- Injuries Reported",
+      "model": "gemini-2.5-flash",
+      "region": "global",
+      "temperature": 0.1
+    },
+    {
+      "name": "Insurance Risk Factor Identification",
+      "type": "chat",
+      "system_instructions": "You are an insurance risk analyst assistant. Your task is to identify potential risk factors from a given scenario. Be concise.",
+      "prompt": "Scenario:\n\"The applicant, 'The Fiery Grill,' is a new upscale restaurant specializing in wood-fired oven pizzas and open-flame grilling. They have installed a brand new, custom-built fire suppression system for their cooking area, but it has not yet been certified by a third party. The restaurant plans to feature live acoustic music on weekend evenings and has a small, raised stage area. They also want to offer valet parking.\"\n\nBased on this scenario, list three primary risk factors an underwriter should consider.",
+      "model": "gemini-2.5-flash",
+      "region": "global",
+      "temperature": 0.2
+    }
+  ]
+}
