@@ -1,17 +1,11 @@
 #!/bin/bash
 # ======================================================
-# 🚀 ePlus.DEV | Vertex AI Lab Helper
+# 🚀 ePlus.DEV | Vertex AI Lab Helper (FINAL)
 # ------------------------------------------------------
 # 📁 replace_project.sh
-# Automatically refreshes lab notebooks:
+# Automatically refreshes and patches Vertex AI lab notebooks:
 #   - image-analysis.ipynb
 #   - tagline-generator.ipynb
-#
-# ✅ Features:
-#   - Auto-detect PROJECT_ID & LOCATION
-#   - Replace gs:// bucket references (preserve -bucket)
-#   - Replace project="..." , location="..."
-#   - Colored terminal output
 #
 # 🧑‍💻 Author: ePlus.DEV
 # 🌐 Website: https://eplus.dev
@@ -25,11 +19,10 @@ CYAN="\e[36m"
 BOLD="\e[1m"
 RESET="\e[0m"
 
-# 1️⃣ Set project and location
+# 1️⃣ Detect PROJECT_ID and LOCATION
 PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
 LOCATION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
-# ✅ fallback if LOCATION is empty
 if [ -z "$LOCATION" ]; then
   LOCATION="us-central1"
 fi
@@ -39,59 +32,62 @@ if [ -z "$PROJECT_ID" ]; then
   exit 1
 fi
 
-# ✅ Optional: warn if PROJECT_ID looks stale
-if [[ "$PROJECT_ID" == "qwiklabs-gcp-00-425c7fdc774b" ]]; then
-  echo -e "${YELLOW}⚠️  WARNING: PROJECT_ID looks like an old one. Did you run 'gcloud config set project <new-id>'?${RESET}"
-fi
-
 echo -e "${CYAN}📡 PROJECT_ID: ${GREEN}$PROJECT_ID${RESET}"
 echo -e "${CYAN}🌍 LOCATION:   ${GREEN}$LOCATION${RESET}"
 echo -e "${YELLOW}⚙️  Starting notebook update process...${RESET}"
 
-# 2️⃣ Remove old notebooks if they exist
+# 2️⃣ Clean up old notebooks
 echo -e "${CYAN}🧹 Removing old notebooks...${RESET}"
 rm -f image-analysis.ipynb
 rm -f tagline-generator.ipynb
 
-# 3️⃣ Download image-analysis.ipynb
-echo -e "${CYAN}⬇️  Downloading ${BOLD}image-analysis.ipynb${RESET}..."
+# 3️⃣ Download fresh copies
+echo -e "${CYAN}⬇️  Downloading notebooks...${RESET}"
 curl -s -LO "https://raw.githubusercontent.com/ePlus-DEV/storage/refs/heads/main/labs/GSP519/image-analysis.ipynb"
-
-# 4️⃣ Download tagline-generator.ipynb
-echo -e "${CYAN}⬇️  Downloading ${BOLD}tagline-generator.ipynb${RESET}..."
 curl -s -LO "https://raw.githubusercontent.com/ePlus-DEV/storage/refs/heads/main/labs/GSP519/tagline-generator.ipynb"
 
-# 5️⃣ Verify downloads
+# 4️⃣ Verify
 if [ ! -f "image-analysis.ipynb" ] || [ ! -f "tagline-generator.ipynb" ]; then
-  echo -e "${RED}❌ Download failed. Please check the URLs or your network connection.${RESET}"
+  echo -e "${RED}❌ Download failed. Check your connection or URLs.${RESET}"
   exit 1
 fi
 
-# 6️⃣ Preview gs:// reference (only in image-analysis.ipynb)
+# 5️⃣ Preview current gs:// references
 echo -e "${CYAN}🔍 Checking bucket references before replacement...${RESET}"
 grep -m 1 "gs://" image-analysis.ipynb || echo -e "${YELLOW}⚠️  No gs:// reference found in image-analysis.ipynb${RESET}"
 
-# 7️⃣ Replace project IDs (including gs:// and keep -bucket suffix)
-echo -e "${CYAN}🔁 Replacing ${BOLD}PROJECT_ID${RESET} in ${BOLD}image-analysis.ipynb${RESET} (preserving -bucket)...${RESET}"
+# 6️⃣ Perform replacements
 
-# ✅ Fix gs:// references specifically (preserve -bucket suffix)
+echo -e "${CYAN}🔁 Replacing all project references and paths...${RESET}"
+
+# ✅ Replace correct bucket paths with -bucket suffix
 sed -i "s|gs://qwiklabs-gcp-[a-zA-Z0-9-]\+-bucket|gs://$PROJECT_ID-bucket|g" image-analysis.ipynb
 
-# ✅ Replace any remaining project IDs (other text references)
-sed -i "s/qwiklabs-gcp-[a-zA-Z0-9-]\+/$PROJECT_ID/g" image-analysis.ipynb
+# ✅ FIX: If notebook still contains gs://<PROJECT_ID>/... without -bucket
+sed -i "s|gs://$PROJECT_ID/|gs://$PROJECT_ID-bucket/|g" image-analysis.ipynb
 
-# 8️⃣ Replace project + location lines in BOTH notebooks
-echo -e "${CYAN}🔁 Updating ${BOLD}project${RESET} and ${BOLD}location${RESET} in both notebooks...${RESET}"
-sed -i "s/project=\"[a-zA-Z0-9-]\+\", location=\"[a-zA-Z0-9-]\+\"/project=\"$PROJECT_ID\", location=\"$LOCATION\"/g" image-analysis.ipynb
-sed -i "s/project=\"[a-zA-Z0-9-]\+\", location=\"[a-zA-Z0-9-]\+\"/project=\"$PROJECT_ID\", location=\"$LOCATION\"/g" tagline-generator.ipynb
+# ✅ Replace project and location arguments
+sed -i "s|project=\"[a-zA-Z0-9-]\+\", *location=\"[a-zA-Z0-9-]\+\"|project=\"$PROJECT_ID\", location=\"$LOCATION\"|g" image-analysis.ipynb
+sed -i "s|project=\"[a-zA-Z0-9-]\+\", *location=\"[a-zA-Z0-9-]\+\"|project=\"$PROJECT_ID\", location=\"$LOCATION\"|g" tagline-generator.ipynb
 
-# 9️⃣ Preview gs:// reference after replacement
-echo -e "${CYAN}✅ Updated bucket references after replacement:${RESET}"
-grep -m 1 "gs://" image-analysis.ipynb || echo -e "${YELLOW}⚠️  No gs:// reference found after replacement${RESET}"
+# ✅ Replace Python variable PROJECT_ID if defined
+sed -i "s|PROJECT_ID = \"[a-zA-Z0-9-]\+\"|PROJECT_ID = \"$PROJECT_ID\"|g" image-analysis.ipynb
+sed -i "s|PROJECT_ID = \"[a-zA-Z0-9-]\+\"|PROJECT_ID = \"$PROJECT_ID\"|g" tagline-generator.ipynb
 
-# 🔟 Done!
+# ✅ Replace any leftover project strings
+sed -i "s|qwiklabs-gcp-[a-zA-Z0-9-]\+|$PROJECT_ID|g" image-analysis.ipynb
+sed -i "s|qwiklabs-gcp-[a-zA-Z0-9-]\+|$PROJECT_ID|g" tagline-generator.ipynb
+
+# ✅ Final safety: double-check any file_uri lines and force -bucket suffix
+sed -i "s|gs://$PROJECT_ID[^-/]*|gs://$PROJECT_ID-bucket|g" image-analysis.ipynb
+
+# 7️⃣ Show preview after replacement
+echo -e "${CYAN}✅ Updated gs:// reference (first occurrence):${RESET}"
+grep -m 1 "gs://" image-analysis.ipynb || echo -e "${YELLOW}⚠️  Still no gs:// reference found after patch${RESET}"
+
+# 🔚 Final message
 echo -e "${GREEN}🎉 DONE!${RESET}"
-echo -e "👉 ${BOLD}PROJECT_ID${RESET} is now: ${GREEN}${PROJECT_ID}${RESET}"
-echo -e "👉 ${BOLD}LOCATION${RESET} is now: ${GREEN}${LOCATION}${RESET}"
-echo -e "📁 Notebooks are ready: ${BOLD}image-analysis.ipynb${RESET} & ${BOLD}tagline-generator.ipynb${RESET}"
+echo -e "👉 ${BOLD}PROJECT_ID${RESET}: ${GREEN}${PROJECT_ID}${RESET}"
+echo -e "👉 ${BOLD}LOCATION${RESET}: ${GREEN}${LOCATION}${RESET}"
+echo -e "📁 Updated notebooks: ${BOLD}image-analysis.ipynb${RESET} & ${BOLD}tagline-generator.ipynb${RESET}"
 echo -e "${CYAN}🚀 Powered by ${BOLD}ePlus.DEV${RESET} 🌐 https://eplus.dev"
