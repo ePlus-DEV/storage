@@ -4,7 +4,7 @@
   "note": "Prompt template for Cymbal Direct product image analysis. Prompt by ePlus.DEV",
   "parameters": {
     "temperature": 0.8,
-    "tokenLimits": 17810,
+    "tokenLimits": 20031,
     "topP": 0.95,
     "groundingPromptConfig": {
       "disabled": true,
@@ -37,46 +37,13 @@
     ]
   },
   "type": "multimodal_chat",
-  "examples": [],
-  "messages": [
-    {
-      "author": "user",
-      "content": {
-        "role": "user",
-        "parts": [
-          {
-            "text": "Analyze the product image and generate three types of text:\n1. A short descriptive sentence inspired by the image.\n2. A catchy advertising phrase.\n3. A poetic nature-inspired description."
-          },
-          {
-            "fileData": {
-              "mimeType": "image/png",
-              "fileUri": "gs://qwiklabs-gcp-00-425c7fdc774b-bucket/cymbal-product-image.png"
-            }
-          },
-          {
-            "text": "\n"
-          }
-        ]
+  "prompt": {
+    "role": "user",
+    "parts": [
+      {
+        "text": "Analyze the product image and generate three types of text:\n1. A short descriptive sentence inspired by the image.\n2. A catchy advertising phrase.\n3. A poetic nature-inspired description."
       }
-    },
-    {
-      "author": "bot",
-      "content": {
-        "role": "model",
-        "parts": [
-          {
-            "text": "**Observing Image Details**\n\nI'm focusing on the image's key elements. The blue hiking backpack, water bottle, trail, and map are central. The setting appears to be a sunny mountain landscape. I'm considering how these components relate to each other and the overall impression they create.\n\n\n**Considering Phrase Options**\n\nI'm exploring different descriptive phrases. Initial sentences focused on the backpack, trail, and flowers. Now, I am assessing the best combination of elements. I'm aiming for a concise sentence capturing the scene's essence.\n\n\n**Composing Descriptive Text**\n\nI've finalized a concise, descriptive sentence highlighting the backpack, trail, and flowers. I'm pleased with \"A hiker's blue backpack and map rest among a riot of colorful wildflowers on a sunny mountain trail.\" It's short, descriptive, and evokes the scene. Now, I'll shift focus to crafting the advertising phrase.\n\n\n",
-            "thought": true
-          },
-          {
-            "text": "Here are the three types of text inspired by the image:\n\n1.  **A short descriptive"
-          },
-          {
-            "text": "... (The response was truncated because it has reached the token limit. Try to increase the token limit if you need a longer response.)"
-          }
-        ]
-      }
-    }
-  ],
+    ]
+  },
   "model": "google/gemini-2.5-flash"
 }

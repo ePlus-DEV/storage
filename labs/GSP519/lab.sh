@@ -8,8 +8,8 @@
 #   - tagline-generator.ipynb
 #
 # ✅ Features:
-#   - Auto-detect PROJECT_ID
-#   - Replace gs:// bucket references
+#   - Auto-detect PROJECT_ID & LOCATION
+#   - Replace gs:// bucket references (preserve -bucket)
 #   - Replace project="..." , location="..."
 #   - Colored terminal output
 #
@@ -29,9 +29,19 @@ RESET="\e[0m"
 PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
 LOCATION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
+# ✅ fallback if LOCATION is empty
+if [ -z "$LOCATION" ]; then
+  LOCATION="us-central1"
+fi
+
 if [ -z "$PROJECT_ID" ]; then
   echo -e "${RED}❌ Could not retrieve PROJECT_ID. Make sure you're authenticated with gcloud.${RESET}"
   exit 1
+fi
+
+# ✅ Optional: warn if PROJECT_ID looks stale
+if [[ "$PROJECT_ID" == "qwiklabs-gcp-00-425c7fdc774b" ]]; then
+  echo -e "${YELLOW}⚠️  WARNING: PROJECT_ID looks like an old one. Did you run 'gcloud config set project <new-id>'?${RESET}"
 fi
 
 echo -e "${CYAN}📡 PROJECT_ID: ${GREEN}$PROJECT_ID${RESET}"
@@ -61,12 +71,17 @@ fi
 echo -e "${CYAN}🔍 Checking bucket references before replacement...${RESET}"
 grep -m 1 "gs://" image-analysis.ipynb || echo -e "${YELLOW}⚠️  No gs:// reference found in image-analysis.ipynb${RESET}"
 
-# 7️⃣ Replace project IDs (including in gs://)
-echo -e "${CYAN}🔁 Replacing ${BOLD}PROJECT_ID${RESET} in ${BOLD}image-analysis.ipynb${RESET}..."
+# 7️⃣ Replace project IDs (including gs:// and keep -bucket suffix)
+echo -e "${CYAN}🔁 Replacing ${BOLD}PROJECT_ID${RESET} in ${BOLD}image-analysis.ipynb${RESET} (preserving -bucket)...${RESET}"
+
+# ✅ Fix gs:// references specifically (preserve -bucket suffix)
+sed -i "s|gs://qwiklabs-gcp-[a-zA-Z0-9-]\+-bucket|gs://$PROJECT_ID-bucket|g" image-analysis.ipynb
+
+# ✅ Replace any remaining project IDs (other text references)
 sed -i "s/qwiklabs-gcp-[a-zA-Z0-9-]\+/$PROJECT_ID/g" image-analysis.ipynb
 
 # 8️⃣ Replace project + location lines in BOTH notebooks
-echo -e "${CYAN}🔁 Updating ${BOLD}project${RESET} and ${BOLD}location${RESET} in both notebooks..."
+echo -e "${CYAN}🔁 Updating ${BOLD}project${RESET} and ${BOLD}location${RESET} in both notebooks...${RESET}"
 sed -i "s/project=\"[a-zA-Z0-9-]\+\", location=\"[a-zA-Z0-9-]\+\"/project=\"$PROJECT_ID\", location=\"$LOCATION\"/g" image-analysis.ipynb
 sed -i "s/project=\"[a-zA-Z0-9-]\+\", location=\"[a-zA-Z0-9-]\+\"/project=\"$PROJECT_ID\", location=\"$LOCATION\"/g" tagline-generator.ipynb
 
