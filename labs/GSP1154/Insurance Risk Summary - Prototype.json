@@ -1,10 +1,9 @@
 {
   "title": "Insurance Risk Summary - Prototype",
   "description": "",
-  "note": "Task 1 prompt for risk summary. https://eplus.dev",
   "parameters": {
-    "temperature": 0.2,
-    "tokenLimits": 2048,
+    "temperature": 1,
+    "tokenLimits": 65535,
     "topP": 0.95,
     "groundingPromptConfig": {
       "disabled": true,
@@ -16,7 +15,7 @@
         ]
       }
     },
-    "thinkingBudget": -1,
+    "thinkingBudget": 0,
     "safetyCatFilters": [
       {
         "category": "HATE_SPEECH",
@@ -36,6 +35,13 @@
       }
     ]
   },
+  "systemInstruction": {
+    "parts": [
+      {
+        "text": "You are an expert AI assistant for an insurance underwriting department.\nYour primary goal is to help underwriters by accurately and concisely summarizing client information and highlighting potential risk factors.\nMaintain a professional and objective tone.\nFocus only on the information provided in the prompt. Do not invent details."
+      }
+    ]
+  },
   "type": "chat",
   "examples": [],
   "messages": [
@@ -45,7 +51,7 @@
         "role": "user",
         "parts": [
           {
-            "text": "You are an expert AI assistant for an insurance underwriting department. Your primary goal is to help underwriters by accurately and concisely summarizing client information and highlighting potential risk factors. Maintain a professional and objective tone. Focus only on the information provided.\n\nCustomer Notes for 'SafeHarbor Warehousing':\n\"The applicant is seeking coverage for their 50,000 sq ft warehouse. The business is 5 years old. The building is a concrete tilt-up structure, originally built in 2010. They store a variety of non-hazardous dry goods.\nFire safety measures include a full sprinkler system, a centrally monitored fire alarm, and documented annual inspections by a certified third party.\nSecurity measures include a 24/7 centrally monitored burglar alarm, comprehensive security camera coverage of the interior and exterior, a fully fenced perimeter, and nightly patrols by a contracted security guard service.\nThe company reports no major property or liability losses in their 5-year history. They have specifically asked to ensure their new automated shelving and retrieval system, installed last month, is adequately covered under the policy.\"\n\nYour Task:\n1. Briefly summarize the key details of the 'SafeHarbor Warehousing' business and its existing safety measures.\n2. Based *only* on the notes provided, identify any immediate questions an underwriter should ask or potential risk factors they should consider further.\nPresent the summary first, then the questions/risk factors as bullet points."
+            "text": "Customer Notes for 'SafeHarbor Warehousing':\n\"The applicant is seeking coverage for their 50,000 sq ft warehouse. The business is 5 years old. The building is a concrete tilt-up structure, originally built in 2010. They store a variety of non-hazardous dry goods.\nFire safety measures include a full sprinkler system, a centrally monitored fire alarm, and documented annual inspections by a certified third party.\nSecurity measures include a 24/7 centrally monitored burglar alarm, comprehensive security camera coverage of the interior and exterior, a fully fenced perimeter, and nightly patrols by a contracted security guard service.\nThe company reports no major property or liability losses in their 5-year history. They have specifically asked to ensure their new automated shelving and retrieval system, installed last month, is adequately covered under the policy.\"\n\nYour Task:\n1. Briefly summarize the key details of the 'SafeHarbor Warehousing' business and its existing safety measures.\n2. Based *only* on the notes provided, identify any immediate questions an underwriter should ask or potential risk factors they should consider further.\nPresent the summary first, then the questions/risk factors as bullet points.\n"
           }
         ]
       }
@@ -56,15 +62,11 @@
         "role": "model",
         "parts": [
           {
-            "text": "**Defining Underwriting Needs**\n\nI'm currently focusing on the user's request. It seems I'll need to summarize business details and identify risk factors. The challenge will be to isolate the relevant information and generate pertinent questions. I'm considering how to structure the output for maximum clarity.\n\n\n**Formulating Key Queries**\n\nI'm now identifying the critical questions. The automated system warrants more details about its specifications. The \"variety of goods\" needs further clarification regarding storage and potential loss. I'll also probe building maintenance and security protocols for a comprehensive assessment.\n\n\n**Pinpointing Critical Information**\n\nI've refined my focus to extract only the most pertinent questions. I'll prioritize those concerning the automated shelving system, its value, and potential operational risks. I'll also inquire about the total value of stored goods, and the specifics of the contents' characteristics to estimate risk.\n\n\n**Organizing the Underwriting Data**\n\nI'm in the final stages of outlining my approach. I'll start with a summary of key details, including applicant information, property specifics, and loss history. Then, I'll present a focused set of questions and risk factors designed to provide comprehensive insights for underwriting. I've streamlined my question list to focus on the most critical elements.\n\n\n",
-            "thought": true
-          },
-          {
-            "text": "**Summary of SafeHarbor Warehousing:**\n\nSafeHarbor Warehousing is a 5-year-old business seeking coverage for its 50,000 sq ft concrete tilt-up warehouse, constructed in 2010. The facility stores a variety of non-hazardous dry goods. Fire safety measures include a full sprinkler system, a centrally monitored fire alarm, and documented annual third-party inspections. Security is robust, featuring a 24/7 centrally monitored burglar alarm, comprehensive interior and exterior camera coverage, a fully fenced perimeter, and nightly contracted security patrols. The company reports no major property or liability losses in its 5-year history. They specifically request adequate coverage for a newly installed automated shelving and retrieval system.\n\n**Underwriter Questions/Potential Risk Factors:**\n\n*   **Automated Shelving and Retrieval System:**\n    *   What is the replacement cost and specific operational details (e.g., power requirements, potential for mechanical breakdown, impact on fire suppression effectiveness) of the new automated system?\n    *   What is the manufacturer's warranty and maintenance schedule for this new system?\n*   **Contents Value:**\n    *   What is the estimated total value of the stored goods?\n    *   Are there any specific types of \"non-hazardous dry goods\" that are particularly high-value or susceptible to specific types of damage (e.g., water, temperature fluctuations)?\n*   **Loss History:**\n    *   Clarification on \"no major property or liability losses\" – were there any minor losses, and if so, what were the causes and costs?\n*   **Building Maintenance:**\n    *   Beyond fire safety, what is the general maintenance schedule and condition of the building's roof, HVAC, and plumbing systems?\n*   **Security Patrols:**\n    *   What is the frequency and duration of the nightly security patrols?\n*   **Sprinkler System Details:**\n    *   What type of sprinkler system is installed (e.g., wet, dry, pre-action), and what is its specific inspection and maintenance schedule beyond the annual third-party fire safety inspection?"
+            "text": "SafeHarbor Warehousing is a 5-year-old business operating in a 50,000 sq ft concrete tilt-up building constructed in 2010. The business stores non-hazardous dry goods and has implemented robust fire safety measures including a full sprinkler system, centrally monitored fire alarm, and annual third-party inspections. Security is maintained through a 24/7 monitored burglar alarm, comprehensive camera surveillance, a fenced perimeter, and nightly security patrols. The company has no reported losses in its history. The applicant has requested coverage for a recently installed automated shelving and retrieval system.\n\nPotential Risk Factors/Underwriter Questions:\n\n*   **Automated Shelving and Retrieval System:** Clarify the specific nature, value, and any unique operational risks associated with this new system. Are there any maintenance requirements or specific exclusions that need to be considered for this equipment?\n*   **Storage Contents:** While stated as \"non-hazardous dry goods,\" it would be prudent to confirm the exact nature of these goods to ensure they align with the property policy's terms and conditions, and to assess any specific storage requirements or potential for damage (e.g., susceptibility to environmental changes)."
           }
         ]
       }
     }
   ],
-  "model": "google/gemini-2.5-flash"
+  "model": "google/gemini-2.5-flash-lite"
 }
