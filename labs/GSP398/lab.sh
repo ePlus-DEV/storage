@@ -1,9 +1,9 @@
 #!/bin/bash
 # =====================================================================
-# 🚀 Vertex AI TensorFlow CNN Challenge Lab - Light Script (No Task 1)
+# 🚀 Vertex AI CNN Challenge Lab - Qwiklabs Compatible Version
 # ---------------------------------------------------------------------
 # Author: ePlus.DEV
-# Version: 1.0
+# Version: 2025.1
 # Copyright (c) 2025 ePlus.DEV
 # =====================================================================
 
@@ -18,7 +18,7 @@ RESET="\e[0m"
 
 echo -e "${CYAN}${BOLD}"
 echo "==============================================================="
-echo "   🚀 Vertex AI CNN Challenge Lab (No Workbench) - ePlus.DEV"
+echo "   🚀 Vertex AI CNN Challenge Lab - Qwiklabs Version"
 echo "==============================================================="
 echo -e "${RESET}"
 
@@ -38,7 +38,7 @@ echo -e "${BLUE}📦 Project:${RESET} ${GREEN}$PROJECT_ID${RESET}"
 echo -e "${BLUE}🌍 Region:${RESET} ${GREEN}$REGION${RESET}\n"
 
 # ------------------ ENABLE APIS ------------------
-echo -e "${YELLOW}🔧 Enabling APIs...${RESET}"
+echo -e "${YELLOW}🔧 Enabling required APIs...${RESET}"
 gcloud services enable \
   aiplatform.googleapis.com \
   artifactregistry.googleapis.com \
@@ -88,17 +88,29 @@ if __name__ == "__main__":
 EOF
 echo -e "${GREEN}✅ Training script created.${RESET}\n"
 
-# ------------------ TASK 4: CUSTOM TRAINING JOB ------------------
+# ------------------ TASK 4: CREATE YAML JOB CONFIG ------------------
+echo -e "${YELLOW}📝 Creating job.yaml for training job...${RESET}"
+cat > job.yaml <<EOF
+displayName: $DISPLAY_NAME
+jobSpec:
+  workerPoolSpecs:
+  - machineSpec:
+      machineType: $MACHINE_TYPE
+    replicaCount: 1
+    pythonPackageSpec:
+      executorImageUri: $TRAIN_IMAGE
+      packageUris: []
+      pythonModule: task
+EOF
+echo -e "${GREEN}✅ job.yaml created.${RESET}\n"
+
+# ------------------ SUBMIT CUSTOM TRAINING JOB ------------------
 echo -e "${YELLOW}🛠️ Submitting Custom Training Job...${RESET}"
-
-gcloud ai custom-jobs create-with-python-package \
+gcloud ai custom-jobs create \
   --region=$REGION \
-  --display-name=$DISPLAY_NAME \
-  --python-package-uris=. \
-  --python-module=task \
-  --container-image-uri=$TRAIN_IMAGE
+  --config=job.yaml
 
-echo -e "${CYAN}⏳ Training submitted (~8-10 min)...${RESET}\n"
+echo -e "${CYAN}⏳ Training job submitted (~8-10 min).${RESET}\n"
 
 # ------------------ WAIT FOR TRAINING ------------------
 echo -e "${YELLOW}🔍 Waiting for training job to complete...${RESET}"
