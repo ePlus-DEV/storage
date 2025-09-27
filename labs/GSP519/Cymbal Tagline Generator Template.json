@@ -1,0 +1,77 @@
+{
+  "title": "Cymbal Tagline Generator Template",
+  "description": "Prompt by ePlus.DEV",
+  "note": "Prompt template for Cymbal Tagline Generator Template. Prompt by ePlus.DEV",
+  "parameters": {
+    "temperature": 1,
+    "tokenLimits": 65535,
+    "topP": 1,
+    "groundingPromptConfig": {
+      "disabled": true,
+      "groundingConfig": {
+        "sources": [
+          {
+            "type": "UNSPECIFIED"
+          }
+        ]
+      }
+    },
+    "thinkingBudget": -1,
+    "safetyCatFilters": [
+      {
+        "category": "HATE_SPEECH",
+        "threshold": "OFF"
+      },
+      {
+        "category": "DANGEROUS_CONTENT",
+        "threshold": "OFF"
+      },
+      {
+        "category": "SEXUALLY_EXPLICIT_CONTENT",
+        "threshold": "OFF"
+      },
+      {
+        "category": "HARASSMENT_CONTENT",
+        "threshold": "OFF"
+      }
+    ]
+  },
+  "systemInstruction": {
+    "parts": [
+      {
+        "text": "Cymbal Direct is partnering with an outdoor gear retailer. They're launching a new line of products designed to encourage young people to explore the outdoors. Help them create catchy taglines for this product line."
+      }
+    ]
+  },
+  "type": "chat",
+  "examples": [],
+  "messages": [
+    {
+      "author": "user",
+      "content": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Generate a tagline for a lightweight, waterproof hiking jacket aimed at young adventurers. Make sure the tagline includes the keyword 'nature'."
+          }
+        ]
+      }
+    },
+    {
+      "author": "bot",
+      "content": {
+        "role": "model",
+        "parts": [
+          {
+            "text": "**Dissecting the Core Elements**\n\nI've been dissecting the request, breaking it down into its core components. Identifying the product, the target audience (young adventurers, specifically), and the campaign's main objective. This framework will guide the tagline generation process. Currently, I am prioritizing identifying the \"Key Benefit\" of this product, which is a lightweight, waterproof hiking jacket.\n\n\n**Formulating the Foundation**\n\nI'm now integrating the core benefit of weather protection with the target audience's desire for adventure. I am seeking to align how the jacket allows young people to experience nature, to create that sense of freedom and excitement. I'm focusing on combining the key concepts: protection and exploration, wrapped up in a way that is both memorable and appealing.\n\n\n**Mapping the Conceptual Terrain**\n\nI'm now taking the initial concepts I developed and mapping them into tangible options. I'm focusing on marrying the jacket's benefits with the target audience's aspirations. I've been brainstorming various combinations, working on phrasing that resonates with the young adventurers I have in mind. I'm also starting to trim the rough ideas, focusing on brevity and impact. I am actively trying to inject a little \"punch\" to these options!\n\n\n**Fine-Tuning the Message**\n\nI've evaluated the potential taglines, and am now optimizing their appeal to young adventurers. I am trimming less impactful options, and refining the remaining candidates. My goal is to balance concise wording with the key elements of the product and the target audience's interests. I'm putting extra focus on injecting a sense of excitement and action. The current focus is to find the most appealing phrase, making sure the final selection feels very organic.\n\n\n**Finalizing and Evaluating**\n\nI'm now working through the final selections, critically assessing how well they fit. I'm prioritizing impact and memorability, and ensuring all elements are present and accurate. I am looking at each one critically, making sure the youth appeal is obvious. I am looking at the flow, and choosing the one with the most \"pop\". The final selection should also feel authentic to the product, and the target audience. I have a strong front-runner!\n\n\n**Evaluating the Final Options**\n\nI've been reviewing the final taglines, focusing on clarity, brevity, and appeal. I'm gauging each option's ability to resonate with young adventurers and align with the product. Considering Cymbal Direct's brand, I'm now considering which taglines encourage exploration vs. overemphasize action. I'm now focusing on the final two, making sure the call to action is clear.\n\n\n**Final Selection Process**\n\nI've just finished my brainstorming, and narrowed down the taglines. My current top choice is \"Nature Calls. Stay Dry. Go Light.\" I'm considering the product's core features, which are waterproof and lightweight, and the target audience of young adventurers. My selection balances directness, action, and a clear call to adventure. I'm ready to submit my final pick!\n\n\n",
+            "thought": true
+          },
+          {
+            "text": "Here are a few options for a lightweight, waterproof hiking jacket aimed at young adventurers:\n\n1.  **Nature Calls. Stay Dry. Go Light.**\n2.  **Your Lightweight Shield for Every Nature Adventure.**\n3.  **Explore Nature, Unburdened & Dry.**\n4.  **Wild in Nature. Waterproof. Weightless.**\n5.  **Defy the Drizzle. Discover Nature.**"
+          }
+        ]
+      }
+    }
+  ],
+  "model": "google/gemini-2.5-flash"
+}
