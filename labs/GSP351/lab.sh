@@ -5,18 +5,10 @@
 # 📦 Project: Migrate MySQL Data to Cloud SQL using DMS
 # 🧑‍💻 Author: David Nguyen (Nguyễn Ngọc Minh Hoàng)
 # 🏢 Organization: EPLUS.DEV
-# 📅 Version: 3.0.0
+# 📅 Version: 4.0.0
 # 📜 Copyright (c) 2025 EPLUS.DEV
 # ⚠️ All Rights Reserved. Unauthorized copying, distribution,
 #     or modification of this script is strictly prohibited.
-# --------------------------------------------------------------
-# 🧠 Purpose:
-#   Automates ALL 5 tasks of the challenge lab:
-#     1️⃣ Enable API (auto-check)
-#     2️⃣ Create connection profile
-#     3️⃣ One-time migration
-#     4️⃣ Continuous migration (auto VPC ✅)
-#     5️⃣ Replication test & promotion
 # ==============================================================
 
 # 🎨 COLORS
@@ -72,7 +64,7 @@ echo -e "${GREEN}🔍 Getting external IP of MySQL source...${NC}"
 SOURCE_IP=$(gcloud compute instances describe $SOURCE_INSTANCE --zone=$ZONE --format="get(networkInterfaces[0].accessConfigs[0].natIP)")
 echo -e "${BLUE}✅ Source IP:${NC} $SOURCE_IP"
 
-# STEP 4: Create connection profile (✅ Fixed syntax)
+# STEP 4: Create connection profile (✅ Correct syntax)
 echo -e "${GREEN}📡 Creating connection profile...${NC}"
 gcloud database-migration connection-profiles create mysql-src-profile \
   --region=$REGION \
@@ -98,8 +90,8 @@ echo -e "${GREEN}🚚 Creating one-time migration job...${NC}"
 gcloud database-migration migration-jobs create $TARGET_ONE \
   --region=$REGION \
   --type=ONE_TIME \
-  --source=mysql-src-profile \
-  --destination=projects/$PROJECT_ID/instances/$TARGET_ONE
+  --source=projects/$PROJECT_ID/locations/$REGION/connectionProfiles/mysql-src-profile \
+  --destination-instance=$TARGET_ONE
 
 echo -e "${YELLOW}▶️ Starting one-time migration...${NC}"
 gcloud database-migration migration-jobs start $TARGET_ONE --region=$REGION
@@ -144,12 +136,14 @@ gcloud sql instances create $TARGET_CONT \
 
 gcloud sql users set-password root --host=% --instance=$TARGET_CONT --password=supersecret!
 
+echo -e "${GREEN}🚚 Creating continuous migration job...${NC}"
 gcloud database-migration migration-jobs create $TARGET_CONT \
   --region=$REGION \
   --type=CONTINUOUS \
-  --source=mysql-src-profile \
-  --destination=projects/$PROJECT_ID/instances/$TARGET_CONT
+  --source=projects/$PROJECT_ID/locations/$REGION/connectionProfiles/mysql-src-profile \
+  --destination-instance=$TARGET_CONT
 
+echo -e "${YELLOW}▶️ Starting continuous migration...${NC}"
 gcloud database-migration migration-jobs start $TARGET_CONT --region=$REGION
 sleep 120
 
