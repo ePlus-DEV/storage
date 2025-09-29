@@ -5,17 +5,17 @@
 # 📦 Project: Migrate MySQL Data to Cloud SQL using DMS
 # 🧑‍💻 Author: David Nguyen (Nguyễn Ngọc Minh Hoàng)
 # 🏢 Organization: EPLUS.DEV
-# 📅 Version: 2.0.0
+# 📅 Version: 3.0.0
 # 📜 Copyright (c) 2025 EPLUS.DEV
 # ⚠️ All Rights Reserved. Unauthorized copying, distribution,
 #     or modification of this script is strictly prohibited.
 # --------------------------------------------------------------
 # 🧠 Purpose:
-#   - Automates ALL 5 tasks of the challenge lab:
+#   Automates ALL 5 tasks of the challenge lab:
 #     1️⃣ Enable API (auto-check)
 #     2️⃣ Create connection profile
 #     3️⃣ One-time migration
-#     4️⃣ Continuous migration (auto-check VPC)
+#     4️⃣ Continuous migration (auto VPC ✅)
 #     5️⃣ Replication test & promotion
 # ==============================================================
 
@@ -59,9 +59,9 @@ fi
 
 # STEP 2: Mandatory user inputs
 echo -e "${YELLOW}⚠️ REQUIRED INPUTS (type exactly as shown):${NC}"
-read -p "👉 Enter MySQL source instance: " SOURCE_INSTANCE        # prd-eng-ovt
-read -p "👉 Enter Cloud SQL one-time target: " TARGET_ONE         # mysql-eng-ovt
-read -p "👉 Enter Cloud SQL continuous target: " TARGET_CONT      # mysql-eng-ovt-cont
+read -p "👉 Enter MySQL source instance: " SOURCE_INSTANCE       # prd-eng-ovt
+read -p "👉 Enter Cloud SQL one-time target: " TARGET_ONE        # mysql-eng-ovt
+read -p "👉 Enter Cloud SQL continuous target: " TARGET_CONT     # mysql-eng-ovt-cont
 
 echo -e "${BLUE}✅ Source Instance:${NC} $SOURCE_INSTANCE"
 echo -e "${BLUE}✅ One-time Target:${NC} $TARGET_ONE"
@@ -72,15 +72,15 @@ echo -e "${GREEN}🔍 Getting external IP of MySQL source...${NC}"
 SOURCE_IP=$(gcloud compute instances describe $SOURCE_INSTANCE --zone=$ZONE --format="get(networkInterfaces[0].accessConfigs[0].natIP)")
 echo -e "${BLUE}✅ Source IP:${NC} $SOURCE_IP"
 
-# STEP 4: Create connection profile
+# STEP 4: Create connection profile (✅ Fixed syntax)
 echo -e "${GREEN}📡 Creating connection profile...${NC}"
 gcloud database-migration connection-profiles create mysql-src-profile \
   --region=$REGION \
   --type=mysql \
-  --host=$SOURCE_IP \
-  --port=3306 \
-  --username=admin \
-  --password=changeme \
+  --mysql-host=$SOURCE_IP \
+  --mysql-port=3306 \
+  --mysql-username=admin \
+  --mysql-password=changeme \
   --display-name="MySQL Source External"
 
 # STEP 5: One-time migration
@@ -111,7 +111,7 @@ use customers_data;
 select count(*) from customers;
 EOF
 
-# STEP 6: Check/Create VPC Peering
+# STEP 6: Check/Create VPC Peering (auto ✅)
 echo -e "${GREEN}🌐 Checking VPC peering status...${NC}"
 if ! gcloud compute networks peerings list --network=default | grep -q "servicenetworking"; then
   echo -e "${YELLOW}⚠️ VPC Peering not found. Creating now...${NC}"
