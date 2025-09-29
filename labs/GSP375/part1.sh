@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 PARTNER_PROJECT=$(gcloud projects list --format="value(projectId)" --limit=1)
 PARTNER_DATASET="demo_dataset"
 PARTNER_VIEW="authorized_view_b9g4"
-CUSTOMER_USER="student-01-a8002e448ea7@qwiklabs.net"
+CUSTOMER_USER="student-00-30098cb3cb36@qwiklabs.net"
 
 echo -e "${BLUE}=============================="
 echo -e "STEP 1: Create Partner Authorized View"
