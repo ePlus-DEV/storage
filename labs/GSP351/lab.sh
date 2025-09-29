@@ -5,10 +5,9 @@
 # 📦 Project: Migrate MySQL Data to Cloud SQL using DMS
 # 🧑‍💻 Author: David Nguyen (Nguyễn Ngọc Minh Hoàng)
 # 🏢 Organization: EPLUS.DEV
-# 📅 Version: 4.0.0
+# 📅 Version: 5.0.0
 # 📜 Copyright (c) 2025 EPLUS.DEV
-# ⚠️ All Rights Reserved. Unauthorized copying, distribution,
-#     or modification of this script is strictly prohibited.
+# ⚠️ All Rights Reserved.
 # ==============================================================
 
 # 🎨 COLORS
@@ -40,7 +39,7 @@ echo -e "${BLUE}✅ Region:${NC} $REGION"
 echo -e "${BLUE}✅ Zone:${NC} $ZONE"
 echo -e "${BLUE}✅ Project:${NC} $PROJECT_ID"
 
-# STEP 1: Enable Database Migration API if not enabled
+# STEP 1: Enable API
 echo -e "${GREEN}🔍 Checking Database Migration API status...${NC}"
 if ! gcloud services list --enabled | grep -q "datamigration.googleapis.com"; then
   echo -e "${YELLOW}⚠️ API not enabled. Enabling now...${NC}"
@@ -49,7 +48,7 @@ else
   echo -e "${BLUE}✅ Database Migration API already enabled.${NC}"
 fi
 
-# STEP 2: Mandatory user inputs
+# STEP 2: Mandatory Inputs
 echo -e "${YELLOW}⚠️ REQUIRED INPUTS (type exactly as shown):${NC}"
 read -p "👉 Enter MySQL source instance: " SOURCE_INSTANCE       # prd-eng-ovt
 read -p "👉 Enter Cloud SQL one-time target: " TARGET_ONE        # mysql-eng-ovt
@@ -64,7 +63,7 @@ echo -e "${GREEN}🔍 Getting external IP of MySQL source...${NC}"
 SOURCE_IP=$(gcloud compute instances describe $SOURCE_INSTANCE --zone=$ZONE --format="get(networkInterfaces[0].accessConfigs[0].natIP)")
 echo -e "${BLUE}✅ Source IP:${NC} $SOURCE_IP"
 
-# STEP 4: Create connection profile (✅ Correct syntax)
+# STEP 4: Create connection profile
 echo -e "${GREEN}📡 Creating connection profile...${NC}"
 gcloud database-migration connection-profiles create mysql-src-profile \
   --region=$REGION \
@@ -84,7 +83,10 @@ gcloud sql instances create $TARGET_ONE \
   --storage-size=10GB \
   --region=$REGION
 
+# Reset root password & allowlist current IP
+echo -e "${GREEN}🔑 Resetting root password & allowlisting IP...${NC}"
 gcloud sql users set-password root --host=% --instance=$TARGET_ONE --password=supersecret!
+gcloud sql instances patch $TARGET_ONE --authorized-networks=$(curl -s ifconfig.me)
 
 echo -e "${GREEN}🚚 Creating one-time migration job...${NC}"
 gcloud database-migration migration-jobs create $TARGET_ONE \
@@ -103,7 +105,7 @@ use customers_data;
 select count(*) from customers;
 EOF
 
-# STEP 6: Check/Create VPC Peering (auto ✅)
+# STEP 6: VPC Peering
 echo -e "${GREEN}🌐 Checking VPC peering status...${NC}"
 if ! gcloud compute networks peerings list --network=default | grep -q "servicenetworking"; then
   echo -e "${YELLOW}⚠️ VPC Peering not found. Creating now...${NC}"
@@ -120,7 +122,8 @@ if ! gcloud compute networks peerings list --network=default | grep -q "servicen
     --network=default \
     --ranges=google-managed-services-default
 
-  echo -e "${BLUE}✅ VPC Peering created successfully.${NC}"
+  echo -e "${BLUE}✅ VPC Peering created. Waiting 60s to finalize...${NC}"
+  sleep 60
 else
   echo -e "${BLUE}✅ VPC Peering already configured.${NC}"
 fi
@@ -134,7 +137,9 @@ gcloud sql instances create $TARGET_CONT \
   --storage-size=10GB \
   --region=$REGION
 
+echo -e "${GREEN}🔑 Resetting root password & allowlisting IP for continuous instance...${NC}"
 gcloud sql users set-password root --host=% --instance=$TARGET_CONT --password=supersecret!
+gcloud sql instances patch $TARGET_CONT --authorized-networks=$(curl -s ifconfig.me)
 
 echo -e "${GREEN}🚚 Creating continuous migration job...${NC}"
 gcloud database-migration migration-jobs create $TARGET_CONT \
@@ -172,7 +177,7 @@ gcloud database-migration migration-jobs promote $TARGET_CONT --region=$REGION
 echo -e "${BLUE}"
 echo "=============================================================="
 echo "✅ MIGRATION COMPLETE!"
-echo " - Database Migration API ✅"
+echo " - API enabled ✅"
 echo " - VPC Peering ✅"
 echo " - One-time migration ✅"
 echo " - Continuous migration ✅"
