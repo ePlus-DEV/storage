@@ -5,22 +5,21 @@
 # 📦 Project: Migrate MySQL Data to Cloud SQL using DMS
 # 🧑‍💻 Author: David Nguyen (Nguyễn Ngọc Minh Hoàng)
 # 🏢 Organization: EPLUS.DEV
-# 📅 Version: 1.0.0
+# 📅 Version: 2.0.0
 # 📜 Copyright (c) 2025 EPLUS.DEV
 # ⚠️ All Rights Reserved. Unauthorized copying, distribution,
-#     or modification of this script, via any medium, is strictly
-#     prohibited without written permission from the author.
+#     or modification of this script is strictly prohibited.
 # --------------------------------------------------------------
 # 🧠 Purpose:
-#   - Automates all 5 tasks in the Google Cloud challenge lab:
-#     1️⃣ Create source connection profile
-#     2️⃣ Perform one-time migration
-#     3️⃣ Run continuous migration (VPC peering)
-#     4️⃣ Test replication
-#     5️⃣ Promote target to standalone
-# ===============================================================
+#   - Automates ALL 5 tasks of the challenge lab:
+#     1️⃣ Enable API (auto-check)
+#     2️⃣ Create connection profile
+#     3️⃣ One-time migration
+#     4️⃣ Continuous migration (auto-check VPC)
+#     5️⃣ Replication test & promotion
+# ==============================================================
 
-# 🎨 COLOR DEFINITIONS
+# 🎨 COLORS
 GREEN="\e[32m"
 BLUE="\e[34m"
 YELLOW="\e[33m"
@@ -36,7 +35,7 @@ echo -e "${YELLOW} 📜 © 2025 EPLUS.DEV | All Rights Reserved ${NC}"
 echo "=============================================================="
 echo -e "${NC}"
 
-# STEP 0: Set region and zone
+# STEP 0: Region & Zone
 echo -e "${GREEN}🔧 Setting region and zone...${NC}"
 gcloud config set compute/region us-east4
 gcloud config set compute/zone us-east4-b
@@ -44,26 +43,36 @@ gcloud config set compute/zone us-east4-b
 export REGION=us-east4
 export ZONE=us-east4-b
 PROJECT_ID=$(gcloud config get-value project)
+
 echo -e "${BLUE}✅ Region:${NC} $REGION"
 echo -e "${BLUE}✅ Zone:${NC} $ZONE"
 echo -e "${BLUE}✅ Project:${NC} $PROJECT_ID"
 
-# STEP 1: Mandatory inputs
+# STEP 1: Enable Database Migration API if not enabled
+echo -e "${GREEN}🔍 Checking Database Migration API status...${NC}"
+if ! gcloud services list --enabled | grep -q "datamigration.googleapis.com"; then
+  echo -e "${YELLOW}⚠️ API not enabled. Enabling now...${NC}"
+  gcloud services enable datamigration.googleapis.com
+else
+  echo -e "${BLUE}✅ Database Migration API already enabled.${NC}"
+fi
+
+# STEP 2: Mandatory user inputs
 echo -e "${YELLOW}⚠️ REQUIRED INPUTS (type exactly as shown):${NC}"
-read -p "👉 Enter MySQL source instance name: " SOURCE_INSTANCE     # prd-eng-ovt
-read -p "👉 Enter Cloud SQL one-time migration target: " TARGET_ONE  # mysql-eng-ovt
-read -p "👉 Enter Cloud SQL continuous migration target: " TARGET_CONT # mysql-eng-ovt-cont
+read -p "👉 Enter MySQL source instance: " SOURCE_INSTANCE        # prd-eng-ovt
+read -p "👉 Enter Cloud SQL one-time target: " TARGET_ONE         # mysql-eng-ovt
+read -p "👉 Enter Cloud SQL continuous target: " TARGET_CONT      # mysql-eng-ovt-cont
 
 echo -e "${BLUE}✅ Source Instance:${NC} $SOURCE_INSTANCE"
 echo -e "${BLUE}✅ One-time Target:${NC} $TARGET_ONE"
 echo -e "${BLUE}✅ Continuous Target:${NC} $TARGET_CONT"
 
-# STEP 2: Get source external IP
-echo -e "${GREEN}🔍 Fetching MySQL source external IP...${NC}"
+# STEP 3: Fetch source MySQL IP
+echo -e "${GREEN}🔍 Getting external IP of MySQL source...${NC}"
 SOURCE_IP=$(gcloud compute instances describe $SOURCE_INSTANCE --zone=$ZONE --format="get(networkInterfaces[0].accessConfigs[0].natIP)")
 echo -e "${BLUE}✅ Source IP:${NC} $SOURCE_IP"
 
-# STEP 3: Create connection profile
+# STEP 4: Create connection profile
 echo -e "${GREEN}📡 Creating connection profile...${NC}"
 gcloud database-migration connection-profiles create mysql-src-profile \
   --region=$REGION \
@@ -74,7 +83,7 @@ gcloud database-migration connection-profiles create mysql-src-profile \
   --password=changeme \
   --display-name="MySQL Source External"
 
-# STEP 4: One-time migration
+# STEP 5: One-time migration
 echo -e "${GREEN}💾 Creating Cloud SQL instance for one-time migration...${NC}"
 gcloud sql instances create $TARGET_ONE \
   --database-version=MYSQL_8_0 \
@@ -94,8 +103,6 @@ gcloud database-migration migration-jobs create $TARGET_ONE \
 
 echo -e "${YELLOW}▶️ Starting one-time migration...${NC}"
 gcloud database-migration migration-jobs start $TARGET_ONE --region=$REGION
-
-echo -e "${BLUE}⏱️ Waiting 2 minutes for migration to complete...${NC}"
 sleep 120
 
 echo -e "${GREEN}🔎 Verifying migrated data...${NC}"
@@ -104,8 +111,30 @@ use customers_data;
 select count(*) from customers;
 EOF
 
-# STEP 5: Continuous migration (⚠️ Requires VPC peering configured)
-echo -e "${GREEN}🌐 Creating Cloud SQL instance for continuous migration...${NC}"
+# STEP 6: Check/Create VPC Peering
+echo -e "${GREEN}🌐 Checking VPC peering status...${NC}"
+if ! gcloud compute networks peerings list --network=default | grep -q "servicenetworking"; then
+  echo -e "${YELLOW}⚠️ VPC Peering not found. Creating now...${NC}"
+  gcloud services enable servicenetworking.googleapis.com
+
+  gcloud compute addresses create google-managed-services-default \
+    --global \
+    --purpose=VPC_PEERING \
+    --prefix-length=16 \
+    --network=default
+
+  gcloud services vpc-peerings connect \
+    --service=servicenetworking.googleapis.com \
+    --network=default \
+    --ranges=google-managed-services-default
+
+  echo -e "${BLUE}✅ VPC Peering created successfully.${NC}"
+else
+  echo -e "${BLUE}✅ VPC Peering already configured.${NC}"
+fi
+
+# STEP 7: Continuous migration
+echo -e "${GREEN}🔄 Creating Cloud SQL instance for continuous migration...${NC}"
 gcloud sql instances create $TARGET_CONT \
   --database-version=MYSQL_8_0 \
   --tier=db-custom-2-8192 \
@@ -115,20 +144,16 @@ gcloud sql instances create $TARGET_CONT \
 
 gcloud sql users set-password root --host=% --instance=$TARGET_CONT --password=supersecret!
 
-echo -e "${GREEN}🔄 Creating continuous migration job...${NC}"
 gcloud database-migration migration-jobs create $TARGET_CONT \
   --region=$REGION \
   --type=CONTINUOUS \
   --source=mysql-src-profile \
   --destination=projects/$PROJECT_ID/instances/$TARGET_CONT
 
-echo -e "${YELLOW}▶️ Starting continuous migration...${NC}"
 gcloud database-migration migration-jobs start $TARGET_CONT --region=$REGION
-
-echo -e "${BLUE}⏱️ Waiting 2 minutes for continuous sync to begin...${NC}"
 sleep 120
 
-# STEP 6: Test replication
+# STEP 8: Replication test
 echo -e "${GREEN}✏️ Updating source database to test replication...${NC}"
 gcloud compute ssh $SOURCE_INSTANCE --zone=$ZONE --command "
 mysql -uadmin -pchangeme -e \"
@@ -139,20 +164,22 @@ update customers set gender='FEMALE' where addressKey=934;
 echo -e "${BLUE}⏱️ Waiting 1 minute for replication...${NC}"
 sleep 60
 
-echo -e "${GREEN}🔍 Checking replicated data on destination...${NC}"
+echo -e "${GREEN}🔍 Checking replicated data...${NC}"
 gcloud sql connect $TARGET_CONT --user=root --quiet <<'EOF'
 use customers_data;
 select gender from customers where addressKey=934;
 EOF
 
-# STEP 7: Promote database
-echo -e "${GREEN}🚀 Promoting destination Cloud SQL instance to standalone...${NC}"
+# STEP 9: Promote database
+echo -e "${GREEN}🚀 Promoting Cloud SQL to standalone...${NC}"
 gcloud database-migration migration-jobs promote $TARGET_CONT --region=$REGION
 
-# ✅ Final message
+# ✅ Final summary
 echo -e "${BLUE}"
 echo "=============================================================="
 echo "✅ MIGRATION COMPLETE!"
+echo " - Database Migration API ✅"
+echo " - VPC Peering ✅"
 echo " - One-time migration ✅"
 echo " - Continuous migration ✅"
 echo " - Replication test ✅"
