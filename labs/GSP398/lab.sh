@@ -22,7 +22,7 @@ REGION="us-west1"  # ✅ Change this if you want a different region
 
 NOTEBOOK_FILE="cnn_challenge_lab-v1.0.0.ipynb"
 BUCKET_PATH="gs://${PROJECT_ID}-labconfig-bucket/${NOTEBOOK_FILE}"
-EPLUS_NOTEBOOK="cnn_challenge_lab-v1.0.0_eplus.ipynb"
+EPLUS_NOTEBOOK="Drabhishek_fixed_fallback.ipynb"
 EPLUS_URL="https://raw.githubusercontent.com/ePlus-DEV/storage/main/labs/GSP398/Drabhishek_fixed_fallback.ipynb"
 
 echo -e "${BLUE}📦 Project ID     : ${GREEN}$PROJECT_ID${RESET}"
