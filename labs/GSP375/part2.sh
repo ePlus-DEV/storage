@@ -9,7 +9,7 @@ BLUE='\033[1;34m'
 NC='\033[0m'
 
 # ====== CONFIG ======
-CUSTOMER_PROJECT=$(gcloud projects list --format="value(projectId)" --limit=1)
+CUSTOMER_PROJECT="qwiklabs-gcp-04-7d5861d831d8"
 CUSTOMER_DATASET="customer_dataset"
 CUSTOMER_VIEW="customer_authorized_view_mz9o"
 

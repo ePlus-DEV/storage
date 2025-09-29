@@ -9,7 +9,7 @@ BLUE='\033[1;34m'
 NC='\033[0m' # No Color
 
 # ====== CONFIG ======
-PARTNER_PROJECT=$(gcloud projects list --format="value(projectId)" --limit=1)
+PARTNER_PROJECT="qwiklabs-gcp-01-b5652795dd71"
 PARTNER_DATASET="demo_dataset"
 PARTNER_VIEW="authorized_view_b9g4"
 CUSTOMER_USER="student-00-30098cb3cb36@qwiklabs.net"
