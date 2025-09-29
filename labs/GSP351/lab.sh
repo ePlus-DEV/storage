@@ -40,8 +40,8 @@ echo -e "${GREEN}🔧 Setting region and zone...${NC}"
 gcloud config set compute/region us-east4
 gcloud config set compute/zone us-east4-b
 
-export REGION=us-east4
-export ZONE=us-east4-b
+ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 PROJECT_ID=$(gcloud config get-value project)
 
 echo -e "${BLUE}✅ Region:${NC} $REGION"
