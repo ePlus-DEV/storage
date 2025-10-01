@@ -53,6 +53,6 @@ EOF
 curl -s -X POST -H "Content-Type: application/json" --data-binary @"$REQUEST2" \
 "https://speech.googleapis.com/v1/speech:recognize?key=$API_KEY" > $RESPONSE2
 
-echo "${RED}${BOLD}Congratulations${RESET}" "${WHITE}${BOLD}for${RESET}" "${GREEN}${BOLD}Completing the Lab !!!${RESET}"
+echo "${RED}${BOLD}Congratulations${RESET}" "${WHITE}${BOLD}for${RESET}" "${GREEN}${BOLD}Completing the Lab !!! - ePlus.DEV${RESET}"
 
 #-----------------------------------------------------end----------------------------------------------------------#
