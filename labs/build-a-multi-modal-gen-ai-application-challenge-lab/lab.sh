@@ -37,9 +37,13 @@ echo -e "${GREEN}✅ Using Region:${NC} $REGION"
 
 # ✅ Install dependencies
 echo -e "${YELLOW}📦 Installing required Python packages...${NC}"
-pip install --quiet google-cloud-aiplatform
+pip install --quiet --upgrade google-cloud-aiplatform
 
-# 🐍 Run inline Python
+# 🧠 Make sure pip install is loaded before running Python
+hash -r
+python3 -m pip install --upgrade pip > /dev/null 2>&1
+
+# 🚀 Run inline Python
 python3 <<EOF
 import os
 import vertexai
