@@ -1,76 +1,155 @@
 #!/bin/bash
-# -----------------------------------------------------------------------------
-# Copyright (c) 2025 ePlus.DEV
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-# THE SOFTWARE.
-# -----------------------------------------------------------------------------
 
-# 🌸 AI Bouquet Generator – ePlus.DEV
+# Color Definitions
+BLACK_TEXT=$'\033[0;90m'
+RED_TEXT=$'\033[0;91m'
+GREEN_TEXT=$'\033[0;92m'
+YELLOW_TEXT=$'\033[0;93m'
+BLUE_TEXT=$'\033[0;94m'
+MAGENTA_TEXT=$'\033[0;95m'
+CYAN_TEXT=$'\033[0;96m'
+WHITE_TEXT=$'\033[0;97m'
 
-# Colors
-GREEN="\033[0;32m"
-YELLOW="\033[1;33m"
-RED="\033[0;31m"
-NC="\033[0m" # No Color
+NO_COLOR=$'\033[0m'
+RESET_FORMAT=$'\033[0m'
+BOLD_TEXT=$'\033[1m'
+UNDERLINE_TEXT=$'\033[4m'
 
-export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-export PROJECT_ID=$(gcloud projects list --format="value(projectId)" --limit=1)
+clear
 
-echo -e "${GREEN}✅ Using Project:${NC} $PROJECT_ID"
-echo -e "${GREEN}✅ Using Region:${NC} $REGION"
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
-# ✅ Install dependencies
-echo -e "${YELLOW}📦 Installing required Python packages...${NC}"
-pip install --quiet --upgrade google-cloud-aiplatform
+# Confirm User Input
+echo "${GREEN_TEXT}${BOLD_TEXT}You have entered the region:${RESET_FORMAT} ${YELLOW_TEXT}${REGION}${RESET_FORMAT}"
+echo
 
-# 🧠 Make sure pip install is loaded before running Python
-hash -r
-python3 -m pip install --upgrade pip > /dev/null 2>&1
+# Fetch GCP Project ID
+ID="$(gcloud projects list --format='value(PROJECT_ID)')"
 
-# 🚀 Run inline Python
-python3 <<EOF
-import os
+# Generate Image Python Script
+cat > GenerateImage.py <<EOF_END
+import argparse
 import vertexai
-from vertexai.preview.generative_models import ImageGenerationModel, GenerativeModel, Part
+from vertexai.preview.vision_models import ImageGenerationModel
 
-# Init Vertex AI
-PROJECT_ID = "$PROJECT_ID"
-LOCATION = "$REGION"
-vertexai.init(project=PROJECT_ID, location=LOCATION)
+def generate_image(
+    project_id: str, location: str, output_file: str, prompt: str
+) -> vertexai.preview.vision_models.ImageGenerationResponse:
+    """Generate an image using a text prompt.
+    Args:
+      project_id: Google Cloud project ID, used to initialize Vertex AI.
+      location: Google Cloud region, used to initialize Vertex AI.
+      output_file: Local path to the output image file.
+      prompt: The text prompt describing what you want to see."""
 
-# --- Task 1: Generate bouquet image ---
-prompt = "Create an image containing a bouquet of 2 sunflowers and 3 roses."
-model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-002")
-result = model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="1:1")
+    vertexai.init(project=project_id, location=location)
+    model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-002")
+    images = model.generate_images(
+        prompt=prompt,
+        number_of_images=1,
+        seed=1,
+        add_watermark=False,
+    )
+    images[0].save(location=output_file)
+    return images
 
-image_path = "bouquet.png"
-result.images[0].save(image_path)
-print(f"\\n${GREEN}✅ Image generated and saved to {image_path}${NC}")
+generate_image(
+    project_id='$ID',
+    location='$REGION',
+    output_file='image.jpeg',
+    prompt='Create an image containing a bouquet of 2 sunflowers and 3 roses',
+)
+EOF_END
 
-# --- Task 2: Analyze bouquet image ---
-gemini = GenerativeModel("gemini-2.0-flash-001")
-image_part = Part.from_image(image_path)
-text_prompt = "Generate a creative birthday wish based on this bouquet image."
+echo "${YELLOW_TEXT}${BOLD_TEXT}Generating an image of flowers... Please wait.${RESET_FORMAT}"
+/usr/bin/python3 /home/student/GenerateImage.py
+echo "${GREEN_TEXT}${BOLD_TEXT}Image generated successfully! Check 'image.jpeg' in your working directory.${RESET_FORMAT}"
 
-print(f"\\n${YELLOW}🎉 Birthday wish generated:${NC}")
-responses = gemini.generate_content([image_part, text_prompt], stream=True)
-for response in responses:
-    if response.candidates:
-        print(response.candidates[0].content.parts[0].text)
-EOF
+# Multimodal Analysis Script
+cat > genai.py <<EOF_END
+import vertexai
+from vertexai.generative_models import GenerativeModel, Part, Image, Content
+import sys
+
+def analyze_bouquet_image(project_id: str, location: str):
+    # Initialize Vertex AI
+    vertexai.init(project=project_id, location=location)
+    
+    # Load the Gemini multimodal model
+    model = GenerativeModel("gemini-2.0-flash-001")
+    
+    # Load image part
+    image_path = "/home/student/image.jpeg"
+    image_part = Part.from_image(Image.load_from_file(image_path))
+    
+    # Initial image analysis with streaming
+    print("📷 Image Analysis: ", end="", flush=True)
+    response_stream = model.generate_content(
+        [
+            image_part,
+            Part.from_text("What is shown in this image?")
+        ],
+        stream=True
+    )
+    
+    # Print streamed response
+    full_response = ""
+    for chunk in response_stream:
+        if chunk.text:
+            print(chunk.text, end="", flush=True)
+            full_response += chunk.text
+    print("\n")
+    
+    # Start chat with proper history format
+    chat_history = [
+        Content(role="user", parts=[image_part, Part.from_text("What is shown in this image?")]),
+        Content(role="model", parts=[Part.from_text(full_response)])
+    ]
+    
+    chat = model.start_chat(history=chat_history)
+    
+    print("\n🎤 Chat with Gemini (type 'exit' to quit):")
+    
+    while True:
+        user_input = input("You: ")
+        if user_input.lower() == "exit":
+            break
+        
+        try:
+            # Send message with streaming
+            response_stream = chat.send_message(user_input, stream=True)
+            print("Gemini: ", end="", flush=True)
+            
+            for chunk in response_stream:
+                if chunk.text:
+                    print(chunk.text, end="", flush=True)
+            print()
+            
+        except Exception as e:
+            print(f"Error: {e}")
+            break
+
+# Set your project and location
+project_id = "$ID"
+location = "$REGION"
+
+# Run the function
+analyze_bouquet_image(project_id, location)
+EOF_END
+
+echo "${YELLOW_TEXT}${BOLD_TEXT}Analyzing the generated image with Gemini...${RESET_FORMAT}"
+/usr/bin/python3 /home/student/genai.py
+
+# Enhanced Completion Message
+echo
+echo "${GREEN_TEXT}${BOLD_TEXT}╔══════════════════════════════════════════════════╗${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}║                                                  ║${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}║          🎉 LAB COMPLETED SUCCESSFULLY! 🎉       ║${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}║                                                  ║${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}╚══════════════════════════════════════════════════╝${RESET_FORMAT}"
+echo
+echo "${CYAN_TEXT}${BOLD_TEXT}┌──────────────────────────────────────────────────┐${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}│  ${WHITE_TEXT}🔍 Explore more AI content at:                  ${CYAN_TEXT}│${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}│  ${BLUE_TEXT}${UNDERLINE_TEXT}https://eplus.dev${NO_COLOR}${CYAN_TEXT}   │${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}└──────────────────────────────────────────────────┘${RESET_FORMAT}"
+echo
