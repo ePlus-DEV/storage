@@ -19,16 +19,12 @@ UNDERLINE_TEXT=$'\033[4m'
 
 clear
 
-# Welcome message with Dr. Abhishek reference
-echo "${CYAN_TEXT}${BOLD_TEXT}=============================================${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}    WELCOME TO DR. ABHISHEK CLOUD TUTORIALS   ${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}      KUBERNETES ENGINE LAB EXECUTION       ${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}=============================================${RESET_FORMAT}"
 echo
 echo "${MAGENTA_TEXT}${BOLD_TEXT}Learn Kubernetes with GKE and Cloud Build${RESET_FORMAT}"
 echo
 
 # Set region from zone
+export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 export REGION="${ZONE%-*}"
 echo "${BLUE_TEXT}Zone: $ZONE${RESET_FORMAT}"
 echo "${BLUE_TEXT}Region: $REGION${RESET_FORMAT}"
@@ -230,16 +226,7 @@ kubectl get service quiz-frontend
 
 # Final message with Dr. Abhishek references
 echo
-echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}        KUBERNETES ENGINE LAB COMPLETED SUCCESSFULLY!  ${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
-echo
-echo "${RED_TEXT}${BOLD_TEXT}${UNDERLINE_TEXT}Welcome to Dr. Abhishek Cloud Tutorials${RESET_FORMAT}"
-echo "${GREEN_TEXT}${BOLD_TEXT}Subscribe to our channel for more Kubernetes tutorials:${RESET_FORMAT}"
-echo "${BLUE_TEXT}${BOLD_TEXT}https://www.youtube.com/@drabhishek.5460/videos${RESET_FORMAT}"
-echo
-echo "${MAGENTA_TEXT}${BOLD_TEXT}Thank you for following Dr. Abhishek Cloud Tutorials!${RESET_FORMAT}"
-echo "${YELLOW_TEXT}${BOLD_TEXT}Don't forget to Like, Share and Subscribe!${RESET_FORMAT}"
+echo "${BLUE_TEXT}${BOLD_TEXT}https://eplus.dev${RESET_FORMAT}"
 echo
 echo "${CYAN_TEXT}${BOLD_TEXT}Lab Summary:${RESET_FORMAT}"
 echo "${WHITE_TEXT}✓ GKE cluster created and configured${RESET_FORMAT}"
