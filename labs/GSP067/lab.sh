@@ -1,44 +1,74 @@
-#!/usr/bin/env bash
-# ============================================================================
-#  ePlus.DEV Dataplex Setup Script
-#  Copyright (c) 2025 ePlus.DEV. All rights reserved.
-#  License: For educational/lab use only. No warranty of any kind.
-# ============================================================================
+#!/bin/bash
+# ==========================================
+# 🚀 Google App Engine Hello World Deployment Script
+# 📜 Copyright (c) 2025 ePlus.DEV - All Rights Reserved
+# ==========================================
 
-set -euo pipefail
+# 🎨 Terminal colors
+GREEN="\e[32m"
+BLUE="\e[36m"
+YELLOW="\e[33m"
+RED="\e[31m"
+BOLD="\e[1m"
+RESET="\e[0m"
 
-# ---- Colors ----------------------------------------------------------------
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+echo -e "${BOLD}${BLUE}"
+echo "============================================================"
+echo " 🚀 GOOGLE APP ENGINE HELLO WORLD DEPLOY SCRIPT"
+echo " 📜 Copyright (c) 2025 ePlus.DEV - All Rights Reserved"
+echo "============================================================"
+echo -e "${RESET}"
 
-# ---- Helpers ---------------------------------------------------------------
-die() { echo -e "${RED}✖ $*${NC}" >&2; exit 1; }
-info() { echo -e "${YELLOW}➜ $*${NC}"; }
-ok()   { echo -e "${GREEN}✔ $*${NC}"; }
-hl()   { echo -e "${CYAN}$*${NC}"; }
-
-export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-
-gcloud auth list
+# 🛠️ Task 1: Enable App Engine Admin API
+echo -e "${YELLOW}🔧 Enabling App Engine Admin API...${RESET}"
 gcloud services enable appengine.googleapis.com
 
+# 📁 Task 2: Download the Hello World sample
+echo -e "${YELLOW}📦 Cloning Hello World sample repository...${RESET}"
 git clone https://github.com/GoogleCloudPlatform/python-docs-samples.git
 
-cd python-docs-samples/appengine/standard_python3/hello_world
+# 📂 Move into sample folder
+cd python-docs-samples/appengine/standard_python3/hello_world || exit
 
-sudo apt install python3 -y
-sudo apt install python3.11-venv -y
-python3 -m venv create myvenv
-source myvenv/bin/activate
+# 🐍 Setup Python virtual environment
+echo -e "${YELLOW}🐍 Setting up Python virtual environment...${RESET}"
+sudo apt update -y
+sudo apt install -y python3-venv
+python3 -m venv myenv
+source myenv/bin/activate
 
+# 📦 Install Flask
+echo -e "${YELLOW}📦 Installing Flask...${RESET}"
+pip install Flask
 
-sed -i '32c\    return "Hello, Cruel World!"' main.py
+# 🧪 Task 3: Test the Hello World app locally (optional)
+echo -e "${BLUE}⚙️  Running original Hello World app locally for 5s...${RESET}"
+flask --app main run &
+sleep 5
+kill $!
 
-sleep 30
+# ✏️ Task 4: Modify main.py automatically
+echo -e "${YELLOW}✏️ Updating message to 'Hello, Cruel World!'...${RESET}"
+sed -i 's/Hello World!/Hello, Cruel World!/g' main.py
 
-gcloud app create --region=$REGION
+# 🧪 Test updated version locally (optional)
+echo -e "${BLUE}🔁 Running updated Hello World app locally for 5s...${RESET}"
+flask --app main run &
+sleep 5
+kill $!
 
+# ☁️ Task 5: Deploy to App Engine
+echo -e "${GREEN}🚀 Deploying the app to Google App Engine...${RESET}"
 gcloud app deploy --quiet
+
+# 🌐 Task 6: Open deployed app
+echo -e "${BLUE}🌐 Opening deployed app in your browser...${RESET}"
+gcloud app browse
+
+echo -e "${GREEN}${BOLD}"
+echo "============================================================"
+echo " ✅ Deployment completed successfully!"
+echo " 🎉 Visit your app URL to see: Hello, Cruel World!"
+echo " 📜 Script by ePlus.DEV — All Rights Reserved 2025"
+echo "============================================================"
+echo -e "${RESET}"
