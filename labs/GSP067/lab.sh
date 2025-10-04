@@ -19,6 +19,8 @@ echo " 📜 Copyright (c) 2025 ePlus.DEV - All Rights Reserved"
 echo "============================================================"
 echo -e "${RESET}"
 
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+
 # 🛠️ Task 1: Enable App Engine Admin API
 echo -e "${YELLOW}🔧 Enabling App Engine Admin API...${RESET}"
 gcloud services enable appengine.googleapis.com
@@ -56,6 +58,15 @@ echo -e "${BLUE}🔁 Running updated Hello World app locally for 5s...${RESET}"
 flask --app main run &
 sleep 5
 kill $!
+
+# ☁️ Check if App Engine is initialized
+echo -e "${YELLOW}☁️ Checking if App Engine application exists...${RESET}"
+if ! gcloud app describe >/dev/null 2>&1; then
+  echo -e "${BLUE}🌐 Creating new App Engine application in region $REGION...${RESET}"
+  gcloud app create --region=$REGION
+else
+  echo -e "${GREEN}✅ App Engine application already exists.${RESET}"
+fi
 
 # ☁️ Task 5: Deploy to App Engine
 echo -e "${GREEN}🚀 Deploying the app to Google App Engine...${RESET}"
