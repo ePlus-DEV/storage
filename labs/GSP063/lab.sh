@@ -3,9 +3,6 @@ clear
 
 gcloud services enable language.googleapis.com
 
-echo "Please set the required values for the lab"
-read -p "${YELLOW}${BOLD}API key: ${RESET}" KEY
-
 ZONE="$(gcloud compute instances list --project=$DEVSHELL_PROJECT_ID --format='value(ZONE)')"
 
 gcloud compute instances add-metadata linux-instance --metadata API_KEY="$KEY" --project=$DEVSHELL_PROJECT_ID --zone=$ZONE
