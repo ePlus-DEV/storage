@@ -14,7 +14,7 @@ RESET="\033[0m"
 
 echo -e "${CYAN}"
 echo "============================================================="
-echo "🚀 Google App Engine Hello World Deployment (Go Runtime)"
+echo "🚀 Cloud Storage: Qwik Start - CLI/SDK - GSP074
 echo "📦 Script by ePlus.DEV | © 2025 All Rights Reserved"
 echo "============================================================="
 echo -e "${RESET}"
