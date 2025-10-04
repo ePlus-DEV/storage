@@ -44,10 +44,7 @@ RESET=`tput sgr0`
 
 echo "${YELLOW}${BOLD}Starting${RESET}" "${GREEN}${BOLD}Execution${RESET}"
 
-# ---- Ask for REGION --------------------------------------------------------
-read -rp "$(echo -e "${CYAN}Enter REGION [us-central1]: ${NC}")" INPUT_REGION
-REGION="${INPUT_REGION:-us-central1}"
-[[ -n "$REGION" ]] || die "REGION must not be empty"
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
 gcloud services enable appengine.googleapis.com
 
