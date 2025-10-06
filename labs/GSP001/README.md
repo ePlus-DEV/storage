@@ -1,3 +1,3 @@
-# Creating a Persistent Disk - GSP004
+# Creating a Virtual Machine - GSP001
 
-<https://eplus.dev/creating-a-persistent-disk-gsp004>
+<https://eplus.dev/creating-a-virtual-machine-gsp001>
