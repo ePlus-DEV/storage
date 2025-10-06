@@ -26,10 +26,8 @@ echo -e "${CYAN}Powered by ePlus.DEV © 2025 – All rights reserved.${RESET}\n"
 # 📍 Project & Region Configuration
 # ==========================================================
 PROJECT_ID=$(gcloud config get-value project)
-REGION="europe-west4"
 
 echo -e "${YELLOW}Detected Project:${RESET} ${GREEN}$PROJECT_ID${RESET}"
-echo -e "${YELLOW}Default Region:${RESET} ${GREEN}$REGION${RESET}"
 
 # ❗ Force user to enter zone
 read -p "👉 Please enter your ZONE (e.g., europe-west4-a): " ZONE
