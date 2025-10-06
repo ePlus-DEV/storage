@@ -1,82 +1,115 @@
 #!/bin/bash
-# Define color variables
+# ==========================================================
+#  Google Cloud Infrastructure Setup Script
+# ----------------------------------------------------------
+#  Author: ePlus.DEV © 2025
+#  License: Proprietary – All rights reserved.
+#  Description: Automates creation of web infrastructure
+#               (Storage Bucket, VM, Persistent Disk, NGINX)
+# ==========================================================
 
-BLACK=`tput setaf 0`
-RED=`tput setaf 1`
-GREEN=`tput setaf 2`
-YELLOW=`tput setaf 3`
-BLUE=`tput setaf 4`
-MAGENTA=`tput setaf 5`
-CYAN=`tput setaf 6`
-WHITE=`tput setaf 7`
+# 🌈 Terminal Colors
+RED="\e[31m"
+GREEN="\e[32m"
+YELLOW="\e[33m"
+BLUE="\e[34m"
+MAGENTA="\e[35m"
+CYAN="\e[36m"
+BOLD="\e[1m"
+RESET="\e[0m"
 
-BG_BLACK=`tput setab 0`
-BG_RED=`tput setab 1`
-BG_GREEN=`tput setab 2`
-BG_YELLOW=`tput setab 3`
-BG_BLUE=`tput setab 4`
-BG_MAGENTA=`tput setab 5`
-BG_CYAN=`tput setab 6`
-BG_WHITE=`tput setab 7`
+clear
+echo -e "${MAGENTA}${BOLD}🚀 The Basics of Google Cloud Compute: Challenge Lab - ARC120 ${RESET}"
+echo -e "${CYAN}Powered by ePlus.DEV © 2025 – All rights reserved.${RESET}\n"
 
-BOLD=`tput bold`
-RESET=`tput sgr0`
-#----------------------------------------------------start--------------------------------------------------#
+# ==========================================================
+# 📍 Project & Region Configuration
+# ==========================================================
+PROJECT_ID=$(gcloud config get-value project)
+REGION="europe-west4"
 
-echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV${RESET}"
+echo -e "${YELLOW}Detected Project:${RESET} ${GREEN}$PROJECT_ID${RESET}"
+echo -e "${YELLOW}Default Region:${RESET} ${GREEN}$REGION${RESET}"
 
-export ZONE=$(gcloud compute project-info describe \
---format="value(commonInstanceMetadata.items[google-compute-default-zone])")
-export REGION=$(echo "$ZONE" | cut -d '-' -f 1-2)
-export PROJECT_ID=$(gcloud config get-value project)
-export PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+# ❗ Force user to enter zone
+read -p "👉 Please enter your ZONE (e.g., europe-west4-a): " ZONE
+if [ -z "$ZONE" ]; then
+  echo -e "${RED}❌ ERROR: Zone is required. Aborting.${RESET}"
+  exit 1
+fi
 
-gcloud services enable artifactregistry.googleapis.com
+echo -e "${GREEN}✅ Zone confirmed:${RESET} $ZONE\n"
 
-git clone https://github.com/GoogleCloudPlatform/java-docs-samples
-cd java-docs-samples/container-registry/container-analysis
+# ==========================================================
+# 🔧 Variables
+# ==========================================================
+BUCKET_NAME="qwiklabs-gcp-00-c8124aa7472b-bucket"
+INSTANCE_NAME="my-instance"
+DISK_NAME="mydisk"
 
-gcloud artifacts repositories create container-dev-java-repo \
-    --repository-format=maven \
-    --location=$REGION \
-    --description="Java package repository for Container Dev Workshop"
+# ==========================================================
+# 1️⃣ Create Cloud Storage Bucket
+# ==========================================================
+echo -e "${BLUE}🪣 Creating Cloud Storage bucket...${RESET}"
+gsutil mb -l US gs://$BUCKET_NAME/
+echo -e "${GREEN}✅ Bucket created:${RESET} gs://$BUCKET_NAME\n"
 
-gcloud artifacts repositories describe container-dev-java-repo \
-    --location=$REGION
+# ==========================================================
+# 2️⃣ Create VM Instance with NGINX Startup Script
+# ==========================================================
+echo -e "${BLUE}🖥️ Creating Compute Engine VM instance...${RESET}"
+gcloud compute instances create $INSTANCE_NAME \
+  --zone=$ZONE \
+  --machine-type=e2-medium \
+  --image-family=debian-12 \
+  --image-project=debian-cloud \
+  --boot-disk-size=10GB \
+  --boot-disk-type=pd-balanced \
+  --tags=http-server \
+  --metadata=startup-script='#!/bin/bash
+    apt update -y
+    apt install -y nginx
+    systemctl enable nginx
+    systemctl start nginx'
 
-gcloud artifacts repositories create maven-central-cache \
-    --project=$PROJECT_ID \
-    --repository-format=maven \
-    --location=$REGION \
-    --description="Remote repository for Maven Central caching" \
-    --mode=remote-repository \
-    --remote-repo-config-desc="Maven Central" \
-    --remote-mvn-repo=MAVEN-CENTRAL
+echo -e "${GREEN}✅ VM created:${RESET} $INSTANCE_NAME\n"
 
-cat > ./policy.json << EOF
-[
-  {
-    "id": "private",
-    "repository": "projects/${PROJECT_ID}/locations/$REGION/repositories/container-dev-java-repo",
-    "priority": 100
-  },
-  {
-    "id": "central",
-    "repository": "projects/${PROJECT_ID}/locations/$REGION/repositories/maven-central-cache",
-    "priority": 80
-  }
-]
+# ==========================================================
+# 3️⃣ Create and Attach Persistent Disk
+# ==========================================================
+echo -e "${BLUE}💾 Creating persistent disk...${RESET}"
+gcloud compute disks create $DISK_NAME \
+  --size=200GB \
+  --type=pd-balanced \
+  --zone=$ZONE
 
-EOF
+echo -e "${BLUE}🔗 Attaching disk to instance...${RESET}"
+gcloud compute instances attach-disk $INSTANCE_NAME \
+  --disk=$DISK_NAME \
+  --zone=$ZONE
 
-gcloud artifacts repositories create virtual-maven-repo \
-    --project=${PROJECT_ID} \
-    --repository-format=maven \
-    --mode=virtual-repository \
-    --location=$REGION \
-    --description="Virtual Maven Repo" \
-    --upstream-policy-file=./policy.json
+echo -e "${GREEN}✅ Disk created and attached:${RESET} $DISK_NAME\n"
 
-echo "${BG_RED}${BOLD}Congratulations For Completing The Lab !!! - ePlus.DEV${RESET}"
+# ==========================================================
+# 4️⃣ (Optional) Format & Mount Disk
+# ==========================================================
+echo -e "${BLUE}💿 Formatting and mounting disk (optional)...${RESET}"
+gcloud compute ssh $INSTANCE_NAME --zone=$ZONE --command="
+  sudo mkdir -p /mnt/data &&
+  sudo mkfs.ext4 -F /dev/disk/by-id/google-$DISK_NAME &&
+  sudo mount -o discard,defaults /dev/disk/by-id/google-$DISK_NAME /mnt/data &&
+  echo '/dev/disk/by-id/google-$DISK_NAME /mnt/data ext4 discard,defaults 0 2' | sudo tee -a /etc/fstab
+"
+echo -e "${GREEN}✅ Disk formatted and mounted at /mnt/data${RESET}\n"
 
-#-----------------------------------------------------end----------------------------------------------------------#
+# ==========================================================
+# ✅ Final Output
+# ==========================================================
+EXTERNAL_IP=$(gcloud compute instances describe $INSTANCE_NAME --zone=$ZONE --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
+
+echo -e "${MAGENTA}${BOLD}🎉 Setup Complete!${RESET}\n"
+echo -e "${CYAN}🌐 Access your NGINX web server at:${RESET} ${GREEN}http://$EXTERNAL_IP/${RESET}"
+echo -e "${CYAN}🪣 Storage bucket:${RESET} ${GREEN}gs://$BUCKET_NAME${RESET}"
+echo -e "${CYAN}💾 Persistent disk:${RESET} ${GREEN}$DISK_NAME (200GB)${RESET}"
+echo -e "${CYAN}🖥️ VM instance:${RESET} ${GREEN}$INSTANCE_NAME${RESET}"
+echo -e "\n${BOLD}✨ Infrastructure built successfully with ePlus.DEV ✨${RESET}"
