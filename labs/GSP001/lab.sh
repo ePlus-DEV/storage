@@ -1,50 +1,55 @@
 #!/bin/bash
-# Define color variables
+# ============================================================
+#  Google Cloud VM + NGINX Setup Script
+#  Author: ePlus.DEV (Nguyễn Ngọc Minh Hoàng)
+#  Description: Creates VM, installs NGINX, enables HTTP access
+#  Version: 1.0
+#  © 2025 ePlus.DEV - All rights reserved
+# ============================================================
 
-BLACK=`tput setaf 0`
-RED=`tput setaf 1`
-GREEN=`tput setaf 2`
-YELLOW=`tput setaf 3`
-BLUE=`tput setaf 4`
-MAGENTA=`tput setaf 5`
-CYAN=`tput setaf 6`
-WHITE=`tput setaf 7`
-
-BG_BLACK=`tput setab 0`
-BG_RED=`tput setab 1`
-BG_GREEN=`tput setab 2`
-BG_YELLOW=`tput setab 3`
-BG_BLUE=`tput setab 4`
-BG_MAGENTA=`tput setab 5`
-BG_CYAN=`tput setab 6`
-BG_WHITE=`tput setab 7`
-
-BOLD=`tput bold`
-RESET=`tput sgr0`
-#----------------------------------------------------start--------------------------------------------------#
-
-echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV ${RESET}"
-
-PROJECT_ID=$(gcloud projects list --format="value(projectId)" --limit=1)
+# 🟡 Set project region/zone (⚠️ Edit if needed)
 REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 
+# 🌍 Configure gcloud defaults
+echo -e "\033[1;36m📍 Setting region and zone...\033[0m"
+gcloud config set compute/region $REGION
+gcloud config set compute/zone $ZONE
 
-gcloud compute instances create gcelab --project=$DEVSHELL_PROJECT_ID --zone=$ZONE --machine-type=e2-medium --network-interface=network-tier=PREMIUM,stack-type=IPV4_ONLY,subnet=default --metadata=enable-oslogin=true --maintenance-policy=MIGRATE --provisioning-model=STANDARD --scopes=https://www.googleapis.com/auth/devstorage.read_only,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/trace.append --tags=http-server,https-server --create-disk=auto-delete=yes,boot=yes,device-name=gcelab,image=projects/debian-cloud/global/images/debian-11-bullseye-v20230629,mode=rw,size=10,type=projects/$DEVSHELL_PROJECT_ID/zones/$ZONE/diskTypes/pd-balanced --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --labels=goog-ec-src=vm_add-gcloud --reservation-affinity=any
+# 🖥️ Create VM Instance
+echo -e "\033[1;36m🖥️ Creating VM instance 'gcelab'...\033[0m"
+gcloud compute instances create gcelab \
+  --machine-type=e2-medium \
+  --image-family=debian-12 \
+  --image-project=debian-cloud \
+  --boot-disk-size=10GB \
+  --tags=http-server
 
+# 🌐 Allow HTTP traffic (port 80)
+echo -e "\033[1;36m🔓 Configuring firewall rules for HTTP...\033[0m"
+gcloud compute firewall-rules create allow-http \
+  --allow tcp:80 \
+  --target-tags=http-server \
+  --description="Allow HTTP traffic on port 80"
 
-gcloud compute instances create gcelab2 --machine-type e2-medium --zone=$ZONE
+# 🪄 Connect to VM and install NGINX
+echo -e "\033[1;36m🔧 Connecting to VM and installing NGINX...\033[0m"
+gcloud compute ssh gcelab --zone=$ZONE --command "
+  echo -e '\033[1;33m📦 Updating packages...\033[0m'
+  sudo apt-get update -y
 
+  echo -e '\033[1;33m🌐 Installing NGINX...\033[0m'
+  sudo apt-get install -y nginx
 
-gcloud compute ssh --zone "$ZONE" "gcelab" --project "$DEVSHELL_PROJECT_ID" --quiet --command "sudo apt-get update && sudo apt-get install -y nginx && ps auwx | grep nginx "
+  echo -e '\033[1;33m⚙️ Enabling and starting NGINX service...\033[0m'
+  sudo systemctl enable nginx
+  sudo systemctl start nginx
 
-sudo apt-get update
-sudo apt-get install -y nginx
-ps auwx | grep nginx
+  echo -e '\033[1;32m✅ NGINX status:\033[0m'
+  sudo systemctl status nginx --no-pager
+"
 
-
-gcloud compute firewall-rules create allow-http --network=default --allow=tcp:80 --target-tags=allow-http
-
-echo "${BG_RED}${BOLD}Congratulations For Completing!!! - ePlus.DEV ${RESET}"
-
-#-----------------------------------------------------end----------------------------------------------------------#
+# 📡 Output External IP for browser check
+echo -e "\033[1;36m🌐 Getting External IP...\033[0m"
+EXTERNAL_IP=$(gcloud compute instances describe gcelab --zone=$ZONE --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
+echo -e "\033[1;32m✅ Setup complete! Visit: http://$EXTERNAL_IP/\033[0m"
