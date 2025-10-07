@@ -2,9 +2,9 @@
 # ===============================================================
 # 🌐 Google Cloud Monitoring Automation Script
 # 🧑‍💻 Author: ePlus.DEV (Nguyễn Ngọc Minh Hoàng)
-# 📅 Version: 1.0.0
+# 📅 Version: 2.0.0
 # 🛡️ License: © 2025 ePlus.DEV - All rights reserved
-# 🎨 Color theme: Neon Blue & Green for readability
+# 🎨 Color theme: Neon Blue & Green
 # ===============================================================
 
 # --- COLORS ---
@@ -17,18 +17,18 @@ PURPLE='\033[1;35m'
 NC='\033[0m' # No Color
 
 echo -e "${CYAN}=============================================================="
-echo -e " 🌐 GOOGLE CLOUD MONITORING LAB - AUTO SCRIPT"
+echo -e " 🌐 GOOGLE CLOUD MONITORING LAB - FULL AUTOMATION SCRIPT"
 echo -e " 🧑‍💻 Author: ${GREEN}ePlus.DEV${NC}"
 echo -e " 📜 License: ${YELLOW}© 2025 ePlus.DEV - All rights reserved${NC}"
 echo -e " 🎨 Theme: ${PURPLE}Neon Blue & Green${NC}"
 echo -e "==============================================================\n"
 
 # ----------------------------------------------
-# 1️⃣ Set project & region
+# 1️⃣ Setup project and region
 # ----------------------------------------------
 echo -e "${BLUE}🔧 Setting up project and region...${NC}"
 export PROJECT_ID=$(gcloud config get-value project)
-REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
 echo -e "${GREEN}✅ Project:${NC} $PROJECT_ID"
 echo -e "${GREEN}✅ Region:${NC} $REGION\n"
@@ -44,59 +44,46 @@ gcloud services enable run.googleapis.com \
 echo -e "${GREEN}✅ APIs enabled successfully.${NC}\n"
 
 # ----------------------------------------------
-# 3️⃣ Deploy HelloWorld Cloud Run function
+# 3️⃣ Verify Cloud Run Service Created
 # ----------------------------------------------
-echo -e "${BLUE}🚀 Creating and deploying Hello World Cloud Run function...${NC}"
-mkdir helloworld && cd helloworld
+echo -e "${BLUE}🔍 Checking if 'helloworld' service exists...${NC}"
+SERVICE_EXISTS=$(gcloud run services list --region=$REGION --format="value(metadata.name)" | grep "helloworld" || true)
 
-cat > index.js <<'EOF'
-const express = require('express');
-const app = express();
-
-app.get('/', (req, res) => {
-  console.log("🔥 New request received!");
-  res.send("Hello World!");
-});
-
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-EOF
-
-cat > package.json <<'EOF'
-{
-  "name": "helloworld",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2"
-  }
-}
-EOF
-
-echo -e "${CYAN}📦 Deploying service...${NC}"
-gcloud run deploy helloworld \
-  --source . \
-  --region=$REGION \
-  --allow-unauthenticated \
-  --max-instances=5 \
-  --execution-environment=gen2 \
-  --runtime=nodejs22
+if [ -z "$SERVICE_EXISTS" ]; then
+  echo -e "${RED}⚠️ Service 'helloworld' not found!${NC}"
+  echo -e "${YELLOW}👉 Please go to Cloud Console and create the service manually first:${NC}"
+  echo -e "   - Service name: ${CYAN}helloworld${NC}"
+  echo -e "   - Region: ${CYAN}us-central1${NC}"
+  echo -e "   - Authentication: ${CYAN}Allow unauthenticated${NC}"
+  echo -e "   - Execution environment: ${CYAN}Second generation${NC}"
+  echo -e "   - Max instances: ${CYAN}5${NC}"
+  echo -e "\n❗ After creation, rerun this script.\n"
+  exit 1
+else
+  echo -e "${GREEN}✅ Service 'helloworld' detected. Continuing...${NC}\n"
+fi
 
 # ----------------------------------------------
-# 4️⃣ Get URL and test function
+# 4️⃣ Get Cloud Run URL
 # ----------------------------------------------
 echo -e "${BLUE}🔗 Fetching Cloud Run URL...${NC}"
 CLOUD_RUN_URL=$(gcloud run services describe helloworld --region=$REGION --format='value(status.url)')
-echo -e "${GREEN}✅ Cloud Run URL:${NC} $CLOUD_RUN_URL\n"
 
-echo -e "${CYAN}🧪 Sending test request...${NC}"
-curl $CLOUD_RUN_URL
+if [ -z "$CLOUD_RUN_URL" ]; then
+  echo -e "${RED}❌ Could not retrieve Cloud Run URL. Please check deployment.${NC}"
+  exit 1
+else
+  echo -e "${GREEN}✅ Cloud Run URL:${NC} $CLOUD_RUN_URL\n"
+fi
 
 # ----------------------------------------------
-# 5️⃣ Install Vegeta load testing tool
+# 5️⃣ Test the function
+# ----------------------------------------------
+echo -e "${BLUE}🧪 Testing Cloud Run function...${NC}"
+curl -s $CLOUD_RUN_URL && echo -e "\n${GREEN}✅ Test successful: Hello World received.${NC}\n"
+
+# ----------------------------------------------
+# 6️⃣ Install Vegeta for traffic generation
 # ----------------------------------------------
 echo -e "${BLUE}📊 Installing Vegeta load testing tool...${NC}"
 cd ~
@@ -104,34 +91,29 @@ curl -LO 'https://github.com/tsenart/vegeta/releases/download/v12.12.0/vegeta_12
 tar -xvzf vegeta_12.12.0_linux_386.tar.gz
 chmod +x vegeta
 
-echo -e "${CYAN}📈 Sending load traffic for 5 minutes...${NC}"
+# ----------------------------------------------
+# 7️⃣ Send traffic
+# ----------------------------------------------
+echo -e "${CYAN}📈 Sending load traffic to generate logs (5 mins)...${NC}"
 echo "GET $CLOUD_RUN_URL" | ./vegeta attack -duration=300s -rate=200 > results.bin &
 echo -e "${GREEN}✅ Traffic generation started in the background.${NC}\n"
 
 # ----------------------------------------------
-# 6️⃣ Create logs-based metric
+# 8️⃣ Guide for Logs-Based Metric
 # ----------------------------------------------
-echo -e "${BLUE}📊 Creating logs-based latency metric...${NC}"
-gcloud beta logging metrics create CloudRunFunctionLatency-Logs \
-  --description="Distribution metric for Cloud Run latency" \
-  --log-filter='resource.type="cloud_run_revision" AND resource.labels.service_name="helloworld"' \
-  --value-extractor="EXTRACT(httpRequest.latency)" \
-  --metric-type="distribution" \
-  --bucket-options='linearBuckets: {numFiniteBuckets: 50, width: 0.1, offset: 0.0}'
-
-echo -e "${GREEN}✅ Logs-based metric created successfully.${NC}\n"
-
-# ----------------------------------------------
-# 7️⃣ Verify metric creation
-# ----------------------------------------------
-echo -e "${CYAN}🔍 Verifying metric...${NC}"
-gcloud logging metrics list | grep CloudRunFunctionLatency-Logs
-echo -e "${GREEN}✅ Metric verified.${NC}\n"
+echo -e "${YELLOW}⚙️ Logs-based metrics must be created in the console manually:${NC}"
+echo -e "👉 Go to: ${CYAN}Navigation Menu → Logging → Logs Explorer${NC}"
+echo -e "   - Resource: ${GREEN}Cloud Run Revision${NC}"
+echo -e "   - Service name: ${GREEN}helloworld${NC}"
+echo -e "   - Create Metric → Distribution"
+echo -e "   - Name: ${GREEN}CloudRunFunctionLatency-Logs${NC}"
+echo -e "   - Field name: ${GREEN}httpRequest.latency${NC}"
+echo -e "💡 Wait a few minutes and refresh if metric doesn't appear immediately.\n"
 
 # ----------------------------------------------
-# 8️⃣ Create Monitoring Dashboard
+# 9️⃣ Create Dashboard
 # ----------------------------------------------
-echo -e "${BLUE}📊 Creating Monitoring Dashboard...${NC}"
+echo -e "${BLUE}📊 Creating a custom Monitoring Dashboard...${NC}"
 cat > dashboard.json <<EOF
 {
   "displayName": "Cloud Run Function Custom Dashboard",
