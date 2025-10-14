@@ -36,13 +36,61 @@ RANDOM_BG_COLOR=${BG_COLORS[$RANDOM % ${#BG_COLORS[@]}]}
 
 echo "${RANDOM_BG_COLOR}${RANDOM_TEXT_COLOR}${BOLD}Starting Execution - ePlus.DEV${RESET}"
 
+# ===============================
+# STEP 0: Thiết lập biến chung
+# ===============================
+export PROJECT_ID=$(gcloud config get-value project)
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+export PRIVATE_BUCKET="$PROJECT_ID-private-bucket"
+export PUBLIC_BUCKET="$PROJECT_ID-public-bucket"
 
-export REGION=$(gcloud compute project-info describe \
---format="value(commonInstanceMetadata.items[google-compute-default-region])")
+# Gán project
+gcloud config set project $PROJECT_ID
 
-PROJECT_ID=`gcloud config get-value project`
-BUCKET=${PROJECT_ID}-bucket
-gsutil mb -l $REGION gs://${BUCKET}
+echo "✅ Project: $PROJECT_ID"
+echo "🌎 Region: $REGION"
+echo "🔒 Private bucket: $PRIVATE_BUCKET"
+echo "🌍 Public bucket: $PUBLIC_BUCKET"
+
+# ===============================
+# STEP 1: Tạo PRIVATE bucket
+# ===============================
+gcloud storage buckets create gs://$PRIVATE_BUCKET \
+  --location=$REGION \
+  --uniform-bucket-level-access
+
+# Kiểm tra quyền (không có allUsers)
+gsutil iam get gs://$PRIVATE_BUCKET
+
+# ===============================
+# STEP 2: Tạo PUBLIC bucket
+# ===============================
+gcloud storage buckets create gs://$PUBLIC_BUCKET \
+  --location=$REGION \
+  --uniform-bucket-level-access
+
+# Thêm quyền public đọc object
+gsutil iam ch allUsers:objectViewer gs://$PUBLIC_BUCKET
+
+# Kiểm tra quyền public
+gsutil iam get gs://$PUBLIC_BUCKET
+
+# ===============================
+# STEP 3: Upload file test (tuỳ chọn)
+# ===============================
+echo "Hello Qwiklabs!" > test.txt
+gsutil cp test.txt gs://$PUBLIC_BUCKET
+
+# ===============================
+# STEP 4: Lấy URL public của file
+# ===============================
+echo "✅ Public URL:"
+echo "https://storage.googleapis.com/$PUBLIC_BUCKET/test.txt"
+
+# ===============================
+# DONE ✅
+# Quay lại Kanban → Check my progress
+# ===============================
 
 echo
 
