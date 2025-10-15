@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==============================================
 # 🌐 IAP Lab Full Script (Background Deploy)
-# ✨ Auto deploy + log + color output
+# ✨ Auto deploy + color + manual step guide
 # 🧑 Author: David (eplus.dev)
 # ==============================================
 
@@ -47,7 +47,7 @@ deploy_bg() {
   sed -i 's/python37/python39/g' app.yaml
   nohup gcloud app deploy --quiet > "$LOG_DIR/step${step}.log" 2>&1 &
   DEPLOY_PID=$!
-  echo -e "👉 ${YELLOW}Deployment is running in the background (PID: $DEPLOY_PID)${RESET}"
+  echo -e "👉 ${YELLOW}Deployment running in background (PID: $DEPLOY_PID)${RESET}"
   echo -e "📄 View logs with: ${GREEN}tail -f $LOG_DIR/step${step}.log${RESET}"
   cd ..
 }
@@ -64,18 +64,37 @@ gcloud services disable appengineflex.googleapis.com --quiet
 echo -e "${YELLOW}🔐 Enabling IAP API...${RESET}"
 gcloud services enable iap.googleapis.com --quiet
 
-echo -e "${PURPLE}⚠️ Manual step required:${RESET}"
-echo -e "👉 Open the link: ${BLUE}https://console.cloud.google.com/apis/credentials/consent?project=$PROJECT_ID${RESET}"
-echo -e "👉 Configure the OAuth consent screen → Enable IAP → Add your email with 'IAP-Secured Web App User' role."
-read -p "⏸️ Press ENTER once you have finished the IAP configuration..."
+# --- STEP 4.1: MANUAL STEP INSTRUCTIONS ---
+echo -e "${RED}⚠️ MANUAL STEP REQUIRED — Configure OAuth Consent Screen & IAP${RESET}"
+echo -e "${CYAN}1. Open this link:${RESET}"
+echo -e "   ${BLUE}https://console.cloud.google.com/apis/credentials/consent?project=$PROJECT_ID${RESET}"
+echo -e "${CYAN}2. Create OAuth Consent Screen with the following values:${RESET}"
+echo -e "   App name: ${GREEN}IAP Example${RESET}"
+echo -e "   User support email: ${YELLOW}your student email${RESET}"
+echo -e "   Audience type: ${GREEN}Internal${RESET}"
+echo -e "   Contact email: ${YELLOW}your student email${RESET}"
+echo -e "   (Skip scopes & test users — just click Next → Save and Continue)"
+
+echo -e "${CYAN}3. Enable IAP:${RESET}"
+echo -e "   Navigation menu → Security → Identity-Aware Proxy"
+echo -e "   - Click ${YELLOW}Enable API${RESET} if prompted"
+echo -e "   - Find your App Engine app and toggle IAP ${GREEN}ON${RESET}"
+
+echo -e "${CYAN}4. Add your email as authorized user:${RESET}"
+echo -e "   - Click ${YELLOW}Add Principal${RESET}"
+echo -e "   - Enter: ${GREEN}student-xx-xxxxx@qwiklabs.net${RESET}"
+echo -e "   - Role: ${PURPLE}Cloud IAP > IAP-Secured Web App User${RESET}"
+echo -e "   - Click Save ✅"
+
+read -p "⏸️ Press ENTER once you have finished the manual configuration..."
 
 # --- STEP 5: Deploy Hello User ---
 deploy_bg "2-HelloUser" 2
 echo -e "⏳ ${CYAN}Please wait 2–3 minutes for deployment to finish...${RESET}"
 
-# --- STEP 6: Demo spoof (optional) ---
+# --- STEP 6: Spoof test (optional) ---
 APP_URL=$(gcloud app browse --no-launch-browser)
-echo -e "${RED}💀 Spoof test when IAP is OFF:${RESET}"
+echo -e "${RED}💀 Spoof test (only works if IAP is OFF):${RESET}"
 echo -e "${YELLOW}curl -X GET $APP_URL -H \"X-Goog-Authenticated-User-Email: fakeuser@gmail.com\"${RESET}"
 
 # --- STEP 7: Deploy Hello Verified User ---
@@ -91,7 +110,7 @@ echo -e "   tail -f $LOG_DIR/step1.log  # Hello World"
 echo -e "   tail -f $LOG_DIR/step2.log  # Hello User"
 echo -e "   tail -f $LOG_DIR/step3.log  # Hello Verified User"
 echo -e ""
-echo -e "${YELLOW}📌 After re-enabling IAP, refresh the web page to test user authentication.${RESET}"
+echo -e "${YELLOW}📌 After enabling IAP, refresh the web page to test authentication.${RESET}"
 echo -e "${CYAN}==============================================${RESET}"
 echo -e "  © 2025 ${PURPLE}ePlus.DEV${RESET} | 🌐 https://eplus.dev"
 echo -e "  🧑 Script by David | Identity-Aware Proxy Lab Helper"
