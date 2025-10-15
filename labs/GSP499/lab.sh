@@ -18,7 +18,7 @@ set -e
 
 # --- STEP 0: VARIABLES ---
 PROJECT_ID=$(gcloud config get-value project)
-REGION="us-central"
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 APP_NAME="IAP Example"
 LOG_DIR="$HOME/iap_logs"
 mkdir -p "$LOG_DIR"
