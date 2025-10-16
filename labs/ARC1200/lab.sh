@@ -18,7 +18,7 @@ export PROJECT_ID=$(gcloud config get-value project)
 echo -e "${YELLOW}Using GCP Project ID:${NC} $PROJECT_ID"
 PUBLIC_BUCKET="${PROJECT_ID}-public-bucket"
 PRIVATE_BUCKET="${PROJECT_ID}-private-bucket"
-REGION="us-central1"
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
 # ====== Public Bucket ======
 echo -e "\n${CYAN}${BOLD}🪣 STEP 1: Creating PUBLIC bucket...${NC}"
