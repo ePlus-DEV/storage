@@ -267,25 +267,6 @@ function random_thank_you() {
     echo -e "${BOLD}${MESSAGES[$RANDOM_INDEX]}"
 }
 
-# Function to display a random question
-function random_question() {
-    QUESTIONS=(
-        "Have you subscribed to Dr Abhishek's YouTube channel yet? [Y/N]"
-        "Did you hit the subscribe button on Dr Abhishek's YouTube channel? [Y/N]"
-        "Are you part of Dr Abhishek's growing community on YouTube? [Y/N]"
-        "Did you join the learning journey by subscribing to Dr Abhishek? [Y/N]"
-        "Have you clicked the subscribe button for Dr Abhishek's tutorials? [Y/N]"
-        "Are you a subscriber to Dr Abhishek's YouTube channel? [Y/N]"
-        "Want to stay updated with Dr Abhishek's latest content? Subscribe now! [Y/N]"
-        "Ready to dive deeper into cloud computing with Dr Abhishek? Subscribe! [Y/N]"
-        "Would you like to keep learning with Dr Abhishek? Hit subscribe! [Y/N]"
-        "Do you enjoy Dr Abhishek's content? Subscribe to stay updated! [Y/N]"
-        "Do you want to see more labs and tutorials from Dr Abhishek? Subscribe to the channel! [Y/N]"
-    )
-    RANDOM_INDEX=$((RANDOM % ${#QUESTIONS[@]}))
-    echo -e "${BOLD}${WHITE}${QUESTIONS[$RANDOM_INDEX]}${RESET}"
-}
-
 # Function to display the "Please Subscribe" message with variety
 function random_subscribe_message() {
     MESSAGES=(
@@ -312,32 +293,6 @@ function random_subscribe_message() {
 
 # Display a random congratulatory message
 random_congrats
-
-# Add a single blank line between congratulatory message and the prompt
-echo -e "\n"  # Adding one blank line
-
-# Display a random question
-random_question
-
-# Read the user input
-read -p "Enter your choice: " CHOICE
-
-echo -e "\n"  # Adding one blank line
-
-# Handle user input
-case "${CHOICE^^}" in
-    Y)
-        random_thank_you
-        ;;
-    N)
-        random_subscribe_message
-        echo -e "${BOLD}${CYAN}YouTube Channel: https://www.youtube.com/@drabhishek.5460${RESET}"
-        echo -e "${BOLD}${GREEN}Check out all videos at: https://www.youtube.com/@drabhishek.5460/videos${RESET}"
-        ;;
-    *)
-        echo -e "${BOLD}${RED}Invalid choice! Please enter Y or N.${RESET}"
-        ;;
-esac
 
 echo -e "\n"  # Adding one blank line
 
