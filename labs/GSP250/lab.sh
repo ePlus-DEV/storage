@@ -20,9 +20,7 @@ echo "${CYAN_TEXT}${BOLD_TEXT}==============================================${RE
 echo
 
 # User input for ZONE
-echo "${YELLOW_TEXT}${BOLD_TEXT}Step 1: Set the compute zone.${RESET_FORMAT}"
-read -p "${CYAN_TEXT}Enter the ZONE: ${RESET_FORMAT}" ZONE
-export ZONE
+export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 
 # Set PROJECT_ID
 export PROJECT_ID=$(gcloud config get-value project)
