@@ -22,7 +22,6 @@ clear
 
 # Welcome message with Dr. Abhishek reference
 echo "${CYAN_TEXT}${BOLD_TEXT}=======================================${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}   WELCOME TO DR. ABHISHEK CLOUD TUTORIALS${RESET_FORMAT}"
 echo "${CYAN_TEXT}${BOLD_TEXT}         INITIATING EXECUTION...  ${RESET_FORMAT}"
 echo "${CYAN_TEXT}${BOLD_TEXT}=======================================${RESET_FORMAT}"
 echo
@@ -32,11 +31,7 @@ YELLOW=$(tput setaf 3)
 BOLD=$(tput bold)
 RESET=$(tput sgr0)
 
-echo "Please set the below values correctly"
-read -p "${YELLOW}${BOLD}Enter the ZONE: ${RESET}" ZONE
-
-# Export variables after collecting input
-export ZONE
+export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 
 echo
 echo "${GREEN_TEXT}${BOLD_TEXT}Setting up environment...${RESET_FORMAT}"
@@ -82,10 +77,5 @@ echo "${CYAN_TEXT}${BOLD_TEXT}==================================================
 echo "${CYAN_TEXT}${BOLD_TEXT}        GKE MONITORING LAB COMPLETED SUCCESSFULLY!     ${RESET_FORMAT}"
 echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
 echo
-echo "${RED_TEXT}${BOLD_TEXT}${UNDERLINE_TEXT}Welcome to Dr. Abhishek Cloud Tutorials${RESET_FORMAT}"
 echo "${GREEN_TEXT}${BOLD_TEXT}Subscribe to our channel for more cloud tutorials:${RESET_FORMAT}"
-echo "${BLUE_TEXT}${BOLD_TEXT}https://www.youtube.com/@drabhishek.5460/videos${RESET_FORMAT}"
-echo
-echo "${MAGENTA_TEXT}${BOLD_TEXT}Thank you for following Dr. Abhishek Cloud Tutorials!${RESET_FORMAT}"
-echo "${YELLOW_TEXT}${BOLD_TEXT}Don't forget to Like, Share and Subscribe!${RESET_FORMAT}"
-echo
+echo "${BLUE_TEXT}${BOLD_TEXT}https://eplus.dev${RESET_FORMAT}"
