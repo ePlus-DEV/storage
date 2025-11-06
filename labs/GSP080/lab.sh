@@ -1,12 +1,8 @@
 #!/bin/bash
 set -e
-
-# ----------------------------------------------------------
-# Cloud Run Functions: Qwik Start - Command Line
 # © 2025 ePlus.DEV — All Rights Reserved
-# ----------------------------------------------------------
 
-# ====== TERMINAL COLORS ======
+# ===== COLORS =====
 RED="\033[31m"
 GREEN="\033[32m"
 YELLOW="\033[33m"
@@ -14,71 +10,38 @@ BLUE="\033[34m"
 CYAN="\033[36m"
 RESET="\033[0m"
 
-echo -e "${CYAN}🚀 Starting Cloud Run Functions Gen2 with Pub/Sub setup...${RESET}"
+echo -e "${CYAN}=== Auto-detecting Project & Region ===${RESET}"
 
-# ====== AUTO-DETECT PROJECT_ID & REGION ======
-PROJECT_ID=$(gcloud projects list --format="value(projectId)" --limit=1)
-REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-
-if [[ -z "$PROJECT_ID" ]]; then
-  echo -e "${RED}❌ Could not determine PROJECT_ID. Make sure you're authenticated (gcloud auth login) and have a project selected.${RESET}"
-  exit 1
+PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then
+  PROJECT_ID=$(gcloud projects list --format="value(projectId)" --limit=1)
+  gcloud config set project "$PROJECT_ID" >/dev/null
 fi
 
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 if [[ -z "$REGION" ]]; then
-  echo -e "${YELLOW}⚠️ Default region not found in project metadata. Falling back to: us-east1${RESET}"
+  echo -e "${YELLOW}⚠️ No default region found. Falling back to us-east1${RESET}"
   REGION="us-east1"
 fi
 
-echo -e "${GREEN}✅ Project: ${PROJECT_ID}${RESET}"
-echo -e "${GREEN}✅ Region: ${REGION}${RESET}"
+gcloud config set run/region "$REGION" >/dev/null
 
-gcloud config set run/region "$REGION" >/dev/null 2>&1
+echo -e "${GREEN}✅ PROJECT_ID: $PROJECT_ID${RESET}"
+echo -e "${GREEN}✅ REGION: $REGION${RESET}"
 
-# ====== CONFIG VARIABLES ======
-FUNCTION_NAME="nodejs-pubsub-function"
-TOPIC="cf-demo"
-BUCKET="${PROJECT_ID}-bucket"
-SERVICE_ACCOUNT="cloudfunctionsa@${PROJECT_ID}.iam.gserviceaccount.com"
+echo -e "${CYAN}=== Task 1: Create function source files ===${RESET}"
+mkdir -p gcf_hello_world && cd gcf_hello_world
 
-echo -e "${BLUE}🧭 Using:
-  Function: ${FUNCTION_NAME}
-  Topic:    ${TOPIC}
-  Bucket:   ${BUCKET}
-  SA:       ${SERVICE_ACCOUNT}${RESET}
-"
-
-# ====== ENSURE PUB/SUB TOPIC EXISTS ======
-echo -e "${BLUE}🔎 Ensuring Pub/Sub topic exists...${RESET}"
-if ! gcloud pubsub topics describe "$TOPIC" >/dev/null 2>&1; then
-  echo -e "${YELLOW}• Topic '${TOPIC}' not found. Creating it...${RESET}"
-  gcloud pubsub topics create "$TOPIC" >/dev/null
-else
-  echo -e "${GREEN}• Topic '${TOPIC}' already exists.${RESET}"
-fi
-
-# ====== ENSURE STAGING BUCKET EXISTS (OPTIONAL BUT HELPFUL) ======
-echo -e "${BLUE}🔎 Ensuring staging bucket exists...${RESET}"
-if ! gsutil ls -b "gs://${BUCKET}" >/dev/null 2>&1; then
-  echo -e "${YELLOW}• Bucket 'gs://${BUCKET}' not found. Creating it in ${REGION}...${RESET}"
-  gsutil mb -l "$REGION" "gs://${BUCKET}"
-else
-  echo -e "${GREEN}• Bucket 'gs://${BUCKET}' already exists.${RESET}"
-fi
-
-# ====== CREATE SOURCE DIRECTORY ======
-echo -e "${BLUE}📂 Creating source directory...${RESET}"
-mkdir -p gcf_hello_world
-cd gcf_hello_world
-
-# ====== CREATE index.js ======
-echo -e "${BLUE}✏️  Writing index.js...${RESET}"
-cat << 'EOF' > index.js
+echo -e "${BLUE}➤ Creating index.js...${RESET}"
+cat > index.js <<'EOF'
 const functions = require('@google-cloud/functions-framework');
 
-// CloudEvent function triggered by Pub/Sub
+// Register a CloudEvent callback with the Functions Framework that will
+// be executed when the Pub/Sub trigger topic receives a message.
 functions.cloudEvent('helloPubSub', cloudEvent => {
-  const base64name = cloudEvent.data?.message?.data;
+  // The Pub/Sub message is passed as the CloudEvent's data payload.
+  const base64name = cloudEvent.data.message.data;
+
   const name = base64name
     ? Buffer.from(base64name, 'base64').toString()
     : 'World';
@@ -87,9 +50,8 @@ functions.cloudEvent('helloPubSub', cloudEvent => {
 });
 EOF
 
-# ====== CREATE package.json ======
-echo -e "${BLUE}📦 Writing package.json...${RESET}"
-cat << 'EOF' > package.json
+echo -e "${BLUE}➤ Creating package.json...${RESET}"
+cat > package.json <<'EOF'
 {
   "name": "gcf_hello_world",
   "version": "1.0.0",
@@ -104,32 +66,29 @@ cat << 'EOF' > package.json
 }
 EOF
 
-# ====== INSTALL DEPENDENCIES ======
-echo -e "${CYAN}📥 Installing npm dependencies...${RESET}"
+echo -e "${YELLOW}Installing npm dependencies...${RESET}"
 npm install
 
-# ====== DEPLOY FUNCTION ======
-echo -e "${CYAN}☁️  Deploying Cloud Functions Gen2 service...${RESET}"
-gcloud functions deploy "$FUNCTION_NAME" \
+echo -e "${CYAN}=== Task 2: Deploying function (unchanged structure) ===${RESET}"
+gcloud functions deploy nodejs-pubsub-function \
   --gen2 \
   --runtime=nodejs20 \
-  --region="$REGION" \
+  --region=$REGION \
   --source=. \
   --entry-point=helloPubSub \
-  --trigger-topic="$TOPIC" \
-  --stage-bucket="$BUCKET" \
-  --service-account="$SERVICE_ACCOUNT" \
+  --trigger-topic cf-demo \
+  --stage-bucket ${PROJECT_ID}-bucket \
+  --service-account cloudfunctionsa@${PROJECT_ID}.iam.gserviceaccount.com \
   --allow-unauthenticated
 
-echo -e "${GREEN}✅ Deployment completed.${RESET}"
+echo -e "${GREEN}✅ Deployment complete. Checking function status...${RESET}"
+gcloud functions describe nodejs-pubsub-function --region=$REGION
 
-# ====== TEST FUNCTION ======
-echo -e "${BLUE}📨 Publishing a test message to Pub/Sub...${RESET}"
-gcloud pubsub topics publish "$TOPIC" --message="Cloud Function Gen2"
+echo -e "${CYAN}=== Task 3: Testing the function ===${RESET}"
+gcloud pubsub topics publish cf-demo --message="Cloud Function Gen2"
 
-# ====== VIEW LOGS ======
-echo -e "${YELLOW}📜 Fetching logs (if none appear yet, try again in 1–3 minutes)...${RESET}"
-gcloud functions logs read "$FUNCTION_NAME" --region="$REGION"
+echo -e "${CYAN}=== Task 4: Viewing logs ===${RESET}"
+echo -e "${YELLOW}(If logs do not show yet, wait 5–10 minutes and run logs command again)${RESET}"
+gcloud functions logs read nodejs-pubsub-function --region=$REGION
 
-echo -e "${GREEN}🎉 DONE! Your Cloud Run Functions Gen2 service is deployed, triggered via Pub/Sub, and logs were fetched.${RESET}"
-echo -e "${RED}🎉 Copyright by ePlus.DEV.${RESET}"
+echo -e "${GREEN}🎉 DONE! Script executed successfully — ePlus.DEV${RESET}"
