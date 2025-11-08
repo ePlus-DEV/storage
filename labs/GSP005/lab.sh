@@ -183,8 +183,9 @@ fi
 
 # ---------- Scale to 4 replicas ----------
 info "Scaling deployment to 4 replicas..."
-kubectl scale deployment "${APP}" --replicas=4 >/dev/null
-kubectl get deployment "${APP}" >/dev/null
+kubectl scale deployment hello-node --replicas=4
+kubectl get deployment
+kubectl get pods
 ok "Scaled to 4 replicas."
 
 # ---------- Prepare v2 (Hello Kubernetes World!) ----------
