@@ -34,8 +34,8 @@ warn(){ echo -e "${YELLOW}[WARN]${RESET} $*"; }
 fail(){ echo -e "${RED}[ERROR]${RESET} $*"; exit 1; }
 
 # ---------- Config (edit if needed) ----------
-REGION="${REGION:-us-east4}"
-ZONE="${ZONE:-us-east4-b}"
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 REPO="${REPO:-my-docker-repo}"
 APP="${APP:-hello-node}"
 CLUSTER_NAME="${CLUSTER_NAME:-hello-world}"
