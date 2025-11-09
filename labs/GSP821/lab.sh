@@ -19,12 +19,15 @@ echo "║         GKE Lab Script — © ePlus.DEV 2025          ║"
 echo "╚════════════════════════════════════════════════════╝"
 echo -e "${RESET}"
 
-echo -e "${YELLOW}Setting default compute region...${RESET}"
-gcloud config set compute/region us-west1
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+
+echo -e "${YELLOW}Setting default compute region $REGION ${RESET}"
+gcloud config set compute/region $REGION
 echo -e "${GREEN}✔ Done${RESET}"
 
-echo -e "${YELLOW}Setting default compute zone...${RESET}"
-gcloud config set compute/zone us-west1-c
+echo -e "${YELLOW}Setting default compute zone $ZONE ${RESET}"
+gcloud config set compute/zone $ZONE
 echo -e "${GREEN}✔ Done${RESET}"
 
 echo -e "${YELLOW}Getting GKE cluster credentials...${RESET}"
