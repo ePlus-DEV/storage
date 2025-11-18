@@ -64,4 +64,4 @@ gcloud run deploy $IMAGE_NAME \
     --platform managed \
     --allow-unauthenticated
 
-echo "=== DONE — LẤY SERVICE URL TỪ OUTPUT Ở TRÊN ==="
+echo "=== DONE — ePlus.DEV ==="
