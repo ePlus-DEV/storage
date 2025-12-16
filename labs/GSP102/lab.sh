@@ -25,6 +25,10 @@ RESET=`tput sgr0`
 
 echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV ${RESET}"
 
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+
+echo "${YELLOW}${BOLD}REGION:  ${REGION}${RESET}"
+
 gcloud spanner instances create test-instance \
   --config=regional-$REGION \
   --description="Test Instance" \
