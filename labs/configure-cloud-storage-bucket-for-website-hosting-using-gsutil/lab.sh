@@ -1,43 +1,36 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-PROJECT_ID="$(gcloud config get-value project 2>/dev/null)"
-if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "(unset)" ]; then
-  echo "❌ No active project. Run: gcloud config set project <PROJECT_ID>"
+# Auto get active project ID
+PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
+if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then
+  echo "❌ Project ID not found (gcloud project is not set)."
+  echo "👉 Run: gcloud config set project <PROJECT_ID>"
   exit 1
 fi
 
-echo "✅ Project: $PROJECT_ID"
+echo "✅ Project ID: $PROJECT_ID"
 
-# Auto find bucket chứa qwiklabs-gcp-* -bucket (phù hợp lab dạng bạn đưa)
-BUCKET="$(gcloud storage buckets list --format="value(name)" | grep -E '^qwiklabs-gcp-.*-bucket$' | head -n 1)"
+BUCKET="qwiklabs-gcp-04-8d65fa4b2736-bucket"
 
-if [ -z "$BUCKET" ]; then
-  echo "❌ Cannot auto-detect bucket qwiklabs-gcp-*-bucket"
-  echo "👉 Buckets found:"
-  gcloud storage buckets list --format="value(name)"
-  exit 1
-fi
+echo "✅ Bucket: $BUCKET"
+echo "----------------------------------------"
 
-echo "✅ Bucket detected: $BUCKET"
-
-echo "🔧 Configure website hosting..."
+echo "1) Configuring static website hosting..."
 gcloud storage buckets update "gs://$BUCKET" \
   --web-main-page-suffix="index.html" \
   --web-error-page="error.html"
 
-echo "🌍 Make bucket public (allUsers objectViewer)..."
+echo "2) Making the bucket publicly accessible..."
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
   --member="allUsers" \
   --role="roles/storage.objectViewer" >/dev/null
 
-echo "📦 Objects:"
-gcloud storage ls "gs://$BUCKET" || true
+echo "3) Verifying website configuration..."
+gcloud storage buckets describe "gs://$BUCKET" \
+  --format="value(website.mainPageSuffix,website.notFoundPage)" | cat
 
-echo ""
+echo
 echo "✅ DONE!"
-echo "Website URLs:"
-echo "  https://storage.googleapis.com/$BUCKET/index.html"
-echo "  https://storage.googleapis.com/$BUCKET/error.html"
-echo "Test 404:"
-echo "  https://storage.googleapis.com/$BUCKET/does-not-exist"
+echo "Website URL:"
+echo "https://storage.googleapis.com/$BUCKET/index.html"
