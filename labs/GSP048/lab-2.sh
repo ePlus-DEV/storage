@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==========================================================
-# ePlus.DEV - Google Cloud Lab Script
+# ePlus.DEV - Speech to Text Transcription with the Cloud Speech API
 # Copyright (c) ePlus.DEV
 # All rights reserved.
 # ==========================================================
