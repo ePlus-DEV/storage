@@ -1,130 +1,175 @@
 #!/bin/bash
-# ==================================================================================
-#  Kubernetes Deployment Strategies Lab - ePlus.DEV
-#  Author: (David) - ePlus.dev
-# ==================================================================================
 
-set -e
+# Color codes for formatting
+RED='\e[1;31m'
+GREEN='\e[1;32m'
+YELLOW='\e[1;33m'
+BLUE='\e[1;34m'
+MAGENTA='\e[1;35m'
+CYAN='\e[1;36m'
+WHITE='\e[1;37m'
+NC='\e[0m' # No Color
 
-# ===== COLORS =====
-RED=$(tput setaf 1)
-GREEN=$(tput setaf 2)
-YELLOW=$(tput setaf 3)
-BLUE=$(tput setaf 4)
-MAGENTA=$(tput setaf 5)
-CYAN=$(tput setaf 6)
-RESET=$(tput sgr0)
-BOLD=$(tput bold)
+# Function to display spinner
+spinner() {
+    local pid=$1
+    local delay=0.1
+    local spinstr='|/-\'
+    while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
+        local temp=${spinstr#?}
+        printf " [%c]  " "$spinstr"
+        local spinstr=$temp${spinstr%"$temp"}
+        sleep $delay
+        printf "\b\b\b\b\b\b"
+    done
+    printf "    \b\b\b\b"
+}
 
-# ===== CONFIG =====
-PROJECT_ID=$(gcloud config get-value project)
+# Function to print section header
+print_header() {
+    echo -e "\n${MAGENTA}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${MAGENTA}║${NC} ${CYAN}$1${NC} ${MAGENTA}║${NC}"
+    echo -e "${MAGENTA}╚══════════════════════════════════════════════════════════════╝${NC}"
+}
+
+# Function to print success message
+print_success() {
+    echo -e "${GREEN}✅ $1${NC}"
+}
+
+# Function to print error message
+print_error() {
+    echo -e "${RED}❌ $1${NC}"
+}
+
+# Function to print info message
+print_info() {
+    echo -e "${BLUE}ℹ️  $1${NC}"
+}
+
+# Function to print warning message
+print_warning() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+# Dr. Abhishek YouTube promotion with spinner
+echo -e "${YELLOW}📺 Welcome to Kubernetes Lab!${NC}"
+
+# Fetch zone and region
+print_header "Fetching Google Cloud Configuration"
+print_info "Getting zone, region, and project details..."
 ZONE=$(gcloud compute project-info describe \
-  --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
-CLUSTER_NAME="bootcamp"
-APP_NAME="fortune-app"
+  --format="value(commonInstanceMetadata.items[google-compute-default-zone])" 2>/dev/null)
+REGION=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null)
+PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
 
-echo "${MAGENTA}${BOLD}=========================================================${RESET}"
-echo "${CYAN}${BOLD} Kubernetes Deployment Strategies Lab - ePlus.DEV ${RESET}"
-echo "${MAGENTA}${BOLD}=========================================================${RESET}"
-echo "Project: ${YELLOW}$PROJECT_ID${RESET}"
-echo "Zone:    ${YELLOW}$ZONE${RESET}"
-echo "Cluster: ${YELLOW}$CLUSTER_NAME${RESET}"
-echo
+if [ -z "$ZONE" ] || [ -z "$REGION" ] || [ -z "$PROJECT_ID" ]; then
+    print_error "Failed to get Google Cloud configuration. Please check your gcloud setup."
+    exit 1
+fi
 
-# ---------------------------------------------------------
-# TASK 1: Setup
-# ---------------------------------------------------------
-echo "${BLUE}[TASK 1] Setup...${RESET}"
-gcloud storage cp -r gs://spls/gsp053/kubernetes . || true
+print_success "Zone: $ZONE"
+print_success "Region: $REGION"
+print_success "Project ID: $PROJECT_ID"
+
+# Set compute zone
+print_info "Setting compute zone..."
+gcloud config set compute/zone $ZONE
+
+# Copy Kubernetes files
+print_header "Setting up Kubernetes Resources"
+print_info "Copying Kubernetes configuration files..."
+gcloud storage cp -r gs://spls/gsp053/kubernetes . &
+spinner $!
 cd kubernetes
 
-gcloud container clusters create $CLUSTER_NAME \
+# Create GKE cluster
+print_header "Creating GKE Cluster"
+print_info "Creating Kubernetes cluster with 3 nodes..."
+gcloud container clusters create bootcamp \
   --machine-type e2-small \
   --num-nodes 3 \
-  --scopes "https://www.googleapis.com/auth/projecthosting,storage-rw" \
-  --zone $ZONE
+  --scopes "https://www.googleapis.com/auth/projecthosting,storage-rw" &
+spinner $!
+print_success "GKE cluster created successfully!"
 
-gcloud container clusters get-credentials $CLUSTER_NAME --zone $ZONE
+# TASK 2 - Deployments
+print_header "TASK 2: Deploying Fortune App (Blue)"
+print_info "Creating deployment and service..."
+kubectl create -f deployments/fortune-app-blue.yaml &
+spinner $!
+kubectl create -f services/fortune-app.yaml &
+spinner $!
 
-# ---------------------------------------------------------
-# TASK 2: Create Deployment & Service
-# ---------------------------------------------------------
-echo "${GREEN}[TASK 2] Create deployment & service...${RESET}"
-kubectl create -f deployments/fortune-app-blue.yaml
-kubectl create -f services/fortune-app.yaml
+print_info "Scaling deployment to 5 replicas..."
+kubectl scale deployment fortune-app-blue --replicas=5 &
+spinner $!
+COUNT=$(kubectl get pods | grep fortune-app-blue | wc -l | tr -d ' ')
+print_success "Current replicas: $COUNT"
 
-echo "${YELLOW}[WAIT] Waiting for External IP...${RESET}"
-while [[ -z $(kubectl get svc $APP_NAME -o=jsonpath="{.status.loadBalancer.ingress[0].ip}") ]]; do
-  sleep 5
-  echo "${YELLOW}... still waiting ...${RESET}"
-done
-SERVICE_IP=$(kubectl get svc $APP_NAME -o=jsonpath="{.status.loadBalancer.ingress[0].ip}")
-echo "${CYAN}Service IP: $SERVICE_IP${RESET}"
-curl http://$SERVICE_IP/version
+print_info "Scaling deployment to 3 replicas..."
+kubectl scale deployment fortune-app-blue --replicas=3 &
+spinner $!
+COUNT=$(kubectl get pods | grep fortune-app-blue | wc -l | tr -d ' ')
+print_success "Current replicas: $COUNT"
 
-# ---------------------------------------------------------
-# TASK 2b: Scale Deployment
-# ---------------------------------------------------------
-echo "${GREEN}[TASK 2b] Scaling...${RESET}"
-kubectl scale deployment fortune-app-blue --replicas=5
-sleep 10
-kubectl scale deployment fortune-app-blue --replicas=3
-sleep 10
+# TASK 3 - Confirmation
+print_header "TASK 3: Canary Deployment"
+echo -e "${YELLOW}🎯 This task will perform a canary deployment strategy${NC}"
+echo -ne "${CYAN}? Do you want to continue with Task 3? ${NC}[${GREEN}Y${NC}/${RED}N${NC}]: "
+read -r CONFIRM
 
-# ---------------------------------------------------------
-# TASK 3: Rolling Update
-# ---------------------------------------------------------
-echo "${BLUE}[TASK 3] Rolling update to v2.0.0...${RESET}"
-kubectl set image deployment/fortune-app-blue fortune-app=us-central1-docker.pkg.dev/qwiklabs-resources/spl-lab-apps/fortune-service:2.0.0
-kubectl set env deployment/fortune-app-blue APP_VERSION=2.0.0
-kubectl rollout status deployment/fortune-app-blue
+if [[ "$CONFIRM" != "Y" && "$CONFIRM" != "y" ]]; then
+    print_warning "Task 3 aborted by user."
+    exit 0
+fi
 
-echo "${RED}[TASK 3] Rollback to v1.0.0...${RESET}"
-kubectl rollout undo deployment/fortune-app-blue
-kubectl rollout status deployment/fortune-app-blue
-curl http://$SERVICE_IP/version
+print_info "Updating container image to version 2.0.0..."
+kubectl set image deployment/fortune-app-blue fortune-app=$REGION-docker.pkg.dev/qwiklabs-resources/spl-lab-apps/fortune-service:2.0.0 &
+spinner $!
 
-# ---------------------------------------------------------
-# TASK 4: Canary Deployment
-# ---------------------------------------------------------
-echo "${GREEN}[TASK 4] Canary deployment...${RESET}"
-kubectl create -f deployments/fortune-app-canary.yaml
+print_info "Setting environment variable..."
+kubectl set env deployment/fortune-app-blue APP_VERSION=2.0.0 &
+spinner $!
+
+print_info "Creating canary deployment..."
+kubectl create -f deployments/fortune-app-canary.yaml &
+spinner $!
+print_success "Canary deployment created successfully!"
+
+# TASK 5 - Blue-Green Deployment
+print_header "TASK 5: Blue-Green Deployment"
+print_info "Setting up blue service..."
+kubectl apply -f services/fortune-app-blue-service.yaml &
+spinner $!
+
+print_info "Creating green deployment..."
+kubectl create -f deployments/fortune-app-green.yaml &
+spinner $!
+
+print_info "Setting up green service..."
+kubectl apply -f services/fortune-app-green-service.yaml &
+spinner $!
+
+print_info "Updating blue service..."
+kubectl apply -f services/fortune-app-blue-service.yaml &
+spinner $!
+
+print_success "Blue-Green deployment setup completed!"
+
+# Final message
+print_header "Lab Completion Status"
+echo -e "${GREEN}🎉 All tasks completed successfully!${NC}"
+echo -e "${CYAN}📊 Current deployments:${NC}"
 kubectl get deployments
+echo -e "\n${CYAN}🌐 Current services:${NC}"
+kubectl get services
+echo -e "\n${CYAN}🐳 Current pods:${NC}"
+kubectl get pods
 
-echo "${YELLOW}[TASK 4] Testing canary traffic...${RESET}"
-for i in {1..10}; do
-  curl -s http://$SERVICE_IP/version
-  echo
-done
-
-# ---------------------------------------------------------
-# TASK 5: Blue-Green Deployment
-# ---------------------------------------------------------
-echo "${BLUE}[TASK 5] Blue-Green deployment...${RESET}"
-
-# Service trỏ về blue
-kubectl apply -f services/fortune-app-blue-service.yaml
-curl http://$SERVICE_IP/version
-
-# Tạo green deployment
-kubectl create -f deployments/fortune-app-green.yaml
-sleep 10
-curl http://$SERVICE_IP/version
-
-# Switch sang green
-kubectl apply -f services/fortune-app-green-service.yaml
-sleep 10
-curl http://$SERVICE_IP/version
-
-# Rollback về blue
-kubectl apply -f services/fortune-app-blue-service.yaml
-sleep 10
-curl http://$SERVICE_IP/version
-
-# ---------------------------------------------------------
-# DONE
-# ---------------------------------------------------------
-echo "${MAGENTA}${BOLD}=========================================================${RESET}"
-echo "${GREEN}${BOLD} ✅ Lab complete!${RESET}"
-echo "Service endpoint: ${CYAN}http://$SERVICE_IP/version${RESET}"
-echo "${MAGENTA}${BOLD}=========================================================${RESET}"
+echo -e "\n${MAGENTA}=================================================${NC}"
+echo -e "${YELLOW}🙏 Thank you for completing the lab!${NC}"
+echo -e "${CYAN}📚 Don't forget to explore more content from:${NC}"
+echo -e "${WHITE}   ePlus.DEV - https://eplus.dev${NC}"
+echo -e "${MAGENTA}=================================================${NC}"
