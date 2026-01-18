@@ -26,6 +26,7 @@ echo "${MAGENTA_TEXT}${BOLD_TEXT}━━━━━━━━━━━━━━━�
 
 # Prefer Qwiklabs env var, fallback to gcloud config
 PROJECT_ID="${DEVSHELL_PROJECT_ID:-}"
+
 if [[ -z "${PROJECT_ID}" ]]; then
   PROJECT_ID="$(gcloud config get-value project 2>/dev/null | tr -d '\r' | xargs || true)"
   if [[ "${PROJECT_ID}" == "unset" ]]; then
@@ -36,16 +37,19 @@ fi
 # Require PROJECT_ID input if empty
 if [[ -z "${PROJECT_ID}" ]]; then
   echo "${RED_TEXT}${BOLD_TEXT}⚠️ PROJECT_ID is not set!${RESET_FORMAT}"
-  read -r -p "${ORANGE_TEXT}${BOLD_TEXT}Enter PROJECT_ID (example: qwiklabs-gcp-xx-xxxx): ${RESET_FORMAT}" PROJECT_ID
+  printf "%b" "${ORANGE_TEXT}${BOLD_TEXT}Enter PROJECT_ID [example: qwiklabs-gcp-xx-xxxx]: ${RESET_FORMAT}"
+  read -r PROJECT_ID
 fi
 
 # Validate PROJECT_ID again
 if [[ -z "${PROJECT_ID}" ]]; then
   echo "${RED_TEXT}${BOLD_TEXT}❌ PROJECT_ID cannot be empty. Exiting.${RESET_FORMAT}"
-  exit 1
+  return 1 2>/dev/null || exit 1
 fi
 
-BUCKET="gs://${PROJECT_ID}-bucket"
+BUCKET_NAME="${PROJECT_ID}-bucket"
+BUCKET="gs://${BUCKET_NAME}"
+
 echo "${GREEN_TEXT}${BOLD_TEXT}✅ Using PROJECT_ID:${RESET_FORMAT} ${WHITE_TEXT}${PROJECT_ID}${RESET_FORMAT}"
 echo "${GREEN_TEXT}${BOLD_TEXT}✅ Target bucket:${RESET_FORMAT} ${WHITE_TEXT}${BUCKET}${RESET_FORMAT}"
 
