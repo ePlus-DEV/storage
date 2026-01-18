@@ -21,7 +21,7 @@ ORANGE_TEXT=$'\033[38;5;214m'
 echo "${MAGENTA_TEXT}${BOLD_TEXT}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET_FORMAT}"
 echo "${CYAN_TEXT}${BOLD_TEXT}Configure Cloud Storage Bucket for Website Hosting using gsutil${RESET_FORMAT}"
 echo "${YELLOW_TEXT}© Copyright ePlus.DEV${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT}━━━━━━━━
+echo "${MAGENTA_TEXT}${BOLD_TEXT}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET_FORMAT}"
 
 PROJECT_ID=$(gcloud config get-value project)
 
