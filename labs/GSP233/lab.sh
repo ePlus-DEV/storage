@@ -20,17 +20,11 @@ WHITE_TEXT=$'\033[0;97m'
 ORANGE_TEXT=$'\033[38;5;214m'
 
 echo "${MAGENTA_TEXT}${BOLD_TEXT}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}Manage Cloud Storage Lifecycle Policy using gsutil${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}Deploy Kubernetes Load Balancer Service with Terraform - GSP233${RESET_FORMAT}"
 echo "${YELLOW_TEXT}© Copyright ePlus.DEV${RESET_FORMAT}"
 echo "${MAGENTA_TEXT}${BOLD_TEXT}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET_FORMAT}"
 
 # Prefer Qwiklabs env var, fallback to gcloud config
-
-if [[ -z "${ZONE}" ]]; then
-  echo "${RED_TEXT}${BOLD_TEXT}⚠️ ZONE is not set!${RESET_FORMAT}"
-  printf "%b" "${ORANGE_TEXT}${BOLD_TEXT}Enter ZONE [example: europe-west2-b]: ${RESET_FORMAT}"
-  read -r ZONE
-fi
 
 export REGION="${ZONE%-*}"
 
