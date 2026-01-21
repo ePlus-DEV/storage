@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail
+
 # =============================================================
 # ✨ Author: ePlus.DEV
 # 🧑‍💻 Copyright (c) 2025 ePlus.DEV - All Rights Reserved
@@ -14,34 +16,49 @@ RESET="\033[0m"
 
 echo -e "${CYAN}"
 echo "============================================================="
-echo "🚀 Cloud Storage: Qwik Start - CLI/SDK - GSP074
+echo "🚀 Cloud Storage: Qwik Start - CLI/SDK - GSP074"
 echo "📦 Script by ePlus.DEV | © 2025 All Rights Reserved"
 echo "============================================================="
 echo -e "${RESET}"
 
-export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+# Get default region (fallback if empty)
+REGION="$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-region])" || true)"
 
+if [[ -z "${REGION}" ]]; then
+  echo -e "${YELLOW}⚠️  Could not detect default region. Using 'us-central1'.${RESET}"
+  REGION="us-central1"
+fi
 
-gcloud config set compute/region $REGION
+gcloud config set compute/region "${REGION}" >/dev/null
 
+BUCKET="gs://${DEVSHELL_PROJECT_ID}"
 
-gsutil mb gs://$DEVSHELL_PROJECT_ID
+# Create bucket (ignore if already exists)
+if gsutil ls -b "${BUCKET}" >/dev/null 2>&1; then
+  echo -e "${YELLOW}ℹ️  Bucket already exists: ${BUCKET}${RESET}"
+else
+  gsutil mb "${BUCKET}"
+fi
 
-curl https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Ada_Lovelace_portrait.jpg/800px-Ada_Lovelace_portrait.jpg --output ada.jpg
+curl -L "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Ada_Lovelace_portrait.jpg/800px-Ada_Lovelace_portrait.jpg" \
+  --output ada.jpg
 
-gsutil cp ada.jpg gs://$DEVSHELL_PROJECT_ID
+gsutil cp ada.jpg "${BUCKET}/ada.jpg"
 
-gsutil cp -r gs://$DEVSHELL_PROJECT_ID/ada.jpg .
+# Download back
+gsutil cp "${BUCKET}/ada.jpg" .
 
-gsutil cp gs://$DEVSHELL_PROJECT_ID/ada.jpg gs://$DEVSHELL_PROJECT_ID/image-folder/
+# Copy into folder (prefix will be created automatically)
+gsutil cp "${BUCKET}/ada.jpg" "${BUCKET}/image-folder/"
 
-gsutil acl ch -u AllUsers:R gs://$DEVSHELL_PROJECT_ID/ada.jpg
+# Make public (ACL 방식 - theo lab hay dùng)
+gsutil acl ch -u allUsers:R "${BUCKET}/ada.jpg"
 
-# 📜 10. Done
 echo -e "${CYAN}"
 echo "============================================================="
 echo "🎉 Deployment complete!"
-echo "🌍 Check your browser — you should see the 'Hello, World!' page."
+echo "🖼️ Uploaded: ${BUCKET}/ada.jpg (public)"
 echo "✨ Script finished by ePlus.DEV - https://eplus.dev"
 echo "============================================================="
 echo -e "${RESET}"
