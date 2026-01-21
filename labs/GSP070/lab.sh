@@ -1,66 +1,115 @@
-#!/bin/bash
-# =============================================================
-# 🚀 Google App Engine Hello World Auto Deployment Script
-# 📦 Version: 1.2
-# ✨ Author: ePlus.DEV
-# 🧑‍💻 Copyright (c) 2025 ePlus.DEV - All Rights Reserved
-# =============================================================
+#!/usr/bin/env bash
+set -euo pipefail
 
-# 🌈 Color definitions
-GREEN="\033[1;32m"
-CYAN="\033[1;36m"
-YELLOW="\033[1;33m"
-RED="\033[1;31m"
-BOLD="\033[1m"
+# ============================
+#  App Engine Go HelloWorld
+#  © ePlus.DEV
+# ============================
+
+# Colors
 RESET="\033[0m"
+BOLD="\033[1m"
+GREEN="\033[0;92m"
+YELLOW="\033[0;93m"
+RED="\033[0;91m"
+CYAN="\033[0;96m"
 
-echo -e "${CYAN}"
-echo "============================================================="
-echo "🚀 Google App Engine Hello World Deployment (Go Runtime)"
-echo "📦 Script by ePlus.DEV | © 2025 All Rights Reserved"
-echo "============================================================="
-echo -e "${RESET}"
+log()  { echo -e "${CYAN}${BOLD}▶${RESET} $*"; }
+ok()   { echo -e "${GREEN}${BOLD}✔${RESET} $*"; }
+warn() { echo -e "${YELLOW}${BOLD}⚠${RESET} $*"; }
+die()  { echo -e "${RED}${BOLD}✖${RESET} $*"; exit 1; }
 
-export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-export PROJECT_ID=$(gcloud config get-value project)
+# ---- Pre-checks
+command -v gcloud >/dev/null 2>&1 || die "gcloud not found (are you in Cloud Shell?)"
+command -v git >/dev/null 2>&1 || die "git not found"
 
-# 🌎 2. Set region
-echo -e "${YELLOW}🌍 Setting region to $REGION...${RESET}"
-gcloud config set compute/region $REGION
+PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
+ACTIVE_ACCOUNT="$(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null || true)"
 
-# 📡 3. Enable App Engine Admin API
-echo -e "${YELLOW}🔧 Enabling App Engine Admin API...${RESET}"
-gcloud services enable appengine.googleapis.com
+log "Project: ${PROJECT_ID:-unknown}"
+log "Account: ${ACTIVE_ACCOUNT:-unknown}"
 
-# 📁 4. Clone the Hello World sample app
-echo -e "${YELLOW}📦 Cloning Hello World sample app...${RESET}"
-git clone https://github.com/GoogleCloudPlatform/golang-samples.git
+# ---- Task: set region
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+log "Setting compute/region to ${REGION} ..."
+gcloud config set compute/region "${REGION}" -q
+ok "Region set."
 
-# 🧭 5. Navigate to the app directory
-cd golang-samples/appengine/go11x/helloworld || { echo -e "${RED}❌ Directory not found"; exit 1; }
+# ---- Task: clone repo
+REPO_DIR="golang-samples"
+APP_DIR="${REPO_DIR}/appengine/go11x/helloworld"
 
-# 🔨 6. Install App Engine Go SDK (if not installed)
-echo -e "${YELLOW}🔧 Installing App Engine Go SDK...${RESET}"
-sudo apt-get update -y
-sudo apt-get install -y google-cloud-sdk-app-engine-go
+if [[ -d "${REPO_DIR}" ]]; then
+  warn "Repo ${REPO_DIR} already exists, skipping clone."
+else
+  log "Cloning golang-samples ..."
+  git clone https://github.com/GoogleCloudPlatform/golang-samples.git
+  ok "Cloned."
+fi
 
-# 🏗️ 7. Initialize App Engine (if not created)
-echo -e "${YELLOW}⚙️ Initializing App Engine application...${RESET}"
-gcloud app create --region=us-central || echo -e "${CYAN}✅ App Engine already initialized.${RESET}"
+[[ -d "${APP_DIR}" ]] || die "App dir not found: ${APP_DIR}"
 
-# 🚀 8. Deploy the application
-echo -e "${GREEN}🚀 Deploying the app to Google App Engine...${RESET}"
-gcloud app deploy --quiet
+log "Changing directory: ${APP_DIR}"
+cd "${APP_DIR}"
 
-# 🌐 9. Open the deployed application
-echo -e "${GREEN}🌐 Opening the deployed app in your browser...${RESET}"
+# ---- Task: install App Engine Go component
+# (Lab instruction uses apt-get; we keep it, but try without sudo if needed)
+log "Installing google-cloud-sdk-app-engine-go ..."
+if command -v sudo >/dev/null 2>&1; then
+  sudo apt-get update -y
+  sudo apt-get install -y google-cloud-sdk-app-engine-go
+else
+  apt-get update -y
+  apt-get install -y google-cloud-sdk-app-engine-go
+fi
+ok "Installed component."
+
+# ---- Task: deploy (auto answer region prompt + continue prompt)
+# App Engine region selection prompt usually expects a number. We auto-pick "europe-west" if present.
+warn "Deploy will create App Engine application if not created yet."
+log "Deploying (auto-select europe-west if prompted) ..."
+
+# Feed:
+# 1) If gcloud asks region number -> we parse list in output and pick europe-west if visible
+# 2) Continue prompt -> Y
+TMP_OUT="$(mktemp)"
+
+# Run deploy once, capture prompts
+set +e
+gcloud app deploy --quiet 2>&1 | tee "${TMP_OUT}"
+RC=${PIPESTATUS[0]}
+set -e
+
+if [[ $RC -ne 0 ]]; then
+  # If failure likely due to region selection prompt not handled by --quiet,
+  # rerun interactively by piping chosen selection and 'Y'
+  warn "First deploy attempt did not complete. Trying interactive auto-select..."
+
+  # Try to find europe-west in prompt list and get its number.
+  # If not found, default to '9'?? (avoid guessing wildly) -> fallback to manual input.
+  EURO_NUM="$(grep -n -E 'europe-west' "${TMP_OUT}" | head -n 1 | awk -F: '{print $1}' || true)"
+
+  if [[ -z "${EURO_NUM}" ]]; then
+    warn "Could not auto-detect region selection number from output."
+    warn "Running deploy normally now. If prompted, choose europe-west and type Y."
+    gcloud app deploy
+  else
+    # This is a best-effort: many gcloud prompts print a numbered list like "1. us-central"
+    # Grep number from the same line if present
+    EURO_SEL="$(grep -E 'europe-west' "${TMP_OUT}" | head -n 1 | sed -n 's/^[[:space:]]*\([0-9]\+\).*/\1/p' || true)"
+
+    if [[ -z "${EURO_SEL}" ]]; then
+      warn "Could not parse region number; running deploy normally."
+      gcloud app deploy
+    else
+      printf "%s\nY\n" "${EURO_SEL}" | gcloud app deploy
+    fi
+  fi
+else
+  ok "Deployed."
+fi
+
+# ---- Task: browse
+log "Opening app in browser (prints URL) ..."
 gcloud app browse
-
-# 📜 10. Done
-echo -e "${CYAN}"
-echo "============================================================="
-echo "🎉 Deployment complete!"
-echo "🌍 Check your browser — you should see the 'Hello, World!' page."
-echo "✨ Script finished by ePlus.DEV - https://eplus.dev"
-echo "============================================================="
-echo -e "${RESET}"
+ok "Done. --- ePlus.DEV"
