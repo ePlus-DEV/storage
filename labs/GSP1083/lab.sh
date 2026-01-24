@@ -115,13 +115,13 @@ echo "Postgres user      : postgres"
 echo "Postgres password  : ${DB_PASSWORD}"
 echo
 echo
-echo "Open: https://console.cloud.google.com/compute/instances"
+echo "Open: ${GREEN}https://console.cloud.google.com/compute/instances${RESET}"
 echo
 echo
 echo "Inside VM:"
-echo "export ALLOYDB=${ALLOYDB_IP}"
+echo "${RED}export ALLOYDB=${ALLOYDB_IP}"
 echo "echo \$ALLOYDB > alloydbip.txt"
-echo "psql -h \$ALLOYDB -U postgres"
+echo "psql -h \$ALLOYDB -U postgres${RESET}"
 echo
 echo -e "${BOLD}${GREEN}=================================================${RESET}"
 echo
