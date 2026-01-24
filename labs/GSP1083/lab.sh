@@ -28,7 +28,7 @@ echo -e "${RESET}"
 # 🔧 Variables
 # =======================
 PROJECT_ID=$(gcloud config get-value project)
-REGION="us-east1"
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 NETWORK="peering-network"
 
 CLUSTER_NAME="gcloud-lab-cluster"
@@ -39,6 +39,7 @@ DB_PASSWORD="Change3Me"
 # 📌 Check project
 # =======================
 echo -e "${YELLOW}🔍 Using Project: ${PROJECT_ID}${RESET}"
+echo -e "${YELLOW}🔍 Using REGION: ${REGION}${RESET}"
 echo
 
 # =======================
