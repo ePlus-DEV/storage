@@ -1,13 +1,13 @@
 #!/bin/bash
 # =============================================================
-# 🚀 AlloyDB for PostgreSQL - Fundamental Lab (Qwiklabs)
-# 🧑‍💻 Script by ePlus.DEV
+# 🚀 AlloyDB for PostgreSQL - Qwiklabs
+# 🧑‍💻 Script by ePlus.DEV | © 2025 ePlus.DEV
 # =============================================================
 
 set -euo pipefail
 
 # =======================
-# 🌈 Color definitions
+# 🌈 Colors
 # =======================
 GREEN="\033[1;32m"
 CYAN="\033[1;36m"
@@ -16,111 +16,194 @@ RED="\033[1;31m"
 BOLD="\033[1m"
 RESET="\033[0m"
 
+log()  { echo -e "${CYAN}▶ ${RESET}$*"; }
+ok()   { echo -e "${GREEN}✔ ${RESET}$*"; }
+warn() { echo -e "${YELLOW}⚠ ${RESET}$*"; }
+die()  { echo -e "${RED}✘ ${RESET}$*"; exit 1; }
+
 echo -e "${CYAN}"
 echo "============================================================="
 echo "🚀 AlloyDB - Database Fundamentals - GSP1083"
-echo "📦 Create Cluster + Instance + List + Delete (with confirm)"
-echo "© 2026 ePlus.DEV"
+echo "© 2026 - ePlus.DEV"
 echo "============================================================="
 echo -e "${RESET}"
 
 # =======================
-# 🔧 Variables
+# 🔧 Config
 # =======================
 PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
-export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+REGION="us-east1"
 NETWORK="peering-network"
-
-CLUSTER_NAME="gcloud-lab-cluster"
-INSTANCE_NAME="gcloud-lab-instance"
 DB_PASSWORD="Change3Me"
 
-if [[ -z "${PROJECT_ID}" ]]; then
-  echo -e "${RED}❌ Cannot detect PROJECT_ID. Are you in Cloud Shell and logged in?${RESET}"
-  exit 1
+# Checkpoint #1 resources (same names as lab UI instructions)
+CLUSTER_UI="lab-cluster"
+INSTANCE_UI="lab-instance"
+
+# Checkpoint #3 resources (same names as lab CLI instructions)
+CLUSTER_CLI="gcloud-lab-cluster"
+INSTANCE_CLI="gcloud-lab-instance"
+
+[[ -n "${PROJECT_ID}" ]] || die "Cannot detect PROJECT_ID. Open Cloud Shell in the lab first."
+
+log "Project: ${BOLD}${PROJECT_ID}${RESET}"
+log "Region : ${BOLD}${REGION}${RESET}"
+log "Network: ${BOLD}${NETWORK}${RESET}"
+echo
+
+# =======================
+# Helper: create cluster if missing
+# =======================
+create_cluster_if_missing() {
+  local cluster="$1"
+  if gcloud alloydb clusters describe "${cluster}" --region="${REGION}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
+    ok "Cluster '${cluster}' already exists (skip)."
+    return 0
+  fi
+
+  log "Creating cluster: ${BOLD}${cluster}${RESET}"
+  gcloud alloydb clusters create "${cluster}" \
+    --password="${DB_PASSWORD}" \
+    --network="${NETWORK}" \
+    --region="${REGION}" \
+    --project="${PROJECT_ID}"
+  ok "Cluster '${cluster}' created."
+}
+
+# =======================
+# Helper: create instance if missing
+# =======================
+create_instance_if_missing() {
+  local cluster="$1"
+  local instance="$2"
+
+  if gcloud alloydb instances describe "${instance}" --cluster="${cluster}" --region="${REGION}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
+    ok "Instance '${instance}' in cluster '${cluster}' already exists (skip)."
+    return 0
+  fi
+
+  log "Creating PRIMARY instance: ${BOLD}${instance}${RESET} (cluster: ${cluster})"
+  # Use REGIONAL for "Multiple zones (Highly Available)" equivalent
+  gcloud alloydb instances create "${instance}" \
+    --instance-type=PRIMARY \
+    --cpu-count=2 \
+    --availability-type=REGIONAL \
+    --cluster="${cluster}" \
+    --region="${REGION}" \
+    --project="${PROJECT_ID}"
+  ok "Instance '${instance}' created."
+}
+
+# =======================
+# ✅ Checkpoint #1: Create cluster + instance (lab-cluster/lab-instance)
+# =======================
+echo -e "${BOLD}${CYAN}== Checkpoint 1: Create a cluster and instance ==${RESET}"
+create_cluster_if_missing "${CLUSTER_UI}"
+create_instance_if_missing "${CLUSTER_UI}" "${INSTANCE_UI}"
+echo
+
+# =======================
+# ✅ Checkpoint #2: Create and load a table (via alloydb-client VM)
+# =======================
+echo -e "${BOLD}${CYAN}== Checkpoint 2: Create and load a table ==${RESET}"
+
+log "Getting AlloyDB private IP for instance '${INSTANCE_UI}'..."
+ALLOYDB_IP="$(gcloud alloydb instances describe "${INSTANCE_UI}" \
+  --cluster="${CLUSTER_UI}" \
+  --region="${REGION}" \
+  --project="${PROJECT_ID}" \
+  --format="value(ipAddress)" 2>/dev/null || true)"
+
+# Fallback (some environments expose it under networkConfig.ipAddress)
+if [[ -z "${ALLOYDB_IP}" ]]; then
+  ALLOYDB_IP="$(gcloud alloydb instances describe "${INSTANCE_UI}" \
+    --cluster="${CLUSTER_UI}" \
+    --region="${REGION}" \
+    --project="${PROJECT_ID}" \
+    --format="value(networkConfig.ipAddress)" 2>/dev/null || true)"
 fi
 
-echo -e "${YELLOW}🔍 Project: ${BOLD}${PROJECT_ID}${RESET}"
-echo -e "${YELLOW}🌍 Region : ${BOLD}${REGION}${RESET}"
-echo -e "${YELLOW}🛜 Network: ${BOLD}${NETWORK}${RESET}"
+[[ -n "${ALLOYDB_IP}" ]] || die "Cannot fetch private IP for '${INSTANCE_UI}'. Open AlloyDB > cluster overview and confirm instance is READY."
+
+ok "AlloyDB Private IP: ${BOLD}${ALLOYDB_IP}${RESET}"
+
+log "Detecting zone of VM 'alloydb-client'..."
+CLIENT_ZONE="$(gcloud compute instances describe alloydb-client \
+  --project="${PROJECT_ID}" \
+  --format="value(zone)" 2>/dev/null | awk -F/ '{print $NF}')"
+
+[[ -n "${CLIENT_ZONE}" ]] || die "Cannot detect zone for 'alloydb-client' VM."
+
+ok "alloydb-client zone: ${BOLD}${CLIENT_ZONE}${RESET}"
+
+warn "Running SQL + load script on alloydb-client (non-interactive)..."
+
+gcloud compute ssh alloydb-client \
+  --zone="${CLIENT_ZONE}" \
+  --project="${PROJECT_ID}" \
+  --command "bash -lc '
+set -euo pipefail
+export ALLOYDB=\"${ALLOYDB_IP}\"
+echo \"\$ALLOYDB\" > alloydbip.txt
+
+# Create regions + insert data
+PGPASSWORD=\"${DB_PASSWORD}\" psql -h \"\$ALLOYDB\" -U postgres -v ON_ERROR_STOP=1 <<\"SQL\"
+CREATE TABLE IF NOT EXISTS regions (
+  region_id bigint NOT NULL,
+  region_name varchar(25)
+);
+
+DO \$\$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = '\''regions_pkey'\'' AND conrelid = '\''regions'\''::regclass
+  ) THEN
+    ALTER TABLE regions ADD PRIMARY KEY (region_id);
+  END IF;
+END
+\$\$;
+
+INSERT INTO regions (region_id, region_name) VALUES
+  (1, '\''Europe'\''),
+  (2, '\''Americas'\''),
+  (3, '\''Asia'\''),
+  (4, '\''Middle East and Africa'\'')
+ON CONFLICT (region_id) DO UPDATE
+SET region_name = EXCLUDED.region_name;
+
+SELECT region_id, region_name FROM regions ORDER BY region_id;
+SQL
+
+# Download and load hrm SQL
+gsutil cp gs://spls/gsp1083/hrm_load.sql hrm_load.sql
+
+PGPASSWORD=\"${DB_PASSWORD}\" psql -h \"\$ALLOYDB\" -U postgres -v ON_ERROR_STOP=1 <<\"SQL\"
+\\i hrm_load.sql
+\\dt
+SQL
+'"
+
+ok "Tables created/loaded on AlloyDB."
 echo
 
 # =======================
-# 🧱 Create AlloyDB Cluster
+# ✅ Checkpoint #3: Create cluster + instance with CLI (gcloud-lab-*)
 # =======================
-echo -e "${GREEN}🧱 Creating AlloyDB Cluster: ${BOLD}${CLUSTER_NAME}${RESET}"
-gcloud alloydb clusters create "${CLUSTER_NAME}" \
-  --password="${DB_PASSWORD}" \
-  --network="${NETWORK}" \
-  --region="${REGION}" \
-  --project="${PROJECT_ID}"
-
-echo -e "${GREEN}✅ Cluster created${RESET}"
+echo -e "${BOLD}${CYAN}== Checkpoint 3: Create a cluster and instance with CLI ==${RESET}"
+create_cluster_if_missing "${CLUSTER_CLI}"
+create_instance_if_missing "${CLUSTER_CLI}" "${INSTANCE_CLI}"
 echo
 
 # =======================
-# 🖥️ Create Primary Instance
+# ✅ Final: show resources
 # =======================
-echo -e "${GREEN}🖥️ Creating Primary Instance: ${BOLD}${INSTANCE_NAME}${RESET}"
-echo -e "${YELLOW}⏳ This may take ~7–9 minutes...${RESET}"
-
-gcloud alloydb instances create "${INSTANCE_NAME}" \
-  --instance-type=PRIMARY \
-  --cpu-count=2 \
-  --region="${REGION}" \
-  --cluster="${CLUSTER_NAME}" \
-  --project="${PROJECT_ID}"
-
-echo -e "${GREEN}✅ Instance created${RESET}"
-echo
-
-# =======================
-# 📋 List AlloyDB Clusters
-# =======================
-echo -e "${CYAN}📋 Listing AlloyDB clusters:${RESET}"
+echo -e "${BOLD}${CYAN}== Final verification ==${RESET}"
 gcloud alloydb clusters list --project="${PROJECT_ID}"
 echo
-
-echo -e "${CYAN}📋 Listing AlloyDB instances (optional):${RESET}"
-gcloud alloydb instances list --region="${REGION}" --project="${PROJECT_ID}" || true
+warn "Now go back to Qwiklabs and click:"
+echo -e "${YELLOW}  • Check my progress (Create a cluster and instance)${RESET}"
+echo -e "${YELLOW}  • Check my progress (Create and load a table)${RESET}"
+echo -e "${YELLOW}  • Check my progress (Create a cluster and instance with CLI)${RESET}"
 echo
-
-# =======================
-# 🧨 Delete Cluster (Task 4)
-# =======================
-echo -e "${RED}=============================================================${RESET}"
-echo -e "${RED}⚠️  DELETE STEP (Task 4)${RESET}"
-echo -e "${YELLOW}👉 IMPORTANT: Go back to Qwiklabs and click:${RESET}"
-echo -e "${YELLOW}   ✅ \"Check my progress\" for Task 3 (Create cluster and instance with CLI)${RESET}"
-echo -e "${YELLOW}   Make sure it shows COMPLETED before deleting.${RESET}"
-echo -e "${RED}=============================================================${RESET}"
-echo
-
-read -p "$(echo -e ${BOLD}${CYAN}Type YES to confirm deletion:${RESET} )" CONFIRM
-if [[ "${CONFIRM}" != "YES" ]]; then
-  echo -e "${GREEN}✅ Cancelled. Cluster is still running.${RESET}"
-  exit 0
-fi
-
-echo
-echo -e "${RED}🧨 Proceeding to delete cluster: ${BOLD}${CLUSTER_NAME}${RESET}"
-echo -e "${YELLOW}⚠️ gcloud will ask final confirmation: Do you want to continue (Y/n)?${RESET}"
-echo
-
-gcloud alloydb clusters delete "${CLUSTER_NAME}" \
-  --force \
-  --region="${REGION}" \
-  --project="${PROJECT_ID}"
-
-echo
-echo -e "${GREEN}✅ Cluster deleted successfully${RESET}"
-echo
-
-# =======================
-# 🔍 Final verification
-# =======================
-echo -e "${CYAN}🔍 Remaining AlloyDB clusters:${RESET}"
-gcloud alloydb clusters list --project="${PROJECT_ID}"
-echo
-
-echo -e "${BOLD}${GREEN}🎉 Done! - ePlus.DEV${RESET}"
+ok "Done. - ePlus.DEV"
