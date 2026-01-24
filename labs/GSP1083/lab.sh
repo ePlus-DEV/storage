@@ -32,7 +32,7 @@ echo -e "${RESET}"
 # 🔧 Config
 # =======================
 PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
-REGION="us-east1"
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 NETWORK="peering-network"
 DB_PASSWORD="Change3Me"
 
