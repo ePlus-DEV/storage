@@ -39,18 +39,6 @@ HOME_DART="${WORK_DIR}/lib/home.dart"
 APP_DART="${WORK_DIR}/lib/app.dart"
 
 # ------------------------------
-# ✅ Preflight
-# ------------------------------
-title "Preflight"
-need_cmd git
-need_cmd flutter
-need_cmd perl
-ok "git/flutter/perl OK"
-
-mkdir -p "$DEST_BASE"
-ok "Destination: $DEST_BASE"
-
-# ------------------------------
 # ✅ Replace lib/login.dart
 # ------------------------------
 title "Replace lib/login.dart"
@@ -171,7 +159,6 @@ ok "login.dart replaced"
 # ✅ Replace lib/home.dart
 # ------------------------------
 title "Replace lib/home.dart"
-backup "$HOME_DART"
 
 cat > "$HOME_DART" <<'DART'
 // Copyright 2018-present the Flutter authors. All Rights Reserved.
