@@ -17,7 +17,7 @@ warn(){ echo -e "${YELLOW}⚠${RESET} $*"; }
 die(){ echo -e "${RED}✘${RESET} $*"; exit 1; }
 
 PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
-REGION="us-east1"
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 NETWORK="peering-network"
 DB_PASSWORD="Change3Me"
 
@@ -63,7 +63,7 @@ create_instance_if_missing() {
 
 echo -e "${CYAN}=============================================================${RESET}"
 echo -e "${CYAN}🚀 AlloyDB - Create required resources only${RESET}"
-echo -e "${CYAN}© 2025 ePlus.DEV${RESET}"
+echo -e "${CYAN}© 2026 ePlus.DEV${RESET}"
 echo -e "${CYAN}=============================================================${RESET}"
 log "Project: ${BOLD}${PROJECT_ID}${RESET}"
 log "Region : ${BOLD}${REGION}${RESET}"
