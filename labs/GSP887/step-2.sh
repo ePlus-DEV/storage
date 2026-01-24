@@ -1,43 +1,65 @@
 #!/bin/bash
+
+# ========== DEBUG / ERROR LOG ==========
 set -Eeuo pipefail
 
-trap 'echo "❌ ERROR at line $LINENO: $BASH_COMMAND" >&2' ERR
+log() { printf "✅ %s\n" "$*" >&2; }
+warn() { printf "⚠️  %s\n" "$*" >&2; }
+die() { printf "❌ %s\n" "$*" >&2; exit 1; }
 
-# Try the path you gave first
-BASE="/home/ide-dev/material-components-flutter-codelabs/mdc_100_series/lib"
+on_err() {
+  local exit_code=$?
+  echo "========================================" >&2
+  echo "❌ SCRIPT FAILED" >&2
+  echo "Exit code : $exit_code" >&2
+  echo "Line      : ${BASH_LINENO[0]}" >&2
+  echo "Command   : ${BASH_COMMAND}" >&2
+  echo "PWD       : $(pwd)" >&2
+  echo "User      : $(id -un) (uid=$(id -u))" >&2
+  echo "Shell     : $SHELL" >&2
+  echo "========================================" >&2
+  exit $exit_code
+}
+trap on_err ERR
 
-# If not exist, auto-find from current working dir
+# show each command (để thấy nó chết ở đâu)
+set -x
+
+# ========== PATH DETECT ==========
+PREFERRED="/home/ide-dev/material-components-flutter-codelabs/mdc_100_series/lib"
+BASE="$PREFERRED"
+
 if [[ ! -d "$BASE" ]]; then
-  echo "⚠️ Not found: $BASE"
-  echo "🔎 Auto-detecting mdc_100_series/lib from: $(pwd)"
-
-  FOUND="$(find "$(pwd)" -maxdepth 6 -type d -path "*/mdc_100_series/lib" 2>/dev/null | head -n 1 || true)"
-  if [[ -z "${FOUND:-}" ]]; then
-    echo "❌ Cannot find folder: mdc_100_series/lib (maxdepth=6) from current directory."
-    echo "👉 Tip: cd into your project root then run this script again."
-    exit 1
-  fi
-
+  warn "Not found preferred path: $PREFERRED"
+  warn "Auto searching mdc_100_series/lib from current directory..."
+  FOUND="$(find "$(pwd)" -maxdepth 8 -type d -path "*/mdc_100_series/lib" 2>/dev/null | head -n 1 || true)"
+  [[ -n "${FOUND:-}" ]] || die "Cannot find folder 'mdc_100_series/lib' from $(pwd). Hãy cd vào root project rồi chạy lại."
   BASE="$FOUND"
-  echo "✅ Found: $BASE"
 fi
 
 HOME_FILE="$BASE/home.dart"
 LOGIN_FILE="$BASE/login.dart"
 
-# Check write permission
+# ========== VALIDATE ==========
+[[ -d "$BASE" ]] || die "BASE folder does not exist: $BASE"
+
+# Permission check
 if [[ ! -w "$BASE" ]]; then
-  echo "❌ No write permission on: $BASE"
-  echo "👉 Try: sudo bash $0"
-  exit 1
+  ls -ld "$BASE" >&2 || true
+  die "No write permission on: $BASE (thử chạy: sudo bash $0)"
 fi
 
-# Backup old files if exist
-ts="$(date +%Y%m%d_%H%M%S)"
-if [[ -f "$HOME_FILE" ]]; then cp -f "$HOME_FILE" "$HOME_FILE.bak.$ts"; fi
-if [[ -f "$LOGIN_FILE" ]]; then cp -f "$LOGIN_FILE" "$LOGIN_FILE.bak.$ts"; fi
+# show target files
+log "Target BASE      : $BASE"
+log "Target home.dart : $HOME_FILE"
+log "Target login.dart: $LOGIN_FILE"
 
-echo "📝 Writing: $HOME_FILE"
+# Backup
+ts="$(date +%Y%m%d_%H%M%S)"
+[[ -f "$HOME_FILE" ]] && cp -f "$HOME_FILE" "$HOME_FILE.bak.$ts"
+[[ -f "$LOGIN_FILE" ]] && cp -f "$LOGIN_FILE" "$LOGIN_FILE.bak.$ts"
+
+# ========== WRITE home.dart ==========
 cat > "$HOME_FILE" <<'DART'
 // Copyright 2018-present the Flutter authors. All Rights Reserved.
 //
@@ -90,8 +112,7 @@ class HomePage extends StatelessWidget {
             ),
             Expanded(
               child: Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 8.0),
+                padding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 8.0),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.end,
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -149,7 +170,7 @@ class HomePage extends StatelessWidget {
 }
 DART
 
-echo "📝 Writing: $LOGIN_FILE"
+# ========== WRITE login.dart ==========
 cat > "$LOGIN_FILE" <<'DART'
 // Copyright 2018-present the Flutter authors. All Rights Reserved.
 //
@@ -247,7 +268,14 @@ class _LoginPageState extends State<LoginPage> {
 }
 DART
 
-echo "✅ Done!"
-echo "📌 home.dart:  $HOME_FILE"
-echo "📌 login.dart: $LOGIN_FILE"
-echo "🗂️ backups (if existed): *.bak.$ts"
+# ========== VERIFY ==========
+[[ -s "$HOME_FILE" ]] || die "home.dart written but empty: $HOME_FILE"
+[[ -s "$LOGIN_FILE" ]] || die "login.dart written but empty: $LOGIN_FILE"
+
+log "Done. Backups (if existed):"
+log "  $HOME_FILE.bak.$ts"
+log "  $LOGIN_FILE.bak.$ts"
+
+# turn off xtrace
+set +x
+echo "🎉 SUCCESS"
