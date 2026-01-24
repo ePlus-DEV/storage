@@ -51,19 +51,9 @@ mkdir -p "$DEST_BASE"
 ok "Destination: $DEST_BASE"
 
 # ------------------------------
-# 🧾 Backup helper
-# ------------------------------
-backup() {
-  local f="$1"
-  [[ -f "$f" ]] || fail "File not found: $f"
-  cp -f "$f" "${f}.bak.$(date +%Y%m%d_%H%M%S)"
-}
-
-# ------------------------------
 # ✅ Replace lib/login.dart
 # ------------------------------
 title "Replace lib/login.dart"
-backup "$LOGIN_DART"
 
 cat > "$LOGIN_DART" <<'DART'
 // Copyright 2018-present the Flutter authors. All Rights Reserved.
