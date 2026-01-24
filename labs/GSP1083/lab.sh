@@ -26,7 +26,7 @@ die(){ echo -e "${RED}✘${RESET} $*"; exit 1; }
 # 🔧 Lab fixed config
 # =======================
 PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
-export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+export REGION="$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")"
 NETWORK="peering-network"
 DB_PASSWORD="Change3Me"
 
@@ -41,6 +41,7 @@ INSTANCE_TASK3="gcloud-lab-instance"
 CLIENT_VM="alloydb-client"
 
 [[ -n "${PROJECT_ID}" ]] || die "Cannot detect PROJECT_ID. Use LAB Cloud Shell."
+[[ -n "${REGION}" ]] || die "Cannot detect REGION from project metadata."
 
 echo -e "${CYAN}=============================================================${RESET}"
 echo -e "${CYAN}🚀 AlloyDB Lab${RESET}"
@@ -92,11 +93,17 @@ ALLOYDB_IP="$(gcloud alloydb instances describe "${INSTANCE_TASK1}" \
   --cluster="${CLUSTER_TASK1}" \
   --region="${REGION}" \
   --project="${PROJECT_ID}" \
-  --format="value(ipAddress)")"
+  --format="value(ipAddress)" 2>/dev/null || true)"
 
-CLIENT_ZONE="$(gcloud compute instances describe "${CLIENT_VM}" \
+[[ -n "${ALLOYDB_IP}" ]] || die "Cannot fetch AlloyDB private IP. Ensure instance is READY."
+
+# ✅ FIX: Get client VM zone WITHOUT interactive prompt
+CLIENT_ZONE="$(gcloud compute instances list \
   --project="${PROJECT_ID}" \
-  --format="value(zone)" | awk -F/ '{print $NF}')"
+  --filter="name=(${CLIENT_VM})" \
+  --format="value(zone)" 2>/dev/null | head -n 1 | awk -F/ '{print $NF}')"
+
+[[ -n "${CLIENT_ZONE}" ]] || die "Cannot detect zone for VM '${CLIENT_VM}'. Check Compute Engine > VM instances."
 
 echo
 echo -e "${BOLD}${GREEN}=================================================${RESET}"
@@ -112,6 +119,7 @@ echo "gcloud compute ssh ${CLIENT_VM} --zone=${CLIENT_ZONE}"
 echo
 echo "Inside VM:"
 echo "export ALLOYDB=${ALLOYDB_IP}"
+echo "echo \$ALLOYDB > alloydbip.txt"
 echo "psql -h \$ALLOYDB -U postgres"
 echo
 echo -e "${BOLD}${GREEN}=================================================${RESET}"
@@ -124,14 +132,10 @@ echo
 # WAIT for user confirmation
 # =======================
 while true; do
-  read -p "$(echo -e ${BOLD}${YELLOW}Type Y to continue with Task 3:${RESET} )" CONFIRM
+  read -r -p "$(echo -e ${BOLD}${YELLOW}Type Y to continue with Task 3:${RESET} )" CONFIRM
   case "${CONFIRM}" in
-    Y|y)
-      break
-      ;;
-    *)
-      echo -e "${YELLOW}Please type Y when Task 2 is completed.${RESET}"
-      ;;
+    Y|y) break ;;
+    *) echo -e "${YELLOW}Please type Y when Task 2 is completed.${RESET}" ;;
   esac
 done
 
