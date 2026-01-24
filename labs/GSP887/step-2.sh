@@ -296,29 +296,3 @@ class HomePage extends StatelessWidget {
 DART
 
 ok "home.dart replaced"
-
-# ------------------------------
-# ✅ Optional: Fix const MaterialPageRoute in app.dart
-# ------------------------------
-title "Optional - Fix const MaterialPageRoute"
-if [[ -f "$APP_DART" ]] && grep -q "return const MaterialPageRoute" "$APP_DART"; then
-  backup "$APP_DART"
-  perl -i -pe 's/return\s+const\s+MaterialPageRoute/return MaterialPageRoute/g' "$APP_DART"
-  warn "Removed 'const' from MaterialPageRoute in app.dart"
-else
-  ok "No const MaterialPageRoute issue found (or app.dart missing)"
-fi
-
-# ------------------------------
-# ✅ Run web server
-# ------------------------------
-title "Run web server"
-warn "This will keep running. Open the Live Server URL from Qwiklabs panel."
-echo -e "${DIM}Hot reload: press 'r' in terminal.${RESET}\n"
-
-if command -v fwr >/dev/null 2>&1; then
-  exec fwr
-else
-  warn "'fwr' not found → using flutter run -d web-server"
-  exec flutter run -d web-server --web-hostname=0.0.0.0 --web-port=8080
-fi
