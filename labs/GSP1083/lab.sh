@@ -114,8 +114,9 @@ echo "AlloyDB Private IP : ${ALLOYDB_IP}"
 echo "Postgres user      : postgres"
 echo "Postgres password  : ${DB_PASSWORD}"
 echo
-echo "SSH to client VM:"
-echo "gcloud compute ssh ${CLIENT_VM} --zone=${CLIENT_ZONE}"
+echo
+echo "Open: https://console.cloud.google.com/compute/instances"
+echo
 echo
 echo "Inside VM:"
 echo "export ALLOYDB=${ALLOYDB_IP}"
