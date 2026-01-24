@@ -1,16 +1,43 @@
 #!/bin/bash
-set -e
+set -Eeuo pipefail
 
+trap 'echo "❌ ERROR at line $LINENO: $BASH_COMMAND" >&2' ERR
+
+# Try the path you gave first
 BASE="/home/ide-dev/material-components-flutter-codelabs/mdc_100_series/lib"
+
+# If not exist, auto-find from current working dir
+if [[ ! -d "$BASE" ]]; then
+  echo "⚠️ Not found: $BASE"
+  echo "🔎 Auto-detecting mdc_100_series/lib from: $(pwd)"
+
+  FOUND="$(find "$(pwd)" -maxdepth 6 -type d -path "*/mdc_100_series/lib" 2>/dev/null | head -n 1 || true)"
+  if [[ -z "${FOUND:-}" ]]; then
+    echo "❌ Cannot find folder: mdc_100_series/lib (maxdepth=6) from current directory."
+    echo "👉 Tip: cd into your project root then run this script again."
+    exit 1
+  fi
+
+  BASE="$FOUND"
+  echo "✅ Found: $BASE"
+fi
 
 HOME_FILE="$BASE/home.dart"
 LOGIN_FILE="$BASE/login.dart"
 
-echo "🔄 Replacing MDC Flutter files..."
+# Check write permission
+if [[ ! -w "$BASE" ]]; then
+  echo "❌ No write permission on: $BASE"
+  echo "👉 Try: sudo bash $0"
+  exit 1
+fi
 
-# ===============================
-# home.dart
-# ===============================
+# Backup old files if exist
+ts="$(date +%Y%m%d_%H%M%S)"
+if [[ -f "$HOME_FILE" ]]; then cp -f "$HOME_FILE" "$HOME_FILE.bak.$ts"; fi
+if [[ -f "$LOGIN_FILE" ]]; then cp -f "$LOGIN_FILE" "$LOGIN_FILE.bak.$ts"; fi
+
+echo "📝 Writing: $HOME_FILE"
 cat > "$HOME_FILE" <<'DART'
 // Copyright 2018-present the Flutter authors. All Rights Reserved.
 //
@@ -122,9 +149,7 @@ class HomePage extends StatelessWidget {
 }
 DART
 
-# ===============================
-# login.dart
-# ===============================
+echo "📝 Writing: $LOGIN_FILE"
 cat > "$LOGIN_FILE" <<'DART'
 // Copyright 2018-present the Flutter authors. All Rights Reserved.
 //
@@ -222,4 +247,7 @@ class _LoginPageState extends State<LoginPage> {
 }
 DART
 
-echo "✅ home.dart & login.dart replaced successfully - ePlus.DEV"
+echo "✅ Done!"
+echo "📌 home.dart:  $HOME_FILE"
+echo "📌 login.dart: $LOGIN_FILE"
+echo "🗂️ backups (if existed): *.bak.$ts"
