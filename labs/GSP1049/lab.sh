@@ -25,7 +25,7 @@ clear
 # WELCOME BANNER
 # =========================
 echo "${MAGENTA_TEXT}${BOLD_TEXT}══════════════════════════════════════════════${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}        🚀 WELCOME TO DR ABHISHEK 🚀        ${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}        🚀 WELCOME TO ePlus.DEV 🚀        ${RESET_FORMAT}"
 echo "${YELLOW_TEXT}${BOLD_TEXT}     Google Cloud | DevOps | Labs        ${RESET_FORMAT}"
 echo "${MAGENTA_TEXT}${BOLD_TEXT}══════════════════════════════════════════════${RESET_FORMAT}"
 echo
