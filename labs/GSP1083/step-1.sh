@@ -1,8 +1,6 @@
 #!/bin/bash
 # =============================================================
-# 🚀 AlloyDB for PostgreSQL - Task 1
-# ✅ Create cluster & instance
-# ✅ PRINT connection info for Task 2 (manual SSH + psql)
+# 🚀 AlloyDB for PostgreSQL - Lab Script (Controlled Flow)
 # =============================================================
 # © 2026 ePlus.DEV
 # =============================================================
@@ -21,39 +19,48 @@ RESET="\033[0m"
 
 log(){ echo -e "${CYAN}▶${RESET} $*"; }
 ok(){ echo -e "${GREEN}✔${RESET} $*"; }
+warn(){ echo -e "${YELLOW}⚠${RESET} $*"; }
 die(){ echo -e "${RED}✘${RESET} $*"; exit 1; }
 
 # =======================
-# 🔧 Config (LAB fixed)
+# 🔧 Lab fixed config
 # =======================
 PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
 export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 NETWORK="peering-network"
 DB_PASSWORD="Change3Me"
 
-CLUSTER_NAME="lab-cluster"
-INSTANCE_NAME="lab-instance"
+# Task 1 resources
+CLUSTER_TASK1="lab-cluster"
+INSTANCE_TASK1="lab-instance"
+
+# Task 3 resources
+CLUSTER_TASK3="gcloud-lab-cluster"
+INSTANCE_TASK3="gcloud-lab-instance"
+
 CLIENT_VM="alloydb-client"
 
 [[ -n "${PROJECT_ID}" ]] || die "Cannot detect PROJECT_ID. Use LAB Cloud Shell."
 
 echo -e "${CYAN}=============================================================${RESET}"
-echo -e "${CYAN}🚀 AlloyDB Task 1 - Create & Print Connection Info${RESET}"
-echo -e "${CYAN}© 2025 ePlus.DEV${RESET}"
+echo -e "${CYAN}🚀 AlloyDB Lab${RESET}"
+echo -e "${CYAN}© 2026 - ePlus.DEV${RESET}"
 echo -e "${CYAN}=============================================================${RESET}"
 log "Project: ${BOLD}${PROJECT_ID}${RESET}"
 log "Region : ${BOLD}${REGION}${RESET}"
 echo
 
 # =======================
-# Create cluster if missing
+# TASK 1: Create cluster & instance
 # =======================
-if gcloud alloydb clusters describe "${CLUSTER_NAME}" \
+echo -e "${BOLD}${CYAN}== Task 1: Create cluster & instance ==${RESET}"
+
+if gcloud alloydb clusters describe "${CLUSTER_TASK1}" \
   --region="${REGION}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
-  ok "Cluster '${CLUSTER_NAME}' already exists (skip)."
+  ok "Cluster '${CLUSTER_TASK1}' already exists (skip)."
 else
-  log "Creating cluster '${CLUSTER_NAME}'..."
-  gcloud alloydb clusters create "${CLUSTER_NAME}" \
+  log "Creating cluster '${CLUSTER_TASK1}'..."
+  gcloud alloydb clusters create "${CLUSTER_TASK1}" \
     --password="${DB_PASSWORD}" \
     --network="${NETWORK}" \
     --region="${REGION}" \
@@ -61,65 +68,108 @@ else
   ok "Cluster created."
 fi
 
-# =======================
-# Create instance if missing
-# =======================
-if gcloud alloydb instances describe "${INSTANCE_NAME}" \
-  --cluster="${CLUSTER_NAME}" \
+if gcloud alloydb instances describe "${INSTANCE_TASK1}" \
+  --cluster="${CLUSTER_TASK1}" \
   --region="${REGION}" \
   --project="${PROJECT_ID}" >/dev/null 2>&1; then
-  ok "Instance '${INSTANCE_NAME}' already exists (skip)."
+  ok "Instance '${INSTANCE_TASK1}' already exists (skip)."
 else
-  log "Creating PRIMARY instance '${INSTANCE_NAME}' (HA)..."
-  gcloud alloydb instances create "${INSTANCE_NAME}" \
+  log "Creating PRIMARY instance '${INSTANCE_TASK1}' (HA)..."
+  gcloud alloydb instances create "${INSTANCE_TASK1}" \
     --instance-type=PRIMARY \
     --cpu-count=2 \
     --availability-type=REGIONAL \
-    --cluster="${CLUSTER_NAME}" \
+    --cluster="${CLUSTER_TASK1}" \
     --region="${REGION}" \
     --project="${PROJECT_ID}"
   ok "Instance created."
 fi
 
 # =======================
-# Fetch connection info
+# PRINT info for Task 2
 # =======================
-log "Fetching AlloyDB private IP..."
-ALLOYDB_IP="$(gcloud alloydb instances describe "${INSTANCE_NAME}" \
-  --cluster="${CLUSTER_NAME}" \
+ALLOYDB_IP="$(gcloud alloydb instances describe "${INSTANCE_TASK1}" \
+  --cluster="${CLUSTER_TASK1}" \
   --region="${REGION}" \
   --project="${PROJECT_ID}" \
-  --format="value(ipAddress)" 2>/dev/null || true)"
+  --format="value(ipAddress)")"
 
-[[ -n "${ALLOYDB_IP}" ]] || die "Cannot fetch AlloyDB private IP."
-
-log "Detecting zone of '${CLIENT_VM}' VM..."
 CLIENT_ZONE="$(gcloud compute instances describe "${CLIENT_VM}" \
   --project="${PROJECT_ID}" \
   --format="value(zone)" | awk -F/ '{print $NF}')"
 
-[[ -n "${CLIENT_ZONE}" ]] || die "Cannot detect zone for ${CLIENT_VM}."
+echo
+echo -e "${BOLD}${GREEN}=================================================${RESET}"
+echo -e "${BOLD}${GREEN}TASK 2 – MANUAL STEP (REQUIRED)${RESET}"
+echo -e "${BOLD}${GREEN}=================================================${RESET}"
+echo
+echo "AlloyDB Private IP : ${ALLOYDB_IP}"
+echo "Postgres user      : postgres"
+echo "Postgres password  : ${DB_PASSWORD}"
+echo
+echo "SSH to client VM:"
+echo "gcloud compute ssh ${CLIENT_VM} --zone=${CLIENT_ZONE}"
+echo
+echo "Inside VM:"
+echo "export ALLOYDB=${ALLOYDB_IP}"
+echo "psql -h \$ALLOYDB -U postgres"
+echo
+echo -e "${BOLD}${GREEN}=================================================${RESET}"
+echo
+warn "👉 NOW perform Task 2 manually (Create and load a table)"
+warn "👉 After you FINISH Task 2 and click 'Check my progress', come back here."
+echo
 
 # =======================
-# PRINT INFO FOR TASK 2
+# WAIT for user confirmation
+# =======================
+while true; do
+  read -p "$(echo -e ${BOLD}${YELLOW}Type Y to continue with Task 3:${RESET} )" CONFIRM
+  case "${CONFIRM}" in
+    Y|y)
+      break
+      ;;
+    *)
+      echo -e "${YELLOW}Please type Y when Task 2 is completed.${RESET}"
+      ;;
+  esac
+done
+
+# =======================
+# TASK 3: Create cluster & instance with CLI
 # =======================
 echo
-echo -e "${BOLD}${GREEN}=================================================${RESET}"
-echo -e "${BOLD}${GREEN}TASK 2 – CONNECTION INFORMATION${RESET}"
-echo -e "${BOLD}${GREEN}=================================================${RESET}"
+echo -e "${BOLD}${CYAN}== Task 3: Create cluster & instance with CLI ==${RESET}"
+
+if gcloud alloydb clusters describe "${CLUSTER_TASK3}" \
+  --region="${REGION}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
+  ok "Cluster '${CLUSTER_TASK3}' already exists (skip)."
+else
+  log "Creating cluster '${CLUSTER_TASK3}'..."
+  gcloud alloydb clusters create "${CLUSTER_TASK3}" \
+    --password="${DB_PASSWORD}" \
+    --network="${NETWORK}" \
+    --region="${REGION}" \
+    --project="${PROJECT_ID}"
+  ok "Cluster created."
+fi
+
+if gcloud alloydb instances describe "${INSTANCE_TASK3}" \
+  --cluster="${CLUSTER_TASK3}" \
+  --region="${REGION}" \
+  --project="${PROJECT_ID}" >/dev/null 2>&1; then
+  ok "Instance '${INSTANCE_TASK3}' already exists (skip)."
+else
+  log "Creating PRIMARY instance '${INSTANCE_TASK3}'..."
+  gcloud alloydb instances create "${INSTANCE_TASK3}" \
+    --instance-type=PRIMARY \
+    --cpu-count=2 \
+    --region="${REGION}" \
+    --cluster="${CLUSTER_TASK3}" \
+    --project="${PROJECT_ID}"
+  ok "Instance created."
+fi
+
 echo
-echo -e "AlloyDB Private IP : ${BOLD}${ALLOYDB_IP}${RESET}"
-echo -e "Postgres user      : ${BOLD}postgres${RESET}"
-echo -e "Postgres password  : ${BOLD}${DB_PASSWORD}${RESET}"
-echo
-echo -e "${BOLD}SSH to client VM:${RESET}"
-echo -e "gcloud compute ssh ${CLIENT_VM} --zone=${CLIENT_ZONE}"
-echo
-echo -e "${BOLD}Inside VM:${RESET}"
-echo -e "export ALLOYDB=${ALLOYDB_IP}"
-echo -e "echo \$ALLOYDB > alloydbip.txt"
-echo -e "psql -h \$ALLOYDB -U postgres"
-echo
-echo -e "${BOLD}${GREEN}=================================================${RESET}"
-echo
-ok "Task 1 completed. Use the above info to perform Task 2 manually."
+ok "All required lab tasks completed."
+warn "👉 Go back to Qwiklabs and click 'Check my progress' for Task 3."
