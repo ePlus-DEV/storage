@@ -1,41 +1,60 @@
 #!/bin/bash
-# ============================================================
-#  Qwiklabs: Cloud Spanner + Dataflow Lab Automation Script
-#  Author: David Nguyen (ePlus.DEV)
-#  Copyright (c) 2025 David Nguyen. All rights reserved.
-# ============================================================
 
-# Colors
-GREEN=$'\033[0;92m'
-YELLOW=$'\033[0;93m'
-CYAN=$'\033[0;96m'
-RESET=$'\033[0m'
-BOLD=$(tput bold)
+# =========================
+# COLOR DEFINITIONS
+# =========================
+BLACK_TEXT=$'\033[0;90m'
+RED_TEXT=$'\033[1;31m'
+GREEN_TEXT=$'\033[1;32m'
+YELLOW_TEXT=$'\033[1;33m'
+BLUE_TEXT=$'\033[1;34m'
+MAGENTA_TEXT=$'\033[1;35m'
+CYAN_TEXT=$'\033[1;36m'
+WHITE_TEXT=$'\033[1;37m'
 
-# Setup
-PROJECT_ID=$(gcloud config get-value project)
-REGION=$(gcloud compute project-info describe \
-  --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-INSTANCE_ID="banking-instance"
-DATABASE_ID="banking-db"
+NO_COLOR=$'\033[0m'
+RESET_FORMAT=$'\033[0m'
 
-echo "${CYAN}${BOLD}>>> Project:${RESET} $PROJECT_ID"
-echo "${CYAN}${BOLD}>>> Region:${RESET} $REGION"
-echo "${CYAN}${BOLD}>>> Instance:${RESET} $INSTANCE_ID"
-echo "${CYAN}${BOLD}>>> Database:${RESET} $DATABASE_ID"
+# TEXT FORMATTING
+BOLD_TEXT=$'\033[1m'
+UNDERLINE_TEXT=$'\033[4m'
 
-# ------------------------------------------------------------
-# Task 2: Insert data with DML
-# ------------------------------------------------------------
-echo "${CYAN}>>> [Task 2] Insert single record via DML...${RESET}"
-gcloud spanner databases execute-sql $DATABASE_ID --instance=$INSTANCE_ID \
+clear
+
+# =========================
+# WELCOME BANNER
+# =========================
+echo "${MAGENTA_TEXT}${BOLD_TEXT}══════════════════════════════════════════════${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}        🚀 WELCOME TO DR ABHISHEK 🚀        ${RESET_FORMAT}"
+echo "${YELLOW_TEXT}${BOLD_TEXT}     Google Cloud | DevOps | Labs        ${RESET_FORMAT}"
+echo "${MAGENTA_TEXT}${BOLD_TEXT}══════════════════════════════════════════════${RESET_FORMAT}"
+echo
+
+# =========================
+# AUTH & PROJECT SETUP
+# =========================
+echo "${BLUE_TEXT}${BOLD_TEXT}🔐 Checking GCP Authentication...${RESET_FORMAT}"
+gcloud auth list
+
+export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+
+gcloud config set compute/region $REGION
+
+export PROJECT_ID=$(gcloud config get-value project)
+export PROJECT_ID=$DEVSHELL_PROJECT_ID
+
+# =========================
+# SPANNER SQL INSERT
+# =========================
+echo "${GREEN_TEXT}${BOLD_TEXT}📦 Inserting record using SQL...${RESET_FORMAT}"
+gcloud spanner databases execute-sql banking-db --instance=banking-instance \
  --sql="INSERT INTO Customer (CustomerId, Name, Location) VALUES ('bdaaaa97-1b4b-4e58-b4ad-84030de92235', 'Richard Nelson', 'Ada Ohio')"
 
-# ------------------------------------------------------------
-# Task 3: Insert via client library (Python)
-# ------------------------------------------------------------
-echo "${CYAN}>>> [Task 3] Insert record via Python client...${RESET}"
-cat > insert.py <<'EOF'
+# =========================
+# PYTHON TRANSACTION INSERT
+# =========================
+cat > insert.py <<EOF_CP
 from google.cloud import spanner
 
 INSTANCE_ID = "banking-instance"
@@ -47,28 +66,23 @@ database = instance.database(DATABASE_ID)
 
 def insert_customer(transaction):
     row_ct = transaction.execute_update(
-        "INSERT INTO Customer (CustomerId, Name, Location) "
+        "INSERT INTO Customer (CustomerId, Name, Location)"
         "VALUES ('b2b4002d-7813-4551-b83b-366ef95f9273', 'Shana Underwood', 'Ely Iowa')"
     )
-    print("{} record(s) inserted.".format(row_ct))
+    print(f"{row_ct} record(s) inserted.")
 
 database.run_in_transaction(insert_customer)
-EOF
+EOF_CP
+
+echo "${GREEN_TEXT}${BOLD_TEXT}🐍 Running Python insert...${RESET_FORMAT}"
 python3 insert.py
 
-# ------------------------------------------------------------
-# Task 4: Batch insert via client library
-# ------------------------------------------------------------
-echo "${CYAN}>>> [Task 4] Cleaning old Task 4 rows (if any)...${RESET}"
-gcloud spanner databases execute-sql $DATABASE_ID --instance=$INSTANCE_ID \
- --sql="DELETE FROM Customer WHERE CustomerId IN (
- 'edfc683f-bd87-4bab-9423-01d1b2307c0d',
- '1f3842ca-4529-40ff-acdd-88e8a87eb404',
- '3320d98e-6437-4515-9e83-137f105f7fbc',
- '6b2b2774-add9-4881-8702-d179af0518d8');"
+sleep 60
 
-echo "${CYAN}>>> [Task 4] Batch insert records...${RESET}"
-cat > batch_insert.py <<'EOF'
+# =========================
+# BATCH INSERT
+# =========================
+cat > batch_insert.py <<EOF_CP
 from google.cloud import spanner
 
 INSTANCE_ID = "banking-instance"
@@ -90,49 +104,51 @@ with database.batch() as batch:
         ],
     )
 
-print("✅ Task 4 Batch insert done")
-EOF
+print("Rows inserted successfully")
+EOF_CP
+
+echo "${GREEN_TEXT}${BOLD_TEXT}📊 Running batch insert...${RESET_FORMAT}"
 python3 batch_insert.py
 
-echo "${YELLOW}>>> Verify Task 4 rows...${RESET}"
-gcloud spanner databases execute-sql $DATABASE_ID --instance=$INSTANCE_ID \
- --sql="SELECT COUNT(*) AS cnt FROM Customer WHERE CustomerId IN (
- 'edfc683f-bd87-4bab-9423-01d1b2307c0d',
- '1f3842ca-4529-40ff-acdd-88e8a87eb404',
- '3320d98e-6437-4515-9e83-137f105f7fbc',
- '6b2b2774-add9-4881-8702-d179af0518d8');"
+sleep 60
 
-echo
-read -p ">>> Did you click 'Check my progress' for Task 4 in GSP? (Y/n): " CONFIRM
-if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-  echo "⏸ Script stopped. Please check Task 4 in GSP, then re-run to continue."
-  exit 0
-fi
-
-# ------------------------------------------------------------
-# Task 5: Load data with Dataflow
-# ------------------------------------------------------------
-echo "${CYAN}>>> [Task 5] Preparing GCS bucket for Dataflow...${RESET}"
-gsutil mb gs://$PROJECT_ID || echo "Bucket already exists"
+# =========================
+# GCS SETUP
+# =========================
+echo "${CYAN_TEXT}${BOLD_TEXT}☁️ Creating Cloud Storage bucket...${RESET_FORMAT}"
+gsutil mb gs://$DEVSHELL_PROJECT_ID
 touch emptyfile
-gsutil cp emptyfile gs://$PROJECT_ID/tmp/emptyfile
+gsutil cp emptyfile gs://$DEVSHELL_PROJECT_ID/tmp/emptyfile
 
-echo "${CYAN}>>> Enable Dataflow API...${RESET}"
+# =========================
+# DATAFLOW JOB
+# =========================
+echo "${YELLOW_TEXT}${BOLD_TEXT}⚙️ Restarting Dataflow API...${RESET_FORMAT}"
 gcloud services disable dataflow.googleapis.com --force
 gcloud services enable dataflow.googleapis.com
 
-echo "${CYAN}>>> Running Dataflow job (this will take 12–16 min)...${RESET}"
+sleep 90
+
+echo "${GREEN_TEXT}${BOLD_TEXT}🚚 Starting Dataflow job...${RESET_FORMAT}"
 gcloud dataflow jobs run spanner-load \
-  --gcs-location gs://dataflow-templates-$REGION/latest/GCS_Text_to_Cloud_Spanner \
-  --region $REGION \
-  --staging-location gs://$DEVSHELL_PROJECT_ID/tmp/ \
-  --parameters instanceId=banking-instance,databaseId=banking-db,importManifest=gs://cloud-training/OCBL372/manifest.json
-
-echo "${GREEN}>>> Dataflow job submitted.${RESET}"
-echo "${CYAN}View job in Console:${RESET} https://console.cloud.google.com/dataflow/jobs?referrer=search&project=$DEVSHELL_PROJECT_ID"
-
-echo "${YELLOW}>>> After Dataflow finishes, verify row count with:${RESET}"
-echo "gcloud spanner databases execute-sql $DATABASE_ID --instance=$INSTANCE_ID --sql=\"SELECT COUNT(*) FROM Customer;\""
+ --gcs-location gs://dataflow-templates-$REGION/latest/GCS_Text_to_Cloud_Spanner \
+ --region $REGION \
+ --staging-location gs://$DEVSHELL_PROJECT_ID/tmp/ \
+ --parameters instanceId=banking-instance,databaseId=banking-db,importManifest=gs://cloud-training/OCBL372/manifest.json
 
 echo
-echo "${GREEN}${BOLD}>>> LAB COMPLETE! 🎉${RESET}"
+echo "${BLUE_TEXT}${BOLD_TEXT}🔍 Track Dataflow Job:${RESET_FORMAT}"
+echo "${UNDERLINE_TEXT}${CYAN_TEXT}https://console.cloud.google.com/dataflow/jobs?project=$DEVSHELL_PROJECT_ID${RESET_FORMAT}"
+
+# =========================
+# FINAL MESSAGE
+# =========================
+echo
+echo "${GREEN_TEXT}${BOLD_TEXT}══════════════════════════════════════════════${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}       ✅ LAB COMPLETED SUCCESSFULLY! ✅       ${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}══════════════════════════════════════════════${RESET_FORMAT}"
+echo
+echo "${RED_TEXT}${BOLD_TEXT}📢 Subscribe for more GCP Labs${RESET_FORMAT}"
+echo "${YELLOW_TEXT}${BOLD_TEXT}${UNDERLINE_TEXT}👉 https://eplus.dev${RESET_FORMAT}"
+echo
+echo "${MAGENTA_TEXT}${BOLD_TEXT}🙏 Thanks for Learning with ePlus.DEV!${RESET_FORMAT}"
