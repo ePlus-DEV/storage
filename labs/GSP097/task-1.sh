@@ -26,7 +26,12 @@ RESET=`tput sgr0`
 echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV${RESET}"
 
 
+
 export GOOGLE_CLOUD_PROJECT=$(gcloud config get-value core/project)
+
+gcloud services enable apikeys.googleapis.com
+gcloud alpha services api-keys create \
+  --display-name="Natural Language API Key"
 
 gcloud iam service-accounts create my-natlang-sa \
   --display-name "my natural language service account"
