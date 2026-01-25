@@ -1,7 +1,5 @@
 #!/bin/bash
 # Google Cloud Monitoring & Prometheus Lab
-# Expertly crafted by Dr. Abhishek Cloud
-
 
 # ======================
 BOLD=$(tput bold)
@@ -33,8 +31,10 @@ RAND_COLOR=${COLORS[$RANDOM % ${#COLORS[@]}]}
 # ======================
 clear
 echo "${BG_BLUE}${BOLD}${WHITE}==================================================${RESET}"
-echo "${BG_BLUE}${BOLD}${WHITE}                   EPLUS.DEV                      ${RESET}"
+echo "${BG_BLUE}${BOLD}${WHITE}   WELCOME TO EPLUS.DEV     ${RESET}"
 echo "${BG_BLUE}${BOLD}${WHITE}==================================================${RESET}"
+echo ""
+echo "${YELLOW}${BOLD}🌍 Website: ${UNDERLINE}https://eplus.dev${RESET}"
 echo ""
 
 # ======================
@@ -274,4 +274,4 @@ echo ""
 echo "${BOLD}${BLUE}🧹 Cleaning up temporary files...${RESET}"
 cd ..
 rm -rf flask_telemetry* gmp_prom_setup*
-echo "${GREEN}✔ Cleanup complete${RESET}"
+echo "${GREEN}✔ Cleanup complete - ePlus.DEV${RESET}"
