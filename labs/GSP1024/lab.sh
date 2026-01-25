@@ -30,9 +30,9 @@ RAND_COLOR=${COLORS[$RANDOM % ${#COLORS[@]}]}
 
 # ======================
 clear
-echo "${BG_BLUE}${BOLD}${WHITE}==================================================${RESET}"
+echo "${BG_BLUE}${BOLD}${WHITE}=============================${RESET}"
 echo "${BG_BLUE}${BOLD}${WHITE}   WELCOME TO EPLUS.DEV     ${RESET}"
-echo "${BG_BLUE}${BOLD}${WHITE}==================================================${RESET}"
+echo "${BG_BLUE}${BOLD}${WHITE}=============================${RESET}"
 echo ""
 echo "${YELLOW}${BOLD}🌍 Website: ${UNDERLINE}https://eplus.dev${RESET}"
 echo ""
