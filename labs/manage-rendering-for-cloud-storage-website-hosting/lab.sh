@@ -1,0 +1,2 @@
+
+PROJECT=$(gcloud config get-value project) && BUCKET="${PROJECT}-bucket" && gsutil setmeta -h "Content-Type:text/html" gs://${BUCKET}/index.html && gsutil setmeta -h "Content-Type:text/css" gs://${BUCKET}/style.css && gsutil setmeta -h "Content-Type:image/jpeg" gs://${BUCKET}/logo.jpg && gsutil web set -m index.html -e 404.html gs://${BUCKET} && gsutil iam ch allUsers:objectViewer gs://${BUCKET}
