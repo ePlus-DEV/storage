@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================
-# 🚀 Lab Bootstrap (clone repo & run main.py)
+# 🚀 Lab Bootstrap - Fetch & Run main.py
 # © 2026 ePlus.DEV
 # =============================================================
 
@@ -17,13 +17,19 @@ BOLD="\033[1m"
 RESET="\033[0m"
 
 # =======================
-# 📦 Repo config
+# 📄 File config
 # =======================
-REPO_URL="https://github.com/ePlus-DEV/storage.git"
-REPO_DIR="storage"
-MAIN_PY="main.py"
+RAW_URL="https://raw.githubusercontent.com/ePlus-DEV/storage/main/labs/text-to-image-generation-with-gemini-on-vertex-ai-solution/main.py"
+TARGET_FILE="main.py"
 
-echo -e "${CYAN}${BOLD}▶ Starting lab bootstrap...${RESET}"
+echo -e "${CYAN}${BOLD}▶ Fetching main.py from repository...${RESET}"
+
+# =======================
+# ⬇️ Download main.py (no cache)
+# =======================
+curl -fsSL "${RAW_URL}?nocache=$(date +%s)" -o "${TARGET_FILE}"
+
+echo -e "${GREEN}✔ main.py downloaded successfully${RESET}"
 
 # =======================
 # 🔍 Check python
@@ -34,25 +40,9 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 # =======================
-# 📥 Clone or update repo
-# =======================
-if [[ -d "${REPO_DIR}/.git" ]]; then
-  echo -e "${YELLOW}▶ Repo exists, pulling latest...${RESET}"
-  (cd "${REPO_DIR}" && git pull)
-else
-  echo -e "${CYAN}▶ Cloning repository...${RESET}"
-  git clone "${REPO_URL}"
-fi
-
-# =======================
 # ▶ Run main.py
 # =======================
-if [[ ! -f "${REPO_DIR}/${MAIN_PY}" ]]; then
-  echo -e "${RED}❌ main.py not found in repo${RESET}"
-  exit 1
-fi
-
-echo -e "${GREEN}▶ Running main.py...${RESET}"
-python3 "${REPO_DIR}/${MAIN_PY}"
+echo -e "${CYAN}▶ Running main.py...${RESET}"
+python3 "${TARGET_FILE}"
 
 echo -e "${GREEN}${BOLD}🎉 Done!${RESET}"
