@@ -24,10 +24,19 @@ fi
 echo "✅ Using PROJECT_ID: $PROJECT_ID"
 
 # =======================
-# 🗄️ Create dataset
+# 🗄️ Dataset config
 # =======================
-echo "▶ Creating dataset work_day (if not exists)..."
-bq --location=US mk --dataset --if_not_exists work_day
+DATASET="work_day"
+LOCATION="US"
+
+echo "▶ Checking dataset '${DATASET}'..."
+
+if bq --location="${LOCATION}" show "${PROJECT_ID}:${DATASET}" >/dev/null 2>&1; then
+  echo "✔ Dataset '${DATASET}' already exists"
+else
+  echo "▶ Creating dataset '${DATASET}'..."
+  bq --location="${LOCATION}" mk "${PROJECT_ID}:${DATASET}"
+fi
 
 # =======================
 # 📥 Load CSV to BigQuery
@@ -37,8 +46,8 @@ echo "▶ Loading employees.csv into BigQuery..."
 bq load \
   --source_format=CSV \
   --skip_leading_rows=1 \
-  work_day.employee \
-  gs://${PROJECT_ID}-bucket/employees.csv \
+  "${PROJECT_ID}:${DATASET}.employee" \
+  "gs://${PROJECT_ID}-bucket/employees.csv" \
   employee_id:INTEGER,device_id:STRING,username:STRING,department:STRING,office:STRING
 
-echo "🎉 Done! Data loaded into work_day.employee"
+echo "🎉 Done! Data loaded into ${DATASET}.employee"
