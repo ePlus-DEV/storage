@@ -39,10 +39,4 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-# =======================
-# ▶ Run main.py
-# =======================
-echo -e "${CYAN}▶ Running main.py...${RESET}"
-python3 "${TARGET_FILE}"
-
-echo -e "${GREEN}${BOLD}🎉 Done!${RESET}"
+echo -e "${GREEN}${BOLD}🎉 Clone Done!${RESET}"
