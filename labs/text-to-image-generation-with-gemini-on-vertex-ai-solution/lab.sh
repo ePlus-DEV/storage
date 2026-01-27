@@ -29,3 +29,39 @@ echo -e "${CYAN}${BOLD}▶ Fetching main.py from repository...${RESET}"
 # =======================
 curl -fsSL "${RAW_URL}?nocache=$(date +%s)" -o "${TARGET_FILE}"
 echo -e "${GREEN}✔ main.py downloaded${RESET}"
+
+# =======================
+# 🔧 Project & Region
+# =======================
+PROJECT_ID=$(gcloud config get-value project 2>/dev/null || true)
+if [[ -z "$PROJECT_ID" ]]; then
+  echo -e "${RED}❌ PROJECT_ID not set. Run: gcloud config set project <PROJECT_ID>${RESET}"
+  exit 1
+fi
+
+REGION=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null || true)
+REGION="${REGION:-us-central1}"
+
+echo -e "${GREEN}✔ Project : ${PROJECT_ID}${RESET}"
+echo -e "${GREEN}✔ Region  : ${REGION}${RESET}"
+
+# =======================
+# 📝 Replace main.py content
+# =======================
+echo -e "${YELLOW}▶ Replacing main.py content...${RESET}"
+
+sed -i \
+  -e "s|PROJECT_ID = \".*\"|PROJECT_ID = \"${PROJECT_ID}\"|" \
+  -e "s|LOCATION = \".*\"|LOCATION = \"${REGION}\"|" \
+  main.py
+
+echo -e "${GREEN}✔ main.py replaced successfully${RESET}"
+
+# =======================
+# ▶ Run
+# =======================
+echo -e "${GREEN}${BOLD}▶ Running main.py...${RESET}"
+python3 "${TARGET_FILE}"
+
+echo -e "${GREEN}${BOLD}🎉 Done!${RESET}"
