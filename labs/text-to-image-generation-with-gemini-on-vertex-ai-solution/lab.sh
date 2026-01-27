@@ -56,48 +56,4 @@ gcloud services enable aiplatform.googleapis.com >/dev/null
 # 📦 Install SDK
 # =======================
 echo -e "${CYAN}▶ Installing google-cloud-aiplatform...${RESET}"
-pip3 install --user -q --upgrade google-cloud-aiplatform
-
-# =======================
-# 📝 Replace main.py content
-# =======================
-echo -e "${YELLOW}▶ Replacing main.py content...${RESET}"
-
-cat > "${TARGET_FILE}" <<PY
-import vertexai
-from vertexai.generative_models import GenerativeModel
-
-PROJECT_ID = "${PROJECT_ID}"
-LOCATION = "${REGION}"
-
-vertexai.init(project=PROJECT_ID, location=LOCATION)
-
-def get_chat_response(prompt):
-    model = GenerativeModel("gemini-2.5-flash")
-    response = model.generate_content(prompt)
-    return response.text
-
-if __name__ == "__main__":
-    prompts = [
-        "Hello! What are all the colors in a rainbow?",
-        "What is Prism?"
-    ]
-
-    for question in prompts:
-        print(f"User: {question}")
-        try:
-            answer = get_chat_response(question)
-            print(f"Model: {answer}\\n")
-        except Exception as e:
-            print(f"Error: {e}")
-PY
-
-echo -e "${GREEN}✔ main.py replaced successfully${RESET}"
-
-# =======================
-# ▶ Run
-# =======================
-echo -e "${GREEN}${BOLD}▶ Running main.py...${RESET}"
-python3 "${TARGET_FILE}"
-
-echo -e "${GREEN}${BOLD}🎉 Done!${RESET}"
+pip3 install --user --upgrade google-cloud-aiplatform
