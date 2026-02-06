@@ -25,53 +25,15 @@ RESET=$(tput sgr0)
 
 echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV${RESET}"
 
-# ZONE_1 from project default metadata
+# Get default zone from project metadata
+read -rp "Enter ZONE_2 (e.g. us-east1-b): " ZONE_2
+
 ZONE_1="$(gcloud compute project-info describe \
   --format="value(commonInstanceMetadata.items[google-compute-default-zone])")"
 
-if [[ -z "${ZONE_1}" ]]; then
-  echo "${BG_RED}${BOLD}ERROR:${RESET} Cannot detect default zone (ZONE_1)."
-  exit 1
-fi
-
 REGION_1="$(echo "$ZONE_1" | cut -d '-' -f 1-2)"
-
-echo "${CYAN}${BOLD}Detected ZONE_1:${RESET} ${YELLOW}${ZONE_1}${RESET}"
-echo "${CYAN}${BOLD}REGION_1:${RESET} ${YELLOW}${REGION_1}${RESET}"
-echo ""
-
-# -------------------- FORCE INPUT ZONE_2 --------------------
-# Show available zones (optional but helpful)
-echo "${CYAN}${BOLD}Available zones (sample):${RESET}"
-gcloud compute zones list --format="value(name)" | head -n 20 | sed 's/^/ - /'
-echo ""
-
-while true; do
-  read -r -p "Enter ZONE_2 (e.g. us-east1-b): " ZONE_2
-  ZONE_2="${ZONE_2//[[:space:]]/}"
-
-  if [[ -z "${ZONE_2}" ]]; then
-    echo "${RED}ZONE_2 cannot be empty. Try again.${RESET}"
-    continue
-  fi
-
-  # Validate zone exists
-  if gcloud compute zones describe "${ZONE_2}" --format="value(name)" >/dev/null 2>&1; then
-    break
-  else
-    echo "${RED}Invalid ZONE_2 '${ZONE_2}'. Please enter a valid zone name.${RESET}"
-  fi
-done
-
-export ZONE_2
 REGION_2="$(echo "$ZONE_2" | cut -d '-' -f 1-2)"
 
-echo ""
-echo "${CYAN}${BOLD}Using ZONE_2:${RESET} ${YELLOW}${ZONE_2}${RESET}"
-echo "${CYAN}${BOLD}REGION_2:${RESET} ${YELLOW}${REGION_2}${RESET}"
-echo ""
-
-# -------------------- Instances --------------------
 gcloud compute instances create www-1 \
   --image-family debian-11 \
   --image-project debian-cloud \
