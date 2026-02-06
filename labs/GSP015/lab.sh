@@ -39,10 +39,15 @@ log()  { echo "${CYAN}${BOLD}➜${RESET} $1"; }
 ok()   { echo "${GREEN}${BOLD}✔${RESET} $1"; }
 warn() { echo "${YELLOW}${BOLD}⚠${RESET} $1"; }
 
-# ---- TASK 1: SET ZONE ----
-log "Set compute zone: ${ZONE}"
-gcloud config set compute/zone $ZONE >/dev/null
-ok "Zone configured"
+# ---- Config ----
+ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+CLUSTER_NAME="${CLUSTER_NAME:-hello-world}"
+IMAGE_NAME="${IMAGE_NAME:-hello-app}"
+IMAGE_TAG="${IMAGE_TAG:-1.0}"
+DEPLOY_NAME="${DEPLOY_NAME:-hello-app}"
+SVC_NAME="${SVC_NAME:-hello-app}"
+REPO_DIR="${REPO_DIR:-kubernetes-engine-samples}"
+APP_DIR="${APP_DIR:-kubernetes-engine-samples/quickstarts/hello-app}"
 
 # ---- TASK 2: CREATE CLUSTER ----
 log "Create GKE cluster: ${CLUSTER}"
