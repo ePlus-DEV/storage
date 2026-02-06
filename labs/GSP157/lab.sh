@@ -23,15 +23,36 @@ BOLD=`tput bold`
 RESET=`tput sgr0`
 #----------------------------------------------------start--------------------------------------------------#
 
-echo "${BG_MAGENTA}${BOLD}Starting Execution${RESET}"
+echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV${RESET}"
 
+# Get default zone from project metadata
 export ZONE_1=$(gcloud compute project-info describe \
---format="value(commonInstanceMetadata.items[google-compute-default-zone])")
-read REGION_2
-echo -ne "${YELLOW}${BOLD}Enter REGION_2 (example: us-east4): ${RESET}"
+  --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 
-export REGION_1=$(echo "$ZONE_1" | cut -d '-' -f 1-2)
-export REGION_2=$(echo "$ZONE_2" | cut -d '-' -f 1-2)
+# Require ZONE_2 (used later in VM creation)
+while true; do
+  echo -ne "${YELLOW}${BOLD}Enter ZONE_2 (example: us-east4-b): ${RESET}"
+  read -r ZONE_2
+  if [[ -n "$ZONE_2" ]]; then
+    break
+  fi
+  echo "${RED}${BOLD}ZONE_2 cannot be empty. Please try again.${RESET}"
+done
+export ZONE_2
+
+# Derive REGION_1 from ZONE_1
+export REGION_1="$(echo "$ZONE_1" | cut -d '-' -f 1-2)"
+
+# Require REGION_2 (explicit input as requested)
+while true; do
+  echo -ne "${YELLOW}${BOLD}Enter REGION_2 (example: us-east4): ${RESET}"
+  read -r REGION_2
+  if [[ -n "$REGION_2" ]]; then
+    break
+  fi
+  echo "${RED}${BOLD}REGION_2 cannot be empty. Please try again.${RESET}"
+done
+export REGION_2
 
 gcloud compute instances create www-1 \
     --image-family debian-11 \
@@ -147,6 +168,6 @@ LB_IP_ADDRESS=$(gcloud compute addresses list --format="get(ADDRESS)")
     --target-http-proxy http-lb-proxy \
     --ports 80
 
-echo "${BG_RED}${BOLD}Congratulations For Completing The Lab !!!${RESET}"
+echo "${BG_RED}${BOLD}Congratulations For Completing The Lab !!! - ePlus.DEV${RESET}"
 
 #-----------------------------------------------------end----------------------------------------------------------#
