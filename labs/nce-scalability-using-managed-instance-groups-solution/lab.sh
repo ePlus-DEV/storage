@@ -33,7 +33,7 @@ CPU_TARGET=0.60
 
 # ---------- REGION ----------
 echo -e "${BLUE}${BOLD}▶ Detecting REGION from gcloud config...${RESET}"
-REGION="$(gcloud config get-value compute/region 2>/dev/null | tr -d '\r')"
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
 if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then
   echo -e "${YELLOW}${BOLD}⚠ REGION not found in config.${RESET}"
