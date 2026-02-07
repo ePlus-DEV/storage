@@ -24,7 +24,6 @@ ${RESET_FORMAT}"
 echo "${YELLOW_TEXT}© Copyright ePlus.DEV${RESET_FORMAT}"
 echo "${MAGENTA_TEXT}${BOLD_TEXT}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET_FORMAT}"
 
-
 # Require REGION input if empty
 if [[ -z "${REGION}" ]]; then
   echo "${RED_TEXT}${BOLD_TEXT}⚠️  REGION is not set!${RESET_FORMAT}"
