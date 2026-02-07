@@ -24,9 +24,6 @@ ${RESET_FORMAT}"
 echo "${YELLOW_TEXT}© Copyright ePlus.DEV${RESET_FORMAT}"
 echo "${MAGENTA_TEXT}${BOLD_TEXT}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET_FORMAT}"
 
-export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-echo $REGION;
-
 
 # Require REGION input if empty
 if [[ -z "${REGION}" ]]; then
