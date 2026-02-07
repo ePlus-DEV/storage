@@ -31,7 +31,25 @@ if [[ -z "${REGION}" ]]; then
   read -p "${ORANGE_TEXT}${BOLD_TEXT}Enter REGION (example: us-east4): ${RESET_FORMAT}" REGION
 fi
 
-gcloud compute instance-groups managed create dev-instance-group --template=dev-instance-template --size=1 --region=$REGION && gcloud compute instance-groups managed set-autoscaling dev-instance-group --region=[enter region] --min-num-replicas=1 --max-num-replicas=3 --target-cpu-utilization=0.6 --mode=on
+gcloud compute instance-templates describe dev-instance-template \
+  --format="value(properties.machineType)"
+
+gcloud compute instance-groups managed create dev-instance-group \
+  --base-instance-name=dev-instance \
+  --template=dev-instance-template \
+  --size=1 \
+  --zone="$ZONE"
+
+gcloud compute instance-groups managed set-autoscaling dev-instance-group \
+  --zone="$ZONE" \
+  --min-num-replicas=1 \
+  --max-num-replicas=3 \
+  --target-cpu-utilization=0.60 \
+  --cool-down-period=60
+
+gcloud compute instance-groups managed describe dev-instance-group \
+  --zone="$ZONE" \
+  --format="yaml(name,instanceTemplate,targetSize,autoscaler)"
 
 echo "${GREEN_TEXT}${BOLD_TEXT}🎉 DONE!${RESET_FORMAT}"
 echo "${YELLOW_TEXT}© ePlus.DEV${RESET_FORMAT}"
