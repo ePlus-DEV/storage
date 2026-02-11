@@ -48,6 +48,17 @@ spinner() {
 # Welcome message
 clear
 section_header " Lab Setup"
+
+echo ""
+echo ""
+
+read -p "${BOLD}${BLUE}Enter REGION_1 [us-central1]: ${RESET}" REGION_1
+read -p "${BOLD}${YELLOW}Enter REGION_2 [asia-south1]: ${RESET}" REGION_2
+read -p "${BOLD}${CYAN}Enter REGION_3 [europe-north1]: ${RESET}" REGION_3
+
+echo ""
+echo ""
+
 echo "${GREEN}${BOLD}This script will configure a custom GCP network environment${RESET}"
 echo "${CYAN}For more cloud tutorials, visit: https:/epluss.dev${RESET}"
 echo
