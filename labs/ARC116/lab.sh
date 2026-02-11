@@ -565,7 +565,7 @@ function random_congrats() {
     )
 
     RANDOM_INDEX=$((RANDOM % ${#MESSAGES[@]}))
-    echo -e "${BOLD}${MESSAGES[$RANDOM_INDEX]}"
+    echo -e "${BOLD}${MESSAGES[$RANDOM_INDEX]} - ePlus.DEV"
 }
 
 # Display a random congratulatory message
