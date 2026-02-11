@@ -25,147 +25,125 @@ RESET=`tput sgr0`
 
 echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV ${RESET}"
 
-gcloud auth list
+echo ""
+echo ""
 
-export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
-export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+read -p "Enter STATIC_IP_ADDRESS:- " STATIC_IP_ADDRESS
 
-export PROJECT_ID=$(gcloud config get-value project)
-gcloud config set project $DEVSHELL_PROJECT_ID
+# Fetch zone and region
+ZONE=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+REGION=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+PROJECT_ID=$(gcloud config get-value project)
 
-gcloud config set compute/zone "$ZONE"
-gcloud config set compute/region "$REGION"
 
-gcloud compute instances create www1 \
-  --zone=$ZONE \
-  --tags=network-lb-tag \
-  --machine-type=e2-small \
-  --image-family=debian-11 \
-  --image-project=debian-cloud \
-  --metadata=startup-script='#!/bin/bash
-    apt-get update
-    apt-get install apache2 -y
-    service apache2 restart
-    echo "
-<h3>Web Server: www1</h3>" | tee /var/www/html/index.html'
+gcloud config set compute/zone $ZONE
 
-gcloud compute instances create www2 \
-  --zone=$ZONE \
-  --tags=network-lb-tag \
-  --machine-type=e2-small \
-  --image-family=debian-11 \
-  --image-project=debian-cloud \
-  --metadata=startup-script='#!/bin/bash
-    apt-get update
-    apt-get install apache2 -y
-    service apache2 restart
-    echo "
-<h3>Web Server: www2</h3>" | tee /var/www/html/index.html'
+gcloud config set compute/region $REGION
 
-gcloud compute instances create www3 \
-  --zone=$ZONE  \
-  --tags=network-lb-tag \
-  --machine-type=e2-small \
-  --image-family=debian-11 \
-  --image-project=debian-cloud \
-  --metadata=startup-script='#!/bin/bash
-    apt-get update
-    apt-get install apache2 -y
-    service apache2 restart
-    echo "
-<h3>Web Server: www3</h3>" | tee /var/www/html/index.html'
 
-gcloud compute firewall-rules create www-firewall-network-lb \
-    --target-tags network-lb-tag --allow tcp:80
 
-gcloud compute instances list
+sudo apt-get install -y virtualenv
 
-gcloud compute addresses create network-lb-ip-1 \
-  --region $REGION
+python3 -m venv venv
 
-gcloud compute http-health-checks create basic-check
+source venv/bin/activate
 
-gcloud compute target-pools create www-pool \
-  --region $REGION --http-health-check basic-check
+echo 'sudo chmod -R 777 /usr/local/sbin/
+sudo cat << EOF > /usr/local/sbin/serveprimes.py
+import http.server
+def is_prime(a): return a!=1 and all(a % i for i in range(2,int(a**0.5)+1))
+class myHandler(http.server.BaseHTTPRequestHandler):
+  def do_GET(s):
+    s.send_response(200)
+    s.send_header("Content-type", "text/plain")
+    s.end_headers()
+    s.wfile.write(bytes(str(is_prime(int(s.path[1:]))).encode("utf-8")))
+http.server.HTTPServer(("",80),myHandler).serve_forever()
+EOF
+nohup python3 /usr/local/sbin/serveprimes.py >/dev/null 2>&1 &' > backend.sh
 
-gcloud compute target-pools add-instances www-pool \
-    --instances www1,www2,www3
 
-gcloud compute forwarding-rules create www-rule \
-    --region  $REGION \
-    --ports 80 \
-    --address network-lb-ip-1 \
-    --target-pool www-pool
+gcloud compute instance-templates create primecalc \
+--metadata-from-file startup-script=backend.sh \
+--no-address --tags backend --machine-type=e2-medium
 
-gcloud compute forwarding-rules describe www-rule --region $REGION
+gcloud compute firewall-rules create http --network default --allow=tcp:80 \
+--source-ranges 10.142.0.0/20 --target-tags backend
 
-IPADDRESS=$(gcloud compute forwarding-rules describe www-rule --region $REGION --format="json" | jq -r .IPAddress)
+gcloud compute instance-groups managed create backend \
+--size 3 \
+--template primecalc \
+--zone $ZONE
 
-echo $IPADDRESS
 
-gcloud compute instance-templates create lb-backend-template \
-   --region=$REGION \
-   --network=default \
-   --subnet=default \
-   --tags=allow-health-check \
-   --machine-type=e2-medium \
-   --image-family=debian-11 \
-   --image-project=debian-cloud \
-   --metadata=startup-script='#!/bin/bash
-     apt-get update
-     apt-get install apache2 -y
-     a2ensite default-ssl
-     a2enmod ssl
-     vm_hostname="$(curl -H "Metadata-Flavor:Google" \
-     http://169.254.169.254/computeMetadata/v1/instance/name)"
-     echo "Page served from: $vm_hostname" | \
-     tee /var/www/html/index.html
-     systemctl restart apache2'
+gcloud compute instance-groups managed set-autoscaling backend \
+--target-cpu-utilization 0.8 --min-num-replicas 3 \
+--max-num-replicas 10 --zone $ZONE
 
-gcloud compute instance-groups managed create lb-backend-group \
-   --template=lb-backend-template --size=2 --zone=$ZONE
 
-gcloud compute firewall-rules create fw-allow-health-check \
-  --network=default \
-  --action=allow \
-  --direction=ingress \
-  --source-ranges=130.211.0.0/22,35.191.0.0/16 \
-  --target-tags=allow-health-check \
-  --rules=tcp:80
+gcloud compute health-checks create http ilb-health --request-path /2
 
-gcloud compute addresses create lb-ipv4-1 \
-  --ip-version=IPV4 \
-  --global
+gcloud compute backend-services create prime-service \
+--load-balancing-scheme internal --region=$REGION \
+--protocol tcp --health-checks ilb-health
 
-gcloud compute addresses describe lb-ipv4-1 \
-  --format="get(address)" \
-  --global
+gcloud compute backend-services add-backend prime-service \
+--instance-group backend --instance-group-zone=$ZONE \
+--region=$REGION
 
-gcloud compute health-checks create http http-basic-check \
-  --port 80
 
-gcloud compute backend-services create web-backend-service \
-  --protocol=HTTP \
-  --port-name=http \
-  --health-checks=http-basic-check \
-  --global
+gcloud compute forwarding-rules create prime-lb \
+--load-balancing-scheme internal \
+--ports 80 --network default \
+--region=$REGION --address $STATIC_IP_ADDRESS \
+--backend-service prime-service
 
-gcloud compute backend-services add-backend web-backend-service \
-  --instance-group=lb-backend-group \
-  --instance-group-zone=$ZONE \
-  --global
 
-gcloud compute url-maps create web-map-http \
-    --default-service web-backend-service
 
-gcloud compute target-http-proxies create http-lb-proxy \
-    --url-map web-map-http
 
-gcloud compute forwarding-rules create http-content-rule \
-   --address=lb-ipv4-1\
-   --global \
-   --target-http-proxy=http-lb-proxy \
-   --ports=80
+
+echo 'sudo chmod -R 777 /usr/local/sbin/
+sudo cat << EOF > /usr/local/sbin/getprimes.py
+import urllib.request
+from multiprocessing.dummy import Pool as ThreadPool
+import http.server
+PREFIX="http://10.128.10.10/" #HTTP Load Balancer
+def get_url(number):
+    return urllib.request.urlopen(PREFIX+str(number)).read()
+class myHandler(http.server.BaseHTTPRequestHandler):
+  def do_GET(s):
+    s.send_response(200)
+    s.send_header("Content-type", "text/html")
+    s.end_headers()
+    i = int(s.path[1:]) if (len(s.path)>1) else 1
+    s.wfile.write("<html><body><table>".encode('utf-8'))
+    pool = ThreadPool(10)
+    results = pool.map(get_url,range(i,i+100))
+    for x in range(0,100):
+      if not (x % 10): s.wfile.write("<tr>".encode('utf-8'))
+      if results[x]=="True":
+        s.wfile.write("<td bgcolor='#00ff00'>".encode('utf-8'))
+      else:
+        s.wfile.write("<td bgcolor='#ff0000'>".encode('utf-8'))
+      s.wfile.write(str(x+i).encode('utf-8')+"</td> ".encode('utf-8'))
+      if not ((x+1) % 10): s.wfile.write("</tr>".encode('utf-8'))
+    s.wfile.write("</table></body></html>".encode('utf-8'))
+http.server.HTTPServer(("",80),myHandler).serve_forever()
+EOF
+nohup python3 /usr/local/sbin/getprimes.py >/dev/null 2>&1 &' > frontend.sh
+
+
+
+
+gcloud compute instances create frontend --zone=$ZONE \
+--metadata-from-file startup-script=frontend.sh \
+--tags frontend --machine-type=e2-standard-2
+
+
+gcloud compute firewall-rules create http2 --network default --allow=tcp:80 \
+--source-ranges 0.0.0.0/0 --target-tags frontend
 
 echo "${BG_RED}${BOLD}Congratulations For Completing!!! - ePlus.DEV ${RESET}"
 
