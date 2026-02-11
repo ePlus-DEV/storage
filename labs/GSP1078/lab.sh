@@ -4,6 +4,13 @@ set -e
 # ==========================================================
 #  ePlus.DEV © Cloud Run Progressive Delivery (Canary)
 # ==========================================================
+# NOTE:
+# - This script will PROMPT for a GitHub EMAIL
+# - This email is used for:
+#     + git config user.email
+#     + git commit author
+# - This is NOT a Google Cloud email
+# ==========================================================
 
 # ===== COLORS =====
 BLACK=$(tput setaf 0); RED=$(tput setaf 1); GREEN=$(tput setaf 2)
@@ -22,26 +29,56 @@ echo "${RESET}"
 info () { echo "${CYAN}${BOLD}[INFO]${RESET} $1"; }
 ok   () { echo "${GREEN}${BOLD}[OK]${RESET}   $1"; }
 warn () { echo "${YELLOW}${BOLD}[WARN]${RESET} $1"; }
-pause () { read -p "$(echo -e "${MAGENTA}${BOLD}Press ENTER to continue...${RESET}")"; }
+err  () { echo "${RED}${BOLD}[ERROR]${RESET} $1"; }
+
+pause () {
+  read -p "$(echo -e "${MAGENTA}${BOLD}Press ENTER to continue...${RESET}")"
+}
 
 banner
 
-# ===== ENV =====
-: "${USER_EMAIL:?Set USER_EMAIL before running}"
+# ==========================================================
+# INPUT: GITHUB EMAIL
+# ==========================================================
+echo "${YELLOW}${BOLD}"
+echo "GitHub EMAIL is required!"
+echo "- This must be your GitHub account email"
+echo "- Used to set git commit author"
+echo "- Check at: GitHub → Settings → Emails"
+echo "${RESET}"
 
-PROJECT_ID=$(gcloud config get-value project)
-PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
+while true; do
+  read -p "👉 Enter your GitHub email: " USER_EMAIL
+  if [[ "$USER_EMAIL" =~ ^[^@]+@[^@]+\.[^@]+$ ]]; then
+    break
+  fi
+  err "Invalid email format. Please try again."
+done
+
+ok "GitHub Email set: $USER_EMAIL"
+
+# ==========================================================
+# GCP PROJECT INFO
+# ==========================================================
+info "Reading Google Cloud project information"
+
+PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+[[ -z "$PROJECT_ID" ]] && err "No active GCP project configured" && exit 1
+
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
 REGION=$(gcloud compute project-info describe \
   --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
-gcloud config set compute/region $REGION >/dev/null
+gcloud config set compute/region "$REGION" >/dev/null
 
 ok "PROJECT_ID=$PROJECT_ID"
 ok "PROJECT_NUMBER=$PROJECT_NUMBER"
 ok "REGION=$REGION"
 
-# ===== ENABLE APIS =====
-info "Enable required APIs"
+# ==========================================================
+# ENABLE REQUIRED APIS
+# ==========================================================
+info "Enabling required Google Cloud APIs"
 gcloud services enable \
  cloudresourcemanager.googleapis.com \
  cloudbuild.googleapis.com \
@@ -49,29 +86,36 @@ gcloud services enable \
  containerregistry.googleapis.com \
  secretmanager.googleapis.com
 
-# ===== IAM =====
-info "Grant Secret Manager permission"
-gcloud projects add-iam-policy-binding $PROJECT_ID \
- --member=serviceAccount:service-$PROJECT_NUMBER@gcp-sa-cloudbuild.iam.gserviceaccount.com \
- --role=roles/secretmanager.admin >/dev/null
+# ==========================================================
+# IAM PERMISSIONS
+# ==========================================================
+info "Granting Secret Manager permission to Cloud Build"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+ --member="serviceAccount:service-$PROJECT_NUMBER@gcp-sa-cloudbuild.iam.gserviceaccount.com" \
+ --role="roles/secretmanager.admin" >/dev/null
 
-# ===== GITHUB CLI =====
-info "Install GitHub CLI"
+# ==========================================================
+# GITHUB CLI SETUP
+# ==========================================================
+info "Installing GitHub CLI (gh)"
 command -v gh >/dev/null || curl -sS https://webi.sh/gh | sh
 export PATH="$HOME/.local/bin:$PATH"
 
-warn "Login GitHub CLI"
+warn "Please login to GitHub CLI"
 gh auth login
 pause
 
 GITHUB_USERNAME=$(gh api user -q ".login")
+
 git config --global user.name "$GITHUB_USERNAME"
 git config --global user.email "$USER_EMAIL"
 
 ok "GitHub user: $GITHUB_USERNAME"
 
-# ===== REPO =====
-info "Create GitHub repo"
+# ==========================================================
+# REPOSITORY SETUP
+# ==========================================================
+info "Creating GitHub repository"
 gh repo create cloudrun-progression --private || true
 
 git clone https://github.com/GoogleCloudPlatform/training-data-analyst
@@ -92,63 +136,71 @@ sed -e "s/PROJECT/$PROJECT_ID/g" -e "s/NUMBER/$PROJECT_NUMBER/g" \
 
 git init
 git branch -m master
-git remote add gcp https://github.com/$GITHUB_USERNAME/cloudrun-progression
+git remote add gcp "https://github.com/$GITHUB_USERNAME/cloudrun-progression"
 git add . && git commit -m "initial commit"
 git push gcp master
 
-# ===== DEPLOY =====
-info "Build & Deploy Cloud Run"
-gcloud builds submit --tag gcr.io/$PROJECT_ID/hello-cloudrun
+# ==========================================================
+# DEPLOY CLOUD RUN
+# ==========================================================
+info "Building and deploying Cloud Run service"
+gcloud builds submit --tag "gcr.io/$PROJECT_ID/hello-cloudrun"
 
 gcloud run deploy hello-cloudrun \
- --image gcr.io/$PROJECT_ID/hello-cloudrun \
- --region $REGION \
+ --image "gcr.io/$PROJECT_ID/hello-cloudrun" \
+ --region "$REGION" \
  --platform managed \
  --tag=prod -q
 
 PROD_URL=$(gcloud run services describe hello-cloudrun \
- --region $REGION --format="value(status.url)")
+ --region "$REGION" --format="value(status.url)")
 
 ok "PROD_URL=$PROD_URL"
 
-# ===== CLOUD BUILD CONNECTION =====
-info "Create Cloud Build GitHub connection"
+# ==========================================================
+# CLOUD BUILD GITHUB CONNECTION
+# ==========================================================
+info "Creating Cloud Build GitHub connection"
 gcloud builds connections create github cloud-build-connection \
- --region=$REGION || true
+ --region="$REGION" || true
 
-warn "Install Cloud Build GitHub App → Select repo cloudrun-progression"
+warn "Install Cloud Build GitHub App and select repository: cloudrun-progression"
 pause
 
 gcloud builds repositories create cloudrun-progression \
- --remote-uri=https://github.com/$GITHUB_USERNAME/cloudrun-progression.git \
- --connection=cloud-build-connection \
- --region=$REGION || true
+ --remote-uri="https://github.com/$GITHUB_USERNAME/cloudrun-progression.git" \
+ --connection="cloud-build-connection" \
+ --region="$REGION" || true
 
-# ===== TRIGGERS =====
-info "Create triggers"
+# ==========================================================
+# CLOUD BUILD TRIGGERS
+# ==========================================================
+info "Creating Cloud Build triggers"
 
 REPO="projects/$PROJECT_ID/locations/$REGION/connections/cloud-build-connection/repositories/cloudrun-progression"
 
 gcloud builds triggers create github --name=branch \
- --repository=$REPO \
+ --repository="$REPO" \
  --build-config=branch-cloudbuild.yaml \
  --branch-pattern='[^(?!.*master)].*' \
- --region=$REGION || true
+ --region="$REGION" || true
 
 gcloud builds triggers create github --name=master \
- --repository=$REPO \
+ --repository="$REPO" \
  --build-config=master-cloudbuild.yaml \
  --branch-pattern=master \
- --region=$REGION || true
+ --region="$REGION" || true
 
 gcloud builds triggers create github --name=tag \
- --repository=$REPO \
+ --repository="$REPO" \
  --build-config=tag-cloudbuild.yaml \
  --tag-pattern='.*' \
- --region=$REGION || true
+ --region="$REGION" || true
 
-# ===== FEATURE FLOW =====
-info "Feature branch → Canary → Release"
+# ==========================================================
+# FEATURE → CANARY → RELEASE
+# ==========================================================
+info "Running feature → canary → release flow"
 
 git checkout -b new-feature-1
 sed -i "s/v1.0/v1.1/g" app.py
@@ -163,4 +215,4 @@ git tag 1.1
 git push gcp 1.1
 
 banner
-ok "LAB COMPLETED - ePlus.DEV ©"
+ok "LAB COMPLETED SUCCESSFULLY – ePlus.DEV ©"
