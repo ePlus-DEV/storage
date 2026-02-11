@@ -28,7 +28,7 @@ echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV ${RESET}"
 echo ""
 echo ""
 
-read -p "Enter STATIC_IP_ADDRESS:- " STATIC_IP_ADDRESS
+read -p "${BOLD}${BLUE}Enter STATIC_IP_ADDRESS: ${RESET}" STATIC_IP_ADDRESS
 
 # Fetch zone and region
 ZONE=$(gcloud compute project-info describe \
