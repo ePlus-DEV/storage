@@ -52,13 +52,20 @@ section_header " Lab Setup"
 echo ""
 echo ""
 
-read -p "${BOLD}${BLUE}Enter REGION_1 [us-central1]: ${RESET}" REGION_1
+REGION_1=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+echo "  REGION_1         = $REGION_1"
 read -p "${BOLD}${YELLOW}Enter REGION_2 [asia-south1]: ${RESET}" REGION_2
 read -p "${BOLD}${CYAN}Enter REGION_3 [europe-north1]: ${RESET}" REGION_3
 
 echo ""
 echo ""
-
+echo "${BG_MAGENTA}${BOLD}Configuration${RESET}"
+echo ""
+echo "  REGION_1         = $REGION_1"
+echo "  REGION_2         = $REGION_2"
+echo "  REGION_3         = $REGION_3"
+echo ""
+echo ""
 echo "${GREEN}${BOLD}This script will configure a custom GCP network environment${RESET}"
 echo "${CYAN}For more cloud tutorials, visit: https:/epluss.dev${RESET}"
 echo
