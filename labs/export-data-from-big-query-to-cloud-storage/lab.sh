@@ -603,8 +603,4 @@ SELECT * FROM \`bracketology.ncaa_2019_tournament\`
 
 
 
-
-
-
-
-
+echo "🎉 DONE! - ePlus.DEV"
