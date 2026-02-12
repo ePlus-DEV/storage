@@ -1,21 +1,31 @@
-# ========== COLORS ==========
-RED='\033[1;31m'
-GREEN='\033[1;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[1;34m'
-MAGENTA='\033[1;35m'
-CYAN='\033[1;36m'
-WHITE='\033[1;37m'
-RESET='\033[0m'
-BOLD='\033[1m'
-# ============================
+#!/bin/bash
+# Define color variables
 
-echo -e "${BLUE}${BOLD}▶ Starting... - ePlus.DEV${RESET}"
+BLACK=`tput setaf 0`
+RED=`tput setaf 1`
+GREEN=`tput setaf 2`
+YELLOW=`tput setaf 3`
+BLUE=`tput setaf 4`
+MAGENTA=`tput setaf 5`
+CYAN=`tput setaf 6`
+WHITE=`tput setaf 7`
 
+BG_BLACK=`tput setab 0`
+BG_RED=`tput setab 1`
+BG_GREEN=`tput setab 2`
+BG_YELLOW=`tput setab 3`
+BG_BLUE=`tput setab 4`
+BG_MAGENTA=`tput setab 5`
+BG_CYAN=`tput setab 6`
+BG_WHITE=`tput setab 7`
 
+BOLD=`tput bold`
+RESET=`tput sgr0`
+#----------------------------------------------------start--------------------------------------------------#
+
+echo "${YELLOW}${BOLD}Starting${RESET}" "${GREEN}${BOLD}Execution - ePlus.DEV${RESET}"
 
 bq mk --dataset $DEVSHELL_PROJECT_ID:bracketology
-
 
 bq query --use_legacy_sql=false \
 "
@@ -27,7 +37,6 @@ SELECT
  GROUP BY season
  ORDER BY season # default is Ascending (low to high)
 "
-
 
 bq query --use_legacy_sql=false \
 "
@@ -79,8 +88,6 @@ FROM
 \`bigquery-public-data.ncaa_basketball.mbb_historical_tournament_games\`;
 "
 
-
-
 bq query --use_legacy_sql=false \
 "
 CREATE OR REPLACE MODEL
@@ -116,7 +123,6 @@ FROM
 WHERE season <= 2017
 "
 
-
 bq query --use_legacy_sql=false \
 "
 SELECT
@@ -131,17 +137,10 @@ FROM
     WHERE
       processed_input = 'seed')) # try other features like 'school_ncaa'
       ORDER BY weight DESC;
-
-
-
-
 SELECT
   *
 FROM
   ML.EVALUATE(MODEL   \`bracketology.ncaa_model\`);
-
-
-
 CREATE OR REPLACE TABLE \`bracketology.predictions\` AS (
 SELECT * FROM ML.PREDICT(MODEL \`bracketology.ncaa_model\`,
 # predicting for 2018 tournament games (2017 season)
@@ -149,8 +148,6 @@ SELECT * FROM ML.PREDICT(MODEL \`bracketology.ncaa_model\`,
 )
 );
 "
-
-
 
 bq query --use_legacy_sql=false \
 "
@@ -233,10 +230,6 @@ ON o.school_ncaa = team.team AND o.season = team.season
 LEFT JOIN \`data-to-insights.ncaa.feature_engineering\` AS opp
 ON o.opponent_school_ncaa = opp.team AND o.season = opp.season;
 
-
-
-
-
 CREATE OR REPLACE MODEL
   \`bracketology.ncaa_model_updated\`
 OPTIONS
@@ -274,15 +267,12 @@ FROM \`bracketology.training_new_features\`
 WHERE season BETWEEN 2014 AND 2017; # between in SQL is inclusive of end points
 "
 
-
 bq query --use_legacy_sql=false \
 "
 SELECT
   *
 FROM
   ML.EVALUATE(MODEL     \`bracketology.ncaa_model_updated\`);
-
-
 
 CREATE OR REPLACE TABLE \`bracketology.ncaa_2018_predictions\` AS
 SELECT
@@ -296,8 +286,6 @@ FROM
       WHERE season = 2018
     )
   );
-
-
 
 SELECT
 CONCAT(school_ncaa, ' was predicted to ',IF(predicted_label='loss','lose','win'),' ',CAST(ROUND(p.prob,2)*100 AS STRING), '% but ', IF(n.label='loss','lost','won')) AS narrative,
@@ -322,7 +310,6 @@ WHERE
   AND p.prob > .75  # by more than 75% confidence
 ORDER BY prob DESC
 "
-
 
 bq query --use_legacy_sql=false \
 "
@@ -356,10 +343,6 @@ WHERE
   AND (CAST(opponent_seed AS INT64) - CAST(seed AS INT64)) > 2 # seed difference magnitude
 ORDER BY (CAST(opponent_seed AS INT64) - CAST(seed AS INT64)) DESC;
 
-
-
-
-
 SELECT
   NULL AS label,
   team.school_ncaa AS team_school_ncaa,
@@ -370,10 +353,6 @@ FROM \`data-to-insights.ncaa.2019_tournament_seeds\` AS team
 CROSS JOIN \`data-to-insights.ncaa.2019_tournament_seeds\` AS opp
 # teams cannot play against themselves :)
 WHERE team.school_ncaa <> opp.school_ncaa;
-
-
-
-
 
 CREATE OR REPLACE TABLE \`bracketology.ncaa_2019_tournament\` AS
 WITH team_seeds_all_possible_games AS (
@@ -433,9 +412,6 @@ SELECT
   opp.efficiency_rating - team.efficiency_rating AS eff_rating_diff
 FROM add_in_2018_season_stats;
 
-
-
-
 CREATE OR REPLACE TABLE \`bracketology.ncaa_2019_tournament_predictions\` AS
 SELECT
   *
@@ -444,13 +420,7 @@ FROM
 (
 SELECT * FROM \`bracketology.ncaa_2019_tournament\`
 ));
-
-
 "
-
-
-
-
 
 bq query --use_legacy_sql=false \
 "
@@ -463,7 +433,6 @@ SELECT * FROM ML.PREDICT(MODEL \`bracketology.ncaa_model\`,
 )
 )
 "
-
 
 bq query --use_legacy_sql=false \
 "
@@ -564,10 +533,7 @@ LEFT JOIN \`data-to-insights.ncaa.feature_engineering\` AS team
 ON o.school_ncaa = team.team AND o.season = team.season
 LEFT JOIN \`data-to-insights.ncaa.feature_engineering\` AS opp
 ON o.opponent_school_ncaa = opp.team AND o.season = opp.season
-
 "
-
-
 
 bq query --use_legacy_sql=false \
 "
@@ -588,7 +554,6 @@ WHERE season = 2018
 ))
 "
 
-
 bq query --use_legacy_sql=false \
 "
 CREATE OR REPLACE TABLE \`bracketology.ncaa_2019_tournament_predictions\` AS
@@ -605,12 +570,6 @@ SELECT * FROM \`bracketology.ncaa_2019_tournament\`
 
 "
 
+echo "${RED}${BOLD}Congratulations${RESET}" "${WHITE}${BOLD}for${RESET}" "${GREEN}${BOLD}Completing the Lab !!! - ePlus.DEV${RESET}"
 
-
-
-
-
-
-
-
-echo -e "${RED}${BOLD}▶ 🎉 DONE! - ePlus.DEV${RESET}"
+#-----------------------------------------------------end----------------------------------------------------------#
