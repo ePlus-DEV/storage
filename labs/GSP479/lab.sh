@@ -29,7 +29,7 @@ REGION=$(gcloud compute project-info describe --format="value(commonInstanceMeta
 ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 
 echo "${BG_RED}${BOLD}REGION:${RESET}" "${GREEN}${REGION}${RESET}"
-echo "${BG_RED}${BOLD}ZONE:${RESET}" "${ZONE}${BOLD}${RESET}"
+echo "${BG_RED}${BOLD}ZONE:${RESET}" "${GREEN}${ZONE}${RESET}"
 
 gcloud services enable compute.googleapis.com 
 gcloud services enable container.googleapis.com 
