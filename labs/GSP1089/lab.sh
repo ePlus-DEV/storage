@@ -7,41 +7,56 @@ set -euo pipefail
 #
 #  - No prompts (no Y/yes needed)
 #  - Forces deploy retries
-#  - Automates Task 5 revisions + Task 6 min instances + Task 7 concurrency via CLI
-#
-#  NOTE:
-#  - Some labs may still require creating the VM via Console for Audit Logs to trigger.
-#    This script will attempt VM creation via CLI anyway.
+#  - Task 6: min instances via Cloud Run service update
+#  - Task 7: CPU=1 + Concurrency=100 via Cloud Run service update  ✅ (LAB REQUIREMENT)
 # ==============================================================================
 
 # -------------------- Disable ALL interactive prompts --------------------
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
 # -------------------- ANSI Colors (no tput) --------------------
+COLOR_BLACK=$'\033[0;30m'
 COLOR_RED=$'\033[0;31m'
 COLOR_GREEN=$'\033[0;32m'
 COLOR_YELLOW=$'\033[0;33m'
 COLOR_BLUE=$'\033[0;34m'
-COLOR_CYAN=$'\033[0;36m'
 COLOR_MAGENTA=$'\033[0;35m'
+COLOR_CYAN=$'\033[0;36m'
+COLOR_WHITE=$'\033[0;37m'
 COLOR_RESET=$'\033[0m'
+
 BOLD=$'\033[1m'
 UNDERLINE=$'\033[4m'
 DIM=$'\033[2m'
 
+# -------------------- ANSI Background Colors --------------------
+BG_RED=$'\033[41m'
+BG_GREEN=$'\033[42m'
+BG_YELLOW=$'\033[43m'
+BG_BLUE=$'\033[44m'
+BG_MAGENTA=$'\033[45m'
+BG_CYAN=$'\033[46m'
+BG_GRAY=$'\033[100m'
+
 banner() {
   clear || true
-  echo "${COLOR_CYAN}${BOLD}=======================================================${COLOR_RESET}"
-  echo "${COLOR_CYAN}${BOLD}                 ePlus.DEV - EXECUTION                 ${COLOR_RESET}"
-  echo "${COLOR_CYAN}${BOLD}=======================================================${COLOR_RESET}"
-  echo "${DIM}Copyright (c) 2026 ePlus.DEV. All rights reserved.${COLOR_RESET}"
+  echo "${BG_CYAN}${COLOR_BLUE}${BOLD}                                                         ${COLOR_RESET}"
+  echo "${BG_CYAN}${COLOR_BLUE}${BOLD}   🚀  ePlus.DEV - QWIKLABS FULL AUTOMATION (TASK 1→7)   ${COLOR_RESET}"
+  echo "${BG_CYAN}${COLOR_BLUE}${BOLD}                                                         ${COLOR_RESET}"
+  echo "${BG_CYAN}${COLOR_BLUE}${DIM}   Copyright (c) 2026 ePlus.DEV. All rights reserved.    ${COLOR_RESET}"
   echo
 }
 
-info() { echo "${COLOR_CYAN}${BOLD}==>${COLOR_RESET} $*"; }
-ok()   { echo "${COLOR_GREEN}${BOLD}✔${COLOR_RESET} $*"; }
-warn() { echo "${COLOR_YELLOW}${BOLD}⚠${COLOR_RESET} $*"; }
-err()  { echo "${COLOR_RED}${BOLD}✖${COLOR_RESET} $*"; }
+task() {
+  echo
+  echo "${BG_MAGENTA}${COLOR_WHITE}${BOLD} >>> $* <<< ${COLOR_RESET}"
+  echo
+}
+
+info() { echo "${BG_BLUE}${COLOR_WHITE}${BOLD} INFO ${COLOR_RESET} $*"; }
+ok()   { echo "${BG_GREEN}${COLOR_BLACK}${BOLD}  OK  ${COLOR_RESET} $*"; }
+warn() { echo "${BG_YELLOW}${COLOR_BLACK}${BOLD} WARN ${COLOR_RESET} $*"; }
+err()  { echo "${BG_RED}${COLOR_WHITE}${BOLD} ERR  ${COLOR_RESET} $*"; }
 
 need() {
   command -v "$1" >/dev/null 2>&1 || { err "Missing command: $1"; exit 1; }
@@ -87,7 +102,7 @@ ok "REGION: ${REGION}"
 ok "ZONE: ${ZONE}"
 
 # -------------------- Task 1: Enable APIs --------------------
-info "Task 1: Enabling required APIs..."
+task "TASK 1 - Enable APIs"
 gcloud services enable \
   artifactregistry.googleapis.com \
   cloudfunctions.googleapis.com \
@@ -101,8 +116,7 @@ gcloud services enable \
 ok "Task 1 OK"
 
 # -------------------- Task 2: HTTP function --------------------
-info "Task 2: Deploy HTTP function (nodejs-http-function)"
-
+task "TASK 2 - Deploy HTTP Function (nodejs-http-function)"
 mkdir -p ~/hello-http
 cd ~/hello-http
 
@@ -141,7 +155,7 @@ gcloud functions call nodejs-http-function --gen2 --region "${REGION}" --quiet >
 ok "Task 2 OK"
 
 # -------------------- Task 3: Storage function --------------------
-info "Task 3: Deploy Storage function (nodejs-storage-function)"
+task "TASK 3 - Deploy Storage Function (nodejs-storage-function)"
 
 SERVICE_ACCOUNT="$(gsutil kms serviceaccount -p "${PROJECT_NUMBER}")"
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
@@ -194,7 +208,7 @@ gsutil cp random.txt "${BUCKET}/random.txt" >/dev/null
 ok "Task 3 OK"
 
 # -------------------- Task 4: Audit Logs function + VM --------------------
-info "Task 4: Deploy Audit Logs function (gce-vm-labeler)"
+task "TASK 4 - Deploy Audit Logs Function + Create VM (gce-vm-labeler)"
 
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --member "serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
@@ -249,8 +263,8 @@ gcloud compute instances create instance-1 \
 
 ok "VM create command executed"
 
-# -------------------- Task 5: Different revisions (FULL CLI) --------------------
-info "Task 5: Deploy hello-world-colored revision #1 (orange) then revision #2 (yellow)"
+# -------------------- Task 5: Different revisions --------------------
+task "TASK 5 - Deploy hello-world-colored (orange -> yellow revisions)"
 
 mkdir -p ~/hello-world-colored
 cd ~/hello-world-colored
@@ -290,8 +304,8 @@ HELLO_URL="$(gcloud functions describe hello-world-colored --region "${REGION}" 
 ok "Task 5 OK. URL:"
 echo "  ${HELLO_URL}"
 
-# -------------------- Task 6: Min instances (FULL CLI) --------------------
-info "Task 6: Deploy slow-function, then set min instances=1 via Cloud Run CLI"
+# -------------------- Task 6: Min instances --------------------
+task "TASK 6 - Deploy slow-function + set min instances=1 (Cloud Run service)"
 
 mkdir -p ~/min-instances
 cd ~/min-instances
@@ -341,8 +355,8 @@ info "Calling slow-function..."
 gcloud functions call slow-function --gen2 --region "${REGION}" --quiet >/dev/null || true
 ok "Task 6 OK"
 
-# -------------------- Task 7: Concurrency (FULL CLI) --------------------
-info "Task 7: Deploy slow-concurrent-function, then set cpu=1 & concurrency=100 via Cloud Run CLI"
+# -------------------- Task 7: Concurrency + CPU --------------------
+task "TASK 7 - Deploy slow-concurrent-function + set CPU=1 & Concurrency=100 (Cloud Run service) ✅"
 
 deploy_with_retry slow-concurrent-function \
   --gen2 \
@@ -367,11 +381,20 @@ gcloud run services update slow-concurrent-function \
   --max-instances 4 \
   --quiet >/dev/null
 
+# Verify for peace of mind (does not fail script)
+info "Verifying Task 7 settings (cpu + concurrency)..."
+gcloud run services describe slow-concurrent-function \
+  --region "${REGION}" \
+  --format="yaml(spec.template.spec.containerConcurrency,spec.template.spec.containers[0].resources)" \
+  || true
+
 ok "Task 7 OK"
 
-# Optional cleanup to avoid extra prompts (already disabled prompts) - comment out if lab wants resources kept
+# Optional cleanup to avoid extra prompts (already disabled prompts)
 # gcloud compute instances delete instance-1 --zone "${ZONE}" --quiet >/dev/null 2>&1 || true
 
 echo
-ok "ALL DONE (Task 1 -> 7 via script). Now click 'Check my progress' for each task."
-echo "${COLOR_RED}${BOLD}${UNDERLINE}https://eplus.dev${COLOR_RESET}"
+echo "${BG_GREEN}${COLOR_BLACK}${BOLD} 🎉 ALL TASKS COMPLETED SUCCESSFULLY 🎉 ${COLOR_RESET}"
+echo "${BG_GRAY}${COLOR_WHITE}${BOLD}   Now click 'Check my progress' for each task in Qwiklabs   ${COLOR_RESET}"
+echo
+echo "${BG_RED}${COLOR_WHITE}${BOLD}   https://eplus.dev   ${COLOR_RESET}"
