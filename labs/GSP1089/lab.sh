@@ -297,14 +297,14 @@ echo
 echo "${COLOR_BLUE}${BOLD}Deploying Concurrent Function...${COLOR_RESET}"
 deploy_with_retry slow-concurrent-function \
   --gen2 \
-  --runtime go123 \
+  --runtime go125 \
   --entry-point HelloWorld \
   --source . \
   --region $REGION \
   --trigger-http \
   --allow-unauthenticated \
   --min-instances 1 \
-  --max-instances=4 \
+  --max-instances 4 \
   --cpu=1 \
   --concurrency=100
 
