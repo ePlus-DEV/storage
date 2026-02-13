@@ -73,12 +73,13 @@ need gcloud
 need gsutil
 need git
 
-PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
-[ -n "${PROJECT_ID}" ] || { err "No active project. Run: gcloud config set project <PROJECT_ID>"; exit 1; }
-
-PROJECT_NUMBER="$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')"
-REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+export PROJECT_ID=$(gcloud config get-value project)
+PROJECT_NUMBER=$(gcloud projects list --filter="project_id:$PROJECT_ID" --format='value(project_number)')
+export ZONE=$(gcloud compute project-info describe \
+--format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+export REGION=$(gcloud compute project-info describe \
+--format="value(commonInstanceMetadata.items[google-compute-default-region])")
+gcloud config set compute/region $REGION
 
 ok "PROJECT_ID: ${PROJECT_ID}"
 ok "PROJECT_NUMBER: ${PROJECT_NUMBER}"
