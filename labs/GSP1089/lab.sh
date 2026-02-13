@@ -60,8 +60,8 @@ PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
 [ -n "${PROJECT_ID}" ] || { err "No active project. Run: gcloud config set project <PROJECT_ID>"; exit 1; }
 
 PROJECT_NUMBER="$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')"
-REGION="europe-west4"
-ZONE="${REGION}-a"
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 
 ok "PROJECT_ID: ${PROJECT_ID}"
 ok "PROJECT_NUMBER: ${PROJECT_NUMBER}"
