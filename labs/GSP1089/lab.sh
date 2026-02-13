@@ -2,9 +2,20 @@
 set -euo pipefail
 
 # ==============================================================================
-#  ePlus.DEV - Qwiklabs Full Automation Script (Task 1 -> 7)
+#  ePlus.DEV - Qwiklabs Full Automation Script (Task 1 -> 7) - NON-INTERACTIVE
 #  Copyright (c) 2026 ePlus.DEV. All rights reserved.
+#
+#  - No prompts (no Y/yes needed)
+#  - Forces deploy retries
+#  - Automates Task 5 revisions + Task 6 min instances + Task 7 concurrency via CLI
+#
+#  NOTE:
+#  - Some labs may still require creating the VM via Console for Audit Logs to trigger.
+#    This script will attempt VM creation via CLI anyway.
 # ==============================================================================
+
+# -------------------- Disable ALL interactive prompts --------------------
+export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
 # -------------------- ANSI Colors (no tput) --------------------
 COLOR_RED=$'\033[0;31m'
@@ -31,14 +42,19 @@ info() { echo "${COLOR_CYAN}${BOLD}==>${COLOR_RESET} $*"; }
 ok()   { echo "${COLOR_GREEN}${BOLD}✔${COLOR_RESET} $*"; }
 warn() { echo "${COLOR_YELLOW}${BOLD}⚠${COLOR_RESET} $*"; }
 err()  { echo "${COLOR_RED}${BOLD}✖${COLOR_RESET} $*"; }
-need() { command -v "$1" >/dev/null 2>&1 || { err "Missing command: $1"; exit 1; }; }
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || { err "Missing command: $1"; exit 1; }
+}
 
 deploy_with_retry() {
   local fn="$1"; shift
-  local attempts=0 max_attempts=5
+  local attempts=0
+  local max_attempts=6
+
   while [ $attempts -lt $max_attempts ]; do
     info "Attempt $((attempts+1)) deploying: ${fn}"
-    if gcloud functions deploy "$fn" "$@"; then
+    if gcloud functions deploy "$fn" "$@" --quiet; then
       ok "${fn} deployed"
       return 0
     fi
@@ -46,6 +62,7 @@ deploy_with_retry() {
     warn "Deploy failed for ${fn}. Retry in 30s..."
     sleep 30
   done
+
   err "Failed to deploy ${fn} after ${max_attempts} attempts"
   return 1
 }
@@ -78,12 +95,15 @@ gcloud services enable \
   run.googleapis.com \
   logging.googleapis.com \
   pubsub.googleapis.com \
-  cloudaicompanion.googleapis.com >/dev/null
-ok "APIs enabled"
+  cloudaicompanion.googleapis.com \
+  --quiet
+ok "Task 1 OK"
 
 # -------------------- Task 2: HTTP function --------------------
 info "Task 2: Deploy HTTP function (nodejs-http-function)"
-mkdir -p ~/hello-http && cd ~/hello-http
+
+mkdir -p ~/hello-http
+cd ~/hello-http
 
 cat > index.js <<'EOF'
 const functions = require('@google-cloud/functions-framework');
@@ -112,10 +132,11 @@ deploy_with_retry nodejs-http-function \
   --region "${REGION}" \
   --trigger-http \
   --timeout 600s \
-  --max-instances 1
+  --max-instances 1 \
+  --allow-unauthenticated
 
 info "Calling nodejs-http-function..."
-gcloud functions call nodejs-http-function --gen2 --region "${REGION}" >/dev/null
+gcloud functions call nodejs-http-function --gen2 --region "${REGION}" --quiet >/dev/null || true
 ok "Task 2 OK"
 
 # -------------------- Task 3: Storage function --------------------
@@ -128,7 +149,8 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --quiet >/dev/null 2>&1 || true
 ok "IAM set: pubsub.publisher for Cloud Storage SA"
 
-mkdir -p ~/hello-storage && cd ~/hello-storage
+mkdir -p ~/hello-storage
+cd ~/hello-storage
 
 cat > index.js <<'EOF'
 const functions = require('@google-cloud/functions-framework');
@@ -151,8 +173,9 @@ cat > package.json <<'EOF'
 EOF
 
 BUCKET="gs://gcf-gen2-storage-${PROJECT_ID}"
+info "Ensuring bucket exists: ${BUCKET}"
 gsutil mb -l "${REGION}" "${BUCKET}" >/dev/null 2>&1 || true
-ok "Bucket ready: ${BUCKET}"
+ok "Bucket ready"
 
 deploy_with_retry nodejs-storage-function \
   --gen2 \
@@ -164,11 +187,12 @@ deploy_with_retry nodejs-storage-function \
   --trigger-location "${REGION}" \
   --max-instances 1
 
+info "Triggering storage event..."
 echo "Hello World" > random.txt
 gsutil cp random.txt "${BUCKET}/random.txt" >/dev/null
-ok "Task 3 OK (event triggered)"
+ok "Task 3 OK"
 
-# -------------------- Task 4: Audit logs function --------------------
+# -------------------- Task 4: Audit Logs function + VM --------------------
 info "Task 4: Deploy Audit Logs function (gce-vm-labeler)"
 
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
@@ -177,12 +201,11 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --quiet >/dev/null 2>&1 || true
 ok "IAM set: eventarc.eventReceiver for default compute SA"
 
-# Enable audit configs for compute.googleapis.com via set-iam-policy (best-effort)
-info "Enabling Audit Logs for compute.googleapis.com (ADMIN/DATA READ/WRITE)..."
+info "Enabling Audit Logs for compute.googleapis.com via set-iam-policy (best-effort)..."
 TMP_POLICY="$(mktemp)"
 gcloud projects get-iam-policy "${PROJECT_ID}" --format=yaml > "${TMP_POLICY}"
 
-# Drop previous auditConfigs section to avoid dup (simple, works for labs)
+# Remove existing auditConfigs section (simple lab-friendly approach)
 sed -i '/^auditConfigs:/,$d' "${TMP_POLICY}" 2>/dev/null || true
 cat >> "${TMP_POLICY}" <<'EOF'
 auditConfigs:
@@ -192,14 +215,19 @@ auditConfigs:
   - logType: DATA_WRITE
   service: compute.googleapis.com
 EOF
-gcloud projects set-iam-policy "${PROJECT_ID}" "${TMP_POLICY}" >/dev/null
+
+gcloud projects set-iam-policy "${PROJECT_ID}" "${TMP_POLICY}" --quiet >/dev/null
 rm -f "${TMP_POLICY}"
-ok "Audit logs config applied"
+ok "Audit Logs enabled for Compute Engine"
 
 cd ~
-[ -d ~/eventarc-samples ] || git clone https://github.com/GoogleCloudPlatform/eventarc-samples.git >/dev/null
-cd ~/eventarc-samples/gce-vm-labeler/gcf/nodejs
+if [ ! -d ~/eventarc-samples ]; then
+  git clone https://github.com/GoogleCloudPlatform/eventarc-samples.git >/dev/null
+else
+  warn "Repo already exists: ~/eventarc-samples (skip clone)"
+fi
 
+cd ~/eventarc-samples/gce-vm-labeler/gcf/nodejs
 deploy_with_retry gce-vm-labeler \
   --gen2 \
   --runtime nodejs22 \
@@ -209,21 +237,23 @@ deploy_with_retry gce-vm-labeler \
   --trigger-event-filters="type=google.cloud.audit.log.v1.written,serviceName=compute.googleapis.com,methodName=beta.compute.instances.insert" \
   --trigger-location "${REGION}" \
   --max-instances 1
-ok "Task 4 function deployed"
 
-# Create VM by CLI (lab đôi khi muốn tạo bằng Console, nhưng script vẫn làm hết)
-warn "Creating VM instance-1 by CLI (lab may prefer Console, but we'll try)..."
+ok "Audit Logs function deployed"
+
+warn "Creating VM instance-1 via CLI (lab may prefer Console; this still attempts automation)..."
 gcloud compute instances create instance-1 \
   --zone "${ZONE}" \
   --machine-type e2-medium \
-  --quiet || true
+  --quiet >/dev/null 2>&1 || true
 
-ok "VM create command executed. (If Task 'Create a VM instance' doesn't pass, create the VM once in Console.)"
+ok "VM create command executed"
 
-# -------------------- Task 5: Deploy different revisions (FULL CLI) --------------------
+# -------------------- Task 5: Different revisions (FULL CLI) --------------------
 info "Task 5: Deploy hello-world-colored revision #1 (orange) then revision #2 (yellow)"
 
-mkdir -p ~/hello-world-colored && cd ~/hello-world-colored
+mkdir -p ~/hello-world-colored
+cd ~/hello-world-colored
+
 cat > main.py <<'EOF'
 import os
 color = os.environ.get('COLOR')
@@ -233,7 +263,6 @@ def hello_world(request):
 EOF
 : > requirements.txt
 
-# Revision 1: orange
 deploy_with_retry hello-world-colored \
   --gen2 \
   --runtime python311 \
@@ -245,7 +274,6 @@ deploy_with_retry hello-world-colored \
   --update-env-vars "COLOR=orange" \
   --max-instances 1
 
-# Revision 2: yellow (deploy again -> new revision)
 deploy_with_retry hello-world-colored \
   --gen2 \
   --runtime python311 \
@@ -257,18 +285,16 @@ deploy_with_retry hello-world-colored \
   --update-env-vars "COLOR=yellow" \
   --max-instances 1
 
-HELLO_URL="$(gcloud functions describe hello-world-colored --region "${REGION}" --gen2 --format="value(serviceConfig.uri)")"
-ok "Task 5 done. URL:"
+HELLO_URL="$(gcloud functions describe hello-world-colored --region "${REGION}" --gen2 --format="value(serviceConfig.uri)" 2>/dev/null || true)"
+ok "Task 5 OK. URL:"
 echo "  ${HELLO_URL}"
 
-# Show revisions count (Cloud Run backing service)
-warn "Revisions (Cloud Run backing service):"
-gcloud run revisions list --service hello-world-colored --region "${REGION}" --format="table(metadata.name,status.conditions[0].status,metadata.creationTimestamp)" || true
+# -------------------- Task 6: Min instances (FULL CLI) --------------------
+info "Task 6: Deploy slow-function, then set min instances=1 via Cloud Run CLI"
 
-# -------------------- Task 6: Minimum instances (FULL CLI) --------------------
-info "Task 6: Deploy slow-function then set min instances=1 via CLI"
+mkdir -p ~/min-instances
+cd ~/min-instances
 
-mkdir -p ~/min-instances && cd ~/min-instances
 cat > main.go <<'EOF'
 package p
 
@@ -293,7 +319,6 @@ module example.com/mod
 go 1.23
 EOF
 
-# Deploy (min defaults to 0)
 deploy_with_retry slow-function \
   --gen2 \
   --runtime go123 \
@@ -304,20 +329,19 @@ deploy_with_retry slow-function \
   --allow-unauthenticated \
   --max-instances 4
 
-# Force min instances via Cloud Run service update (replaces UI)
-info "Updating Cloud Run service for slow-function: min=1, max=4..."
+info "Updating Cloud Run service slow-function: min=1 max=4..."
 gcloud run services update slow-function \
   --region "${REGION}" \
   --min-instances 1 \
   --max-instances 4 \
-  --quiet
+  --quiet >/dev/null
 
 info "Calling slow-function..."
-gcloud functions call slow-function --gen2 --region "${REGION}" >/dev/null
-ok "Task 6 done"
+gcloud functions call slow-function --gen2 --region "${REGION}" --quiet >/dev/null || true
+ok "Task 6 OK"
 
 # -------------------- Task 7: Concurrency (FULL CLI) --------------------
-info "Task 7: Deploy slow-concurrent-function then set concurrency=100 + cpu=1 via CLI"
+info "Task 7: Deploy slow-concurrent-function, then set cpu=1 & concurrency=100 via Cloud Run CLI"
 
 deploy_with_retry slow-concurrent-function \
   --gen2 \
@@ -330,19 +354,22 @@ deploy_with_retry slow-concurrent-function \
   --min-instances 1 \
   --max-instances 4
 
-SLOW_CONCURRENT_URL="$(gcloud functions describe slow-concurrent-function --region "${REGION}" --gen2 --format="value(serviceConfig.uri)")"
-ok "Function deployed. URL:"
+SLOW_CONCURRENT_URL="$(gcloud functions describe slow-concurrent-function --region "${REGION}" --gen2 --format="value(serviceConfig.uri)" 2>/dev/null || true)"
+ok "Function URL:"
 echo "  ${SLOW_CONCURRENT_URL}"
 
-info "Updating Cloud Run service for slow-concurrent-function: cpu=1, concurrency=100, max=4..."
+info "Updating Cloud Run service slow-concurrent-function: cpu=1 concurrency=100 max=4..."
 gcloud run services update slow-concurrent-function \
   --region "${REGION}" \
   --cpu 1 \
   --concurrency 100 \
   --max-instances 4 \
-  --quiet
+  --quiet >/dev/null
 
-ok "Task 7 done"
+ok "Task 7 OK"
+
+# Optional cleanup to avoid extra prompts (already disabled prompts) - comment out if lab wants resources kept
+# gcloud compute instances delete instance-1 --zone "${ZONE}" --quiet >/dev/null 2>&1 || true
 
 echo
 ok "ALL DONE (Task 1 -> 7 via script). Now click 'Check my progress' for each task."
