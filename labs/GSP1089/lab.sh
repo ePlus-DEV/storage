@@ -215,7 +215,7 @@ deploy_with_retry hello-world-colored \
   --region $REGION \
   --trigger-http \
   --allow-unauthenticated \
-  --update-env-vars COLOR=yellow \
+  --update-env-vars COLOR=orange \
   --max-instances 1
 
 # Deploy Slow Go Function
