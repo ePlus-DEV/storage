@@ -1,3 +1,3 @@
 # Manage Rendering for Cloud Storage Website Hosting (Solution)
 
-<https://manage-rendering-for-cloud-storage-website-hosting-solution>
+<https://eplus.dev/manage-rendering-for-cloud-storage-website-hosting-solution>
