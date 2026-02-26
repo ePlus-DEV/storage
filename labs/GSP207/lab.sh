@@ -72,4 +72,3 @@ echo
 
 echo "${YELLOW}${BOLD}→ Open Dataflow and wait until the job status is SUCCEEDED${RESET}"
 echo "${YELLOW}${BOLD}→ Then click Check my progress${RESET}"
-echo
