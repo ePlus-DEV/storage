@@ -34,9 +34,6 @@ echo -e "${BOX_TOP}"
 echo -e "${CYAN}║   🚀 Dr. Abhishek's HTTPS Load Balancer Lab   ║${RESET}"
 echo -e "${BOX_BOT}"
 echo
-echo -e "${WHITE}📺 YouTube: ${BLUE}https://youtube.com/@drabhishek.5460${RESET}"
-echo -e "${WHITE}⭐ Subscribe for more Cloud & DevOps tutorials! ⭐${RESET}"
-echo
 
 # Get user input for regions
 echo -e "${GREEN}${BOLD}🌍 Region Configuration${RESET}"
