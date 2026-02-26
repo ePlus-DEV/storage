@@ -1,199 +1,208 @@
-clear
-
 #!/bin/bash
-# Define color variables
+# ============================================================
+#  Cloud Filestore Basic Lab Automation (Qwiklabs)
+#  Copyright (c) ePlus.DEV
+#  License: For lab/learning use.
+# ============================================================
+set -euo pipefail
 
-BLACK=`tput setaf 0`
-RED=`tput setaf 1`
-GREEN=`tput setaf 2`
-YELLOW=`tput setaf 3`
-BLUE=`tput setaf 4`
-MAGENTA=`tput setaf 5`
-CYAN=`tput setaf 6`
-WHITE=`tput setaf 7`
+# ========================= COLORS =========================
+ROYAL_BLUE=$'\033[38;5;27m'
+NEON_GREEN=$'\033[38;5;46m'
+ORANGE=$'\033[38;5;208m'
+YELLOW=$'\033[38;5;226m'
+RED=$'\033[38;5;196m'
+WHITE=$'\033[1;97m'
+BOLD=$'\033[1m'
+RESET=$'\033[0m'
+DIM=$'\033[38;5;244m'
 
-BG_BLACK=`tput setab 0`
-BG_RED=`tput setab 1`
-BG_GREEN=`tput setab 2`
-BG_YELLOW=`tput setab 3`
-BG_BLUE=`tput setab 4`
-BG_MAGENTA=`tput setab 5`
-BG_CYAN=`tput setab 6`
-BG_WHITE=`tput setab 7`
+# ========================= UI HELPERS =========================
+line() { echo "${ROYAL_BLUE}${BOLD}============================================================${RESET}"; }
+info() { echo "${ROYAL_BLUE}${BOLD}[INFO]${RESET} $*"; }
+ok()   { echo "${NEON_GREEN}${BOLD}[OK]${RESET}   $*"; }
+warn() { echo "${YELLOW}${BOLD}[WARN]${RESET} $*"; }
+err()  { echo "${RED}${BOLD}[ERR]${RESET}  $*" >&2; }
+die()  { err "$*"; exit 1; }
 
-BOLD=`tput bold`
-RESET=`tput sgr0`
-
-# Array of color codes excluding black and white
-TEXT_COLORS=($RED $GREEN $YELLOW $BLUE $MAGENTA $CYAN)
-BG_COLORS=($BG_RED $BG_GREEN $BG_YELLOW $BG_BLUE $BG_MAGENTA $BG_CYAN)
-
-# Pick random colors
-RANDOM_TEXT_COLOR=${TEXT_COLORS[$RANDOM % ${#TEXT_COLORS[@]}]}
-RANDOM_BG_COLOR=${BG_COLORS[$RANDOM % ${#BG_COLORS[@]}]}
-
-#----------------------------------------------------start--------------------------------------------------#
-
-echo "${RANDOM_BG_COLOR}${RANDOM_TEXT_COLOR}${BOLD}Starting Execution - ePlus.DEV ${RESET}"
-
-# Step 1: Enable Google Cloud Services
-echo "${BOLD}${GREEN}Enabling Google Cloud Services${RESET}"
-gcloud services enable osconfig.googleapis.com
-
-gcloud services enable file.googleapis.com
-
-# Step 2: Set Project ID, Project Number, Zone & Region
-echo "${BOLD}${BLUE}Setting Project ID, Project Number, Zone & Region${RESET}"
-export PROJECT_ID=$(gcloud config get-value project)
-
-export PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} \
-    --format="value(projectNumber)")
-
-export ZONE=$(gcloud compute project-info describe \
---format="value(commonInstanceMetadata.items[google-compute-default-zone])")
-
-export REGION=$(gcloud compute project-info describe \
---format="value(commonInstanceMetadata.items[google-compute-default-region])")
-
-# Step 3: Create NFS Client VM Instance
-echo "${BOLD}${YELLOW}Creating NFS Client VM Instance${RESET}"
-gcloud compute instances create nfs-client \
-    --project=$PROJECT_ID \
-    --zone=$ZONE \
-    --machine-type=e2-medium \
-    --network-interface=network-tier=PREMIUM,stack-type=IPV4_ONLY,subnet=default \
-    --metadata=enable-osconfig=TRUE,enable-oslogin=true \
-    --maintenance-policy=MIGRATE \
-    --provisioning-model=STANDARD \
-    --service-account=$PROJECT_NUMBER-compute@developer.gserviceaccount.com \
-    --scopes=https://www.googleapis.com/auth/devstorage.read_only,https://www.googleapis.com/auth/logging.write,https://www.googleapis.com/auth/monitoring.write,https://www.googleapis.com/auth/service.management.readonly,https://www.googleapis.com/auth/servicecontrol,https://www.googleapis.com/auth/trace.append \
-    --tags=http-server \
-    --create-disk=auto-delete=yes,boot=yes,device-name=nfs-client,image=projects/debian-cloud/global/images/debian-11-bullseye-v20250415,mode=rw,size=10,type=pd-balanced \
-    --no-shielded-secure-boot \
-    --shielded-vtpm \
-    --shielded-integrity-monitoring \
-    --labels=goog-ops-agent-policy=v2-x86-template-1-4-0,goog-ec-src=vm_add-gcloud \
-    --reservation-affinity=any \
-&& \
-printf 'agentsRule:\n  packageState: installed\n  version: latest\ninstanceFilter:\n  inclusionLabels:\n  - labels:\n      goog-ops-agent-policy: v2-x86-template-1-4-0\n' > config.yaml \
-&& \
-gcloud compute instances ops-agents policies create goog-ops-agent-v2-x86-template-1-4-0-$ZONE \
-    --project=$DEVSHELL_PROJECT_ID \
-    --zone=$ZONE \
-    --file=config.yaml \
-&& \
-gcloud compute resource-policies create snapshot-schedule default-schedule-1 \
-    --project=$DEVSHELL_PROJECT_ID \
-    --region=$REGION \
-    --max-retention-days=14 \
-    --on-source-disk-delete=keep-auto-snapshots \
-    --daily-schedule \
-    --start-time=17:00 \
-&& \
-gcloud compute disks add-resource-policies nfs-client \
-    --project=$DEVSHELL_PROJECT_ID \
-    --zone=$ZONE \
-    --resource-policies=projects/$DEVSHELL_PROJECT_ID/regions/$REGION/resourcePolicies/default-schedule-1
-
-# Step 4: Create NFS Server (Filestore Instance)
-echo "${BOLD}${GREEN}Creating NFS Server (Filestore Instance)${RESET}"
-gcloud filestore instances create nfs-server \
-    --zone=$ZONE \
-    --tier=BASIC_HDD \
-    --file-share=name="vol1",capacity=1TiB \
-    --network=name="default"
-
-echo
-
-# Function to display a random congratulatory message
-function random_congrats() {
-    MESSAGES=(
-        "${GREEN}Congratulations For Completing The Lab! Keep up the great work!${RESET}"
-        "${CYAN}Well done! Your hard work and effort have paid off!${RESET}"
-        "${YELLOW}Amazing job! You’ve successfully completed the lab!${RESET}"
-        "${BLUE}Outstanding! Your dedication has brought you success!${RESET}"
-        "${MAGENTA}Great work! You’re one step closer to mastering this!${RESET}"
-        "${RED}Fantastic effort! You’ve earned this achievement!${RESET}"
-        "${CYAN}Congratulations! Your persistence has paid off brilliantly!${RESET}"
-        "${GREEN}Bravo! You’ve completed the lab with flying colors!${RESET}"
-        "${YELLOW}Excellent job! Your commitment is inspiring!${RESET}"
-        "${BLUE}You did it! Keep striving for more successes like this!${RESET}"
-        "${MAGENTA}Kudos! Your hard work has turned into a great accomplishment!${RESET}"
-        "${RED}You’ve smashed it! Completing this lab shows your dedication!${RESET}"
-        "${CYAN}Impressive work! You’re making great strides!${RESET}"
-        "${GREEN}Well done! This is a big step towards mastering the topic!${RESET}"
-        "${YELLOW}You nailed it! Every step you took led you to success!${RESET}"
-        "${BLUE}Exceptional work! Keep this momentum going!${RESET}"
-        "${MAGENTA}Fantastic! You’ve achieved something great today!${RESET}"
-        "${RED}Incredible job! Your determination is truly inspiring!${RESET}"
-        "${CYAN}Well deserved! Your effort has truly paid off!${RESET}"
-        "${GREEN}You’ve got this! Every step was a success!${RESET}"
-        "${YELLOW}Nice work! Your focus and effort are shining through!${RESET}"
-        "${BLUE}Superb performance! You’re truly making progress!${RESET}"
-        "${MAGENTA}Top-notch! Your skill and dedication are paying off!${RESET}"
-        "${RED}Mission accomplished! This success is a reflection of your hard work!${RESET}"
-        "${CYAN}You crushed it! Keep pushing towards your goals!${RESET}"
-        "${GREEN}You did a great job! Stay motivated and keep learning!${RESET}"
-        "${YELLOW}Well executed! You’ve made excellent progress today!${RESET}"
-        "${BLUE}Remarkable! You’re on your way to becoming an expert!${RESET}"
-        "${MAGENTA}Keep it up! Your persistence is showing impressive results!${RESET}"
-        "${RED}This is just the beginning! Your hard work will take you far!${RESET}"
-        "${CYAN}Terrific work! Your efforts are paying off in a big way!${RESET}"
-        "${GREEN}You’ve made it! This achievement is a testament to your effort!${RESET}"
-        "${YELLOW}Excellent execution! You’re well on your way to mastering the subject!${RESET}"
-        "${BLUE}Wonderful job! Your hard work has definitely paid off!${RESET}"
-        "${MAGENTA}You’re amazing! Keep up the awesome work!${RESET}"
-        "${RED}What an achievement! Your perseverance is truly admirable!${RESET}"
-        "${CYAN}Incredible effort! This is a huge milestone for you!${RESET}"
-        "${GREEN}Awesome! You’ve done something incredible today!${RESET}"
-        "${YELLOW}Great job! Keep up the excellent work and aim higher!${RESET}"
-        "${BLUE}You’ve succeeded! Your dedication is your superpower!${RESET}"
-        "${MAGENTA}Congratulations! Your hard work has brought great results!${RESET}"
-        "${RED}Fantastic work! You’ve taken a huge leap forward today!${RESET}"
-        "${CYAN}You’re on fire! Keep up the great work!${RESET}"
-        "${GREEN}Well deserved! Your efforts have led to success!${RESET}"
-        "${YELLOW}Incredible! You’ve achieved something special!${RESET}"
-        "${BLUE}Outstanding performance! You’re truly excelling!${RESET}"
-        "${MAGENTA}Terrific achievement! Keep building on this success!${RESET}"
-        "${RED}Bravo! You’ve completed the lab with excellence!${RESET}"
-        "${CYAN}Superb job! You’ve shown remarkable focus and effort!${RESET}"
-        "${GREEN}Amazing work! You’re making impressive progress!${RESET}"
-        "${YELLOW}You nailed it again! Your consistency is paying off!${RESET}"
-        "${BLUE}Incredible dedication! Keep pushing forward!${RESET}"
-        "${MAGENTA}Excellent work! Your success today is well earned!${RESET}"
-        "${RED}You’ve made it! This is a well-deserved victory!${RESET}"
-        "${CYAN}Wonderful job! Your passion and hard work are shining through!${RESET}"
-        "${GREEN}You’ve done it! Keep up the hard work and success will follow!${RESET}"
-        "${YELLOW}Great execution! You’re truly mastering this!${RESET}"
-        "${BLUE}Impressive! This is just the beginning of your journey!${RESET}"
-        "${MAGENTA}You’ve achieved something great today! Keep it up!${RESET}"
-        "${RED}You’ve made remarkable progress! This is just the start!${RESET}"
-    )
-
-    RANDOM_INDEX=$((RANDOM % ${#MESSAGES[@]}))
-    echo -e "${BOLD}${MESSAGES[$RANDOM_INDEX]}"
+spinner() {
+  local pid=$!
+  local delay=0.1
+  local spinstr='|/-\'
+  while ps -p "$pid" >/dev/null 2>&1; do
+    local temp=${spinstr#?}
+    printf " ${ORANGE}[%c]${RESET}  " "$spinstr"
+    spinstr=$temp${spinstr%"$temp"}
+    sleep $delay
+    printf "\b\b\b\b\b\b"
+  done
+  printf "      \b\b\b\b\b\b"
 }
+run_bg() { ( "$@" ) >/tmp/epl_filestore_lab.log 2>&1 & spinner; }
 
-# Display a random congratulatory message
-random_congrats
+# ========================= COPYRIGHT BANNER =========================
+clear
+echo -e "${ROYAL_BLUE}${BOLD}"
+echo " ███████╗██████╗ ██╗     ██╗   ██╗███████╗"
+echo " ██╔════╝██╔══██╗██║     ██║   ██║██╔════╝"
+echo " █████╗  ██████╔╝██║     ██║   ██║███████╗"
+echo " ██╔══╝  ██╔═══╝ ██║     ██║   ██║╚════██║"
+echo " ███████╗██║     ███████╗╚██████╔╝███████║"
+echo " ╚══════╝╚═╝     ╚══════╝ ╚═════╝ ╚══════╝"
+echo -e "${RESET}"
+echo -e "${NEON_GREEN}${BOLD}  ePlus.DEV Cloud Automation Script${RESET}"
+echo -e "${ORANGE}  Cloud Filestore Lab – Qwiklabs${RESET}"
+echo -e "${WHITE}${BOLD}  © $(date +%Y) ePlus.DEV – All rights reserved.${RESET}"
+echo -e "${DIM}  For education & lab automation only.${RESET}"
+line
 
-echo -e "\n"  # Adding one blank line
+# ========================= VARS =========================
+VM_NAME="nfs-client"
+FS_NAME="nfs-server"
+NETWORK="default"
+SHARE_NAME="vol1"
+MOUNT_DIR="/mnt/test"
+FILE_NAME="testfile"
+FILE_CONTENT="This is a test"
 
-cd
+# ========================= PRECHECK =========================
+command -v gcloud >/dev/null 2>&1 || die "gcloud not found. Run in Cloud Shell."
+PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
+[[ -n "${PROJECT_ID}" ]] || die "No active project. Run: gcloud config set project <PROJECT_ID>"
+ok "Project: ${PROJECT_ID}"
 
-remove_files() {
-    # Loop through all files in the current directory
-    for file in *; do
-        # Check if the file name starts with "gsp", "arc", or "shell"
-        if [[ "$file" == gsp* || "$file" == arc* || "$file" == shell* ]]; then
-            # Check if it's a regular file (not a directory)
-            if [[ -f "$file" ]]; then
-                # Remove the file and echo the file name
-                rm "$file"
-                echo "File removed: $file"
-            fi
-        fi
-    done
-}
+# ========================= AUTO REGION/ZONE =========================
+# Priority:
+# 1) Project metadata: google-compute-default-region / google-compute-default-zone
+# 2) gcloud config: compute/region / compute/zone
+# 3) If region exists but zone missing -> pick first UP zone in region
+# 4) If both missing -> die
 
-remove_files
+REGION="$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null || true)"
+ZONE="$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])" 2>/dev/null || true)"
+
+if [[ -z "${REGION}" ]]; then
+  REGION="$(gcloud config get-value compute/region 2>/dev/null || true)"
+fi
+if [[ -z "${ZONE}" ]]; then
+  ZONE="$(gcloud config get-value compute/zone 2>/dev/null || true)"
+fi
+
+# If zone exists but region empty -> derive region from zone (e.g. europe-west4-b -> europe-west4)
+if [[ -z "${REGION}" && -n "${ZONE}" ]]; then
+  REGION="${ZONE%-*}"
+fi
+
+# If region exists but zone empty -> choose an available zone in region
+if [[ -n "${REGION}" && -z "${ZONE}" ]]; then
+  ZONE="$(gcloud compute zones list --filter="region:(${REGION}) AND status=UP" --format="value(name)" --limit=1 2>/dev/null || true)"
+fi
+
+[[ -n "${REGION}" && -n "${ZONE}" ]] || die "Cannot auto-detect REGION/ZONE. Set with: gcloud config set compute/region <r> && gcloud config set compute/zone <z>"
+
+# Set config to avoid prompts later
+gcloud config set compute/region "$REGION" >/dev/null
+gcloud config set compute/zone "$ZONE" >/dev/null
+
+ok "Auto Region: ${REGION}"
+ok "Auto Zone  : ${ZONE}"
+line
+
+# ========================= ENABLE API =========================
+info "Enabling Filestore API (if not already enabled)..."
+run_bg gcloud services enable file.googleapis.com
+ok "Filestore API enabled."
+line
+
+# ========================= CREATE VM =========================
+if gcloud compute instances describe "$VM_NAME" --zone "$ZONE" >/dev/null 2>&1; then
+  warn "VM '${VM_NAME}' already exists. Skipping create."
+else
+  info "Creating VM '${VM_NAME}' (e2-medium, Debian 12, allow-http)..."
+  run_bg gcloud compute instances create "$VM_NAME" \
+    --zone "$ZONE" \
+    --machine-type "e2-medium" \
+    --image-family "debian-12" \
+    --image-project "debian-cloud" \
+    --tags "http-server" \
+    --quiet
+  ok "VM created: ${VM_NAME}"
+fi
+line
+
+# ========================= CREATE FILESTORE =========================
+if gcloud filestore instances describe "$FS_NAME" --zone "$ZONE" >/dev/null 2>&1; then
+  warn "Filestore instance '${FS_NAME}' already exists. Skipping create."
+else
+  info "Creating Filestore '${FS_NAME}' (BASIC_HDD, 1TB, share '${SHARE_NAME}', network '${NETWORK}')..."
+  run_bg gcloud filestore instances create "$FS_NAME" \
+    --zone "$ZONE" \
+    --tier "BASIC_HDD" \
+    --file-share "name=${SHARE_NAME},capacity=1TB" \
+    --network "name=${NETWORK},connect-mode=DIRECT_PEERING" \
+    --quiet
+  ok "Filestore create requested: ${FS_NAME}"
+fi
+line
+
+# ========================= WAIT FOR READY + GET IP =========================
+info "Waiting for Filestore '${FS_NAME}' to be READY and grabbing IP..."
+FS_IP=""
+for i in {1..60}; do
+  STATE="$(gcloud filestore instances describe "$FS_NAME" --zone "$ZONE" --format='value(state)' 2>/dev/null || true)"
+  FS_IP="$(gcloud filestore instances describe "$FS_NAME" --zone "$ZONE" --format='value(networks[0].ipAddresses[0])' 2>/dev/null || true)"
+  if [[ "${STATE}" == "READY" && -n "${FS_IP}" ]]; then
+    ok "Filestore READY. IP: ${FS_IP}"
+    break
+  fi
+  printf "${ORANGE}${BOLD}...${RESET} state=%s ip=%s (try %s/60)\r" "${STATE:-?}" "${FS_IP:-?}" "$i"
+  sleep 10
+done
+echo ""
+[[ -n "${FS_IP}" ]] || die "Could not get Filestore IP. Check Filestore instance status."
+
+line
+
+# ========================= REMOTE STEPS ON VM =========================
+info "Installing NFS client + mounting share on VM + creating test file..."
+
+REMOTE_SCRIPT=$(cat <<'EOF'
+set -euo pipefail
+
+sudo apt-get -y update
+sudo apt-get -y install nfs-common
+
+sudo mkdir -p "__MOUNT_DIR__"
+
+if mountpoint -q "__MOUNT_DIR__"; then
+  echo "[REMOTE] Already mounted: __MOUNT_DIR__"
+else
+  sudo mount "__FS_IP__:/__SHARE__" "__MOUNT_DIR__"
+fi
+
+sudo chmod go+rw "__MOUNT_DIR__"
+
+echo "__CONTENT__" | sudo tee "__MOUNT_DIR__/__FILE__" >/dev/null
+
+echo "[REMOTE] Listing share:"
+ls -la "__MOUNT_DIR__"
+echo "[REMOTE] File content:"
+cat "__MOUNT_DIR__/__FILE__"
+EOF
+)
+
+REMOTE_SCRIPT="${REMOTE_SCRIPT//__FS_IP__/${FS_IP}}"
+REMOTE_SCRIPT="${REMOTE_SCRIPT//__SHARE__/${SHARE_NAME}}"
+REMOTE_SCRIPT="${REMOTE_SCRIPT//__MOUNT_DIR__/${MOUNT_DIR}}"
+REMOTE_SCRIPT="${REMOTE_SCRIPT//__FILE__/${FILE_NAME}}"
+REMOTE_SCRIPT="${REMOTE_SCRIPT//__CONTENT__/${FILE_CONTENT}}"
+
+run_bg gcloud compute ssh "$VM_NAME" --zone "$ZONE" --quiet --command "bash -lc $(printf '%q' "$REMOTE_SCRIPT")"
+
+ok "Mounted ${FS_IP}:/${SHARE_NAME} at ${MOUNT_DIR} on VM '${VM_NAME}'."
+ok "Created file: ${MOUNT_DIR}/${FILE_NAME}"
+line
+
+echo "${NEON_GREEN}${BOLD}DONE!${RESET} ${WHITE}Now click 'Check my progress' for tasks 1-4.${RESET}"
+echo "${DIM}Log saved at: /tmp/epl_filestore_lab.log${RESET}"
+line
