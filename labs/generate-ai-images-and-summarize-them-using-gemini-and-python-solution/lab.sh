@@ -1,5 +1,5 @@
 
-cat <<'EOF' > bouquet_ai.py
+cat <<'EOF' > lab.py
 import vertexai
 from vertexai.preview.vision_models import ImageGenerationModel
 from vertexai.generative_models import GenerativeModel, Part
@@ -55,3 +55,5 @@ if __name__ == "__main__":
     image_path = generate_bouquet_image(prompt)
     analyze_bouquet_image(image_path)
 EOF
+
+/usr/bin/python3 lab.py
