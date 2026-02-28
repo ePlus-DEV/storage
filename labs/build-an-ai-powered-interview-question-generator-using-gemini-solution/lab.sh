@@ -19,4 +19,4 @@ if __name__ == "__main__":
     print("="*50)
 EOF
 
-/usr/bin/python3 /lab.py
+/usr/bin/python3 lab.py
