@@ -26,7 +26,7 @@ echo "${CYAN_TEXT}${BOLD_TEXT}         EPLUS.DEV     ${RESET_FORMAT}"
 echo "${CYAN_TEXT}${BOLD_TEXT}=======================${RESET_FORMAT}"
 echo
 
-KEYRING_NAME=test
+KEYRING_NAME=labkey
 CRYPTOKEY_NAME=qwiklab
 
 echo "${CYAN_TEXT}${BOLD_TEXT}Enable KMS API${RESET_FORMAT}"
