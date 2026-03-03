@@ -21,12 +21,12 @@ RESET_FORMAT=$'\033[0m'
 REVERSE_TEXT=$'\033[7m'
 clear
 # Welcome message
-echo "${CYAN_TEXT}${BOLD_TEXT}=======================${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}         EPLUS.DEV     ${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}=======================${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}==================================================================${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}          INITIATING EXECUTION...  ${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}==================================================================${RESET_FORMAT}"
 echo
 
-KEYRING_NAME=labkey
+KEYRING_NAME=test
 CRYPTOKEY_NAME=qwiklab
 
 echo "${CYAN_TEXT}${BOLD_TEXT}Enable KMS API${RESET_FORMAT}"
@@ -100,4 +100,3 @@ echo "${CYAN_TEXT}${BOLD_TEXT}              LAB COMPLETED SUCCESSFULLY!         
 echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
 echo
 echo "${RED_TEXT}${BOLD_TEXT}${UNDERLINE_TEXT}https://eplus.dev${RESET_FORMAT}"
-echo "${GREEN_TEXT}${BOLD_TEXT}Dont forget to Like, Share and Subscribe for more Videos${RESET_FORMAT}"
