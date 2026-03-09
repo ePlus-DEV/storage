@@ -200,8 +200,8 @@ main() {
   export PROJECT_NUMBER
   PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
 
-  export REGION="us-east1"
-  export ZONE="us-east1-c"
+  export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+  export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
   export CLUSTER_NAME="container-dev-cluster"
   export DOCKER_REPO="container-dev-repo"
   export MAVEN_REPO="container-dev-java-repo"
