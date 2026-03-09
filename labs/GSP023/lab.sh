@@ -75,7 +75,7 @@ pip install -r requirements.txt
 # ------------------------------------------------
 echo -e "${BLUE}Creating App Engine environment...${NC}"
 
-AE_REGION=us-east1
+AE_REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
 gcloud app create --region=$AE_REGION --quiet 2>/dev/null
 
