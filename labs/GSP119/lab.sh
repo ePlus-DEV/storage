@@ -25,6 +25,23 @@ RESET=`tput sgr0`
 
 echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV ${RESET}"
 
+# Create API key
+echo -e "${YELLOW}🔑 Creating API Key...${NC}"
+
+KEY_RESPONSE=$(gcloud services api-keys create \
+  --display-name="eplus-api-key" \
+  --format="value(name)")
+
+KEY_NAME=$KEY_RESPONSE
+
+API_KEY=$(gcloud services api-keys get-key-string $KEY_NAME --format="value(keyString)")
+
+echo ""
+echo -e "${GREEN}✅ API Key Created Successfully!${NC}"
+echo ""
+echo -e "${YELLOW}API KEY:${NC}"
+echo -e "${GREEN}$API_KEY${NC}"
+
 cat > request.json <<EOF_END
 {
     "config": {
