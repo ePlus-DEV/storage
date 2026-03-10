@@ -2,7 +2,7 @@
 
 # ==============================================
 # Google Cloud Security Command Center Lab
-# Welcome to Dr. Abhishek Cloud Tutorials!
+# Welcome to ePlus.DEV Tutorials!
 # YouTube: https://www.youtube.com/@drabhishek.5460/videos
 # ==============================================
 
@@ -132,7 +132,7 @@ echo "${GREEN}${BOLD}Lab Completed !!!${RESET}"
 echo ""
 
 # Final call to action
-read -p "${BOLD}${YELLOW}Subscribe to Dr. Abhishek Cloud Tutorials [y/n] : ${RESET}" CONSENT
+read -p "${BOLD}${YELLOW}Subscribe to ePlus.DEV Tutorials [y/n] : ${RESET}" CONSENT
 
 while [ "$CONSENT" != 'y' ] && [ "$CONSENT" != 'Y' ]; do
   sleep 2
