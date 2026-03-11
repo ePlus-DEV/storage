@@ -6,6 +6,9 @@ ZONE=$(gcloud compute project-info describe \
 REGION=$(gcloud compute project-info describe \
   --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 PROJECT_ID=$(gcloud projects list --format="value(projectId)" --limit=1)
+
+PROJECT_ID="$(gcloud config get-value project 2>/dev/null)"
+PROJECT_NUMBER="$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)' 2>/dev/null || true)"
 ```
 
 ```shell
