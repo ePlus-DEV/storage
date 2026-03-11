@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# =========================================================
+# Google Cloud Monitoring LAMP Qwik Start Automation
+# Powered by ePlus.DEV
+# =========================================================
+
+set -e
+
 # Define color variables
 BLACK_TEXT=$'\033[0;90m'
 RED_TEXT=$'\033[0;91m'
@@ -19,38 +26,55 @@ UNDERLINE_TEXT=$'\033[4m'
 
 clear
 
-# Welcome message
 echo "${BLUE_TEXT}${BOLD_TEXT}=======================================${RESET_FORMAT}"
-echo "${BLUE_TEXT}${BOLD_TEXT}        STARTING THE LAB GET READY ..  ${RESET_FORMAT}"
+echo "${BLUE_TEXT}${BOLD_TEXT}     STARTING THE LAB - GET READY      ${RESET_FORMAT}"
 echo "${BLUE_TEXT}${BOLD_TEXT}=======================================${RESET_FORMAT}"
 echo
 
-export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+PROJECT_ID="${DEVSHELL_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
+REGION="europe-west4"
+ZONE="europe-west4-c"
+VM_NAME="lamp-1-vm"
+UPTIME_NAME="lamp-uptime-check"
+POLICY_FILE="alert-policy.json"
+UPTIME_FILE="uptime-check.json"
 
-echo "${CYAN_TEXT}${BOLD_TEXT}Creating a new VM instance... Please wait.${RESET_FORMAT}"
+if [[ -z "$PROJECT_ID" ]]; then
+  echo "${RED_TEXT}${BOLD_TEXT}ERROR: Unable to detect PROJECT_ID.${RESET_FORMAT}"
+  exit 1
+fi
 
-# Create the instance with the necessary metadata and tags
-gcloud compute instances create lamp-1-vm \
-    --project=$DEVSHELL_PROJECT_ID \
-    --zone=$ZONE \
-    --machine-type=e2-small \
-    --network-interface=network-tier=PREMIUM,stack-type=IPV4_ONLY,subnet=default \
-    --metadata=enable-oslogin=true \
-    --maintenance-policy=MIGRATE \
-    --provisioning-model=STANDARD \
+echo "${CYAN_TEXT}${BOLD_TEXT}Project ID: ${PROJECT_ID}${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}Region: ${REGION}${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}Zone: ${ZONE}${RESET_FORMAT}"
+
+echo "${YELLOW_TEXT}${BOLD_TEXT}Setting default region and zone...${RESET_FORMAT}"
+gcloud config set compute/region "$REGION" >/dev/null
+gcloud config set compute/zone "$ZONE" >/dev/null
+
+echo "${CYAN_TEXT}${BOLD_TEXT}Creating VM instance... Please wait.${RESET_FORMAT}"
+
+if gcloud compute instances describe "$VM_NAME" --zone="$ZONE" >/dev/null 2>&1; then
+  echo "${YELLOW_TEXT}${BOLD_TEXT}VM ${VM_NAME} already exists. Skipping creation.${RESET_FORMAT}"
+else
+  gcloud compute instances create "$VM_NAME" \
+    --project="$PROJECT_ID" \
+    --zone="$ZONE" \
+    --machine-type=e2-medium \
+    --image-family=debian-12 \
+    --image-project=debian-cloud \
     --tags=http-server \
-    --create-disk=auto-delete=yes,boot=yes,device-name=lamp-1-vm,image=projects/debian-cloud/global/images/debian-12-bookworm-v20240709,mode=rw,size=10,type=projects/$DEVSHELL_PROJECT_ID/zones/$ZONE/diskTypes/pd-balanced \
-    --no-shielded-secure-boot \
-    --shielded-vtpm \
-    --shielded-integrity-monitoring \
-    --labels=goog-ec-src=vm_add-gcloud \
-    --reservation-affinity=any
+    --boot-disk-size=10GB \
+    --boot-disk-type=pd-balanced
+fi
 
-echo "${YELLOW_TEXT}${BOLD_TEXT}Creating a firewall rule to allow HTTP traffic...${RESET_FORMAT}"
+echo "${YELLOW_TEXT}${BOLD_TEXT}Creating firewall rule to allow HTTP traffic...${RESET_FORMAT}"
 
-# Create firewall rule to allow incoming HTTP traffic on port 80
-gcloud compute firewall-rules create allow-http \
-    --project=$DEVSHELL_PROJECT_ID \
+if gcloud compute firewall-rules describe allow-http >/dev/null 2>&1; then
+  echo "${YELLOW_TEXT}${BOLD_TEXT}Firewall rule allow-http already exists. Skipping.${RESET_FORMAT}"
+else
+  gcloud compute firewall-rules create allow-http \
+    --project="$PROJECT_ID" \
     --direction=INGRESS \
     --priority=1000 \
     --network=default \
@@ -58,108 +82,117 @@ gcloud compute firewall-rules create allow-http \
     --rules=tcp:80 \
     --source-ranges=0.0.0.0/0 \
     --target-tags=http-server
+fi
 
-sleep 10
+echo "${MAGENTA_TEXT}${BOLD_TEXT}Waiting for VM to become ready...${RESET_FORMAT}"
+sleep 20
 
-echo "${MAGENTA_TEXT}${BOLD_TEXT}Generating SSH keys...${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}Generating SSH configuration...${RESET_FORMAT}"
+gcloud compute config-ssh --project "$PROJECT_ID" --quiet >/dev/null 2>&1 || true
 
-# Generate SSH keys
-gcloud compute config-ssh --project "$DEVSHELL_PROJECT_ID" --quiet
-echo "${CYAN_TEXT}${BOLD_TEXT}Installing Apache and PHP on the VM...${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}Installing Apache, PHP and Google Cloud Ops Agent...${RESET_FORMAT}"
+gcloud compute ssh "$VM_NAME" --project "$PROJECT_ID" --zone "$ZONE" --command "
+  sudo apt-get update &&
+  sudo apt-get install -y apache2 php curl &&
+  sudo systemctl enable apache2 &&
+  sudo systemctl restart apache2 &&
+  curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh &&
+  sudo bash add-google-cloud-ops-agent-repo.sh --also-install
+"
 
-gcloud compute ssh lamp-1-vm --project "$DEVSHELL_PROJECT_ID" --zone $ZONE --command "sudo sed -i '/buster-backports/d' /etc/apt/sources.list && sudo apt-get update && sudo apt-get install apache2 php7.3 -y && sudo service apache2 restart"
+echo "${MAGENTA_TEXT}${BOLD_TEXT}Waiting for Ops Agent metrics to initialize...${RESET_FORMAT}"
+sleep 30
 
-sleep 10
+echo "${GREEN_TEXT}${BOLD_TEXT}Fetching VM information...${RESET_FORMAT}"
+INSTANCE_ID="$(gcloud compute instances describe "$VM_NAME" --project="$PROJECT_ID" --zone="$ZONE" --format='value(id)')"
+VM_IP="$(gcloud compute instances describe "$VM_NAME" --project="$PROJECT_ID" --zone="$ZONE" --format='get(networkInterfaces[0].accessConfigs[0].natIP)')"
 
-echo "${GREEN_TEXT}${BOLD_TEXT}Fetching Instance ID...${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}Instance ID: ${INSTANCE_ID}${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}External IP: ${VM_IP}${RESET_FORMAT}"
 
-INSTANCE_ID="$(gcloud compute instances describe  lamp-1-vm --project=$DEVSHELL_PROJECT_ID --zone=$ZONE --format='value(id)')"
+echo "${BLUE_TEXT}${BOLD_TEXT}Creating Uptime Check Config...${RESET_FORMAT}"
 
-echo "${BLUE_TEXT}${BOLD_TEXT}Setting up Uptime Monitoring...${RESET_FORMAT}"
-
-gcloud monitoring uptime create lamp-uptime-check \
-  --resource-type="gce-instance" \
-  --resource-labels=project_id=$DEVSHELL_PROJECT_ID,instance_id=$INSTANCE_ID,zone=$ZONE
-
-
-echo "${YELLOW_TEXT}${BOLD_TEXT}Creating an email notification channel...${RESET_FORMAT}"
-
-cat > email-channel.json <<EOF_END
+cat > "$UPTIME_FILE" <<EOF
 {
-  "type": "email",
-  "displayName": "arcadecrew",
-  "description": "arcadecrew",
-  "labels": {
-    "email_address": "$USER_EMAIL"
-  }
+  "displayName": "Lamp Uptime Check",
+  "monitoredResource": {
+    "type": "uptime_url",
+    "labels": {
+      "host": "$VM_IP"
+    }
+  },
+  "httpCheck": {
+    "path": "/",
+    "port": 80
+  },
+  "timeout": "10s",
+  "period": "60s"
 }
-EOF_END
+EOF
 
+ACCESS_TOKEN="$(gcloud auth print-access-token)"
 
-gcloud beta monitoring channels create --channel-content-from-file="email-channel.json"
+if gcloud monitoring uptime list-configs --project="$PROJECT_ID" | grep -q "Lamp Uptime Check"; then
+  echo "${YELLOW_TEXT}${BOLD_TEXT}Uptime check already exists. Skipping creation.${RESET_FORMAT}"
+else
+  curl -s -X POST \
+    -H "Authorization: Bearer $ACCESS_TOKEN" \
+    -H "Content-Type: application/json" \
+    "https://monitoring.googleapis.com/v3/projects/${PROJECT_ID}/uptimeCheckConfigs" \
+    -d @"$UPTIME_FILE" >/dev/null
+  echo "${GREEN_TEXT}${BOLD_TEXT}Uptime check created successfully.${RESET_FORMAT}"
+fi
 
+echo "${MAGENTA_TEXT}${BOLD_TEXT}Creating alert policy for network traffic...${RESET_FORMAT}"
 
-
-echo "${CYAN_TEXT}${BOLD_TEXT}Fetching channel ID...${RESET_FORMAT}"
-
-# Run the gcloud command and store the output in a variable
-channel_info=$(gcloud beta monitoring channels list)
-
-# Extract the channel ID using grep and awk
-channel_id=$(echo "$channel_info" | grep -oP 'name: \K[^ ]+' | head -n 1)
-
-echo "${MAGENTA_TEXT}${BOLD_TEXT}Creating an alert policy for network traffic...${RESET_FORMAT}"
-
-cat > app-engine-error-percent-policy.json <<EOF_END
+cat > "$POLICY_FILE" <<EOF
 {
   "displayName": "Inbound Traffic Alert",
-  "userLabels": {},
+  "combiner": "OR",
   "conditions": [
     {
-      "displayName": "VM Instance - Network traffic",
+      "displayName": "High Network Traffic",
       "conditionThreshold": {
-        "filter": "resource.type = \"gce_instance\" AND metric.type = \"agent.googleapis.com/interface/traffic\"",
+        "filter": "metric.type=\"agent.googleapis.com/interface/traffic\" resource.type=\"gce_instance\"",
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 500,
+        "duration": "60s",
         "aggregations": [
           {
-            "alignmentPeriod": "300s",
-            "crossSeriesReducer": "REDUCE_NONE",
+            "alignmentPeriod": "60s",
             "perSeriesAligner": "ALIGN_RATE"
           }
         ],
-        "comparison": "COMPARISON_GT",
-        "duration": "60s",
         "trigger": {
           "count": 1
-        },
-        "thresholdValue": 500
+        }
       }
     }
   ],
-  "alertStrategy": {},
-  "combiner": "OR",
-  "enabled": true,
-  "notificationChannels": [
-    "$channel_id"
-  ],
-  "severity": "SEVERITY_UNSPECIFIED"
+  "enabled": true
 }
-EOF_END
+EOF
 
-
-gcloud alpha monitoring policies create --policy-from-file="app-engine-error-percent-policy.json"
-
-
-INSTANCE_ID=$(gcloud compute instances describe lamp-1-vm --zone=$ZONE --format='value(id)')
-
-gcloud monitoring uptime create lamp-uptime-check \
-  --resource-type="gce-instance" \
-  --resource-labels=project_id=$DEVSHELL_PROJECT_ID,instance_id=$INSTANCE_ID,zone=$ZONE
+if gcloud monitoring policies list --format="value(displayName)" | grep -q "^Inbound Traffic Alert$"; then
+  echo "${YELLOW_TEXT}${BOLD_TEXT}Alert policy already exists. Skipping creation.${RESET_FORMAT}"
+else
+  gcloud monitoring policies create --policy-from-file="$POLICY_FILE"
+fi
 
 echo
 echo "${GREEN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
 echo "${GREEN_TEXT}${BOLD_TEXT}              LAB COMPLETED SUCCESSFULLY!              ${RESET_FORMAT}"
 echo "${GREEN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
-
+echo
+echo "${CYAN_TEXT}${BOLD_TEXT}Project ID : ${PROJECT_ID}${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}VM Name    : ${VM_NAME}${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}External IP: ${VM_IP}${RESET_FORMAT}"
+echo
+echo "${BLUE_TEXT}${UNDERLINE_TEXT}http://${VM_IP}${RESET_FORMAT}"
+echo
+echo
+echo
+echo
+echo
 echo
 echo "${BLUE_TEXT}${UNDERLINE_TEXT}https://eplus.dev${RESET_FORMAT}"
-echo
