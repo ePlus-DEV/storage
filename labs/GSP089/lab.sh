@@ -32,8 +32,8 @@ echo "${BLUE_TEXT}${BOLD_TEXT}=======================================${RESET_FOR
 echo
 
 PROJECT_ID="${DEVSHELL_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
-REGION="europe-west4"
-ZONE="europe-west4-c"
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 VM_NAME="lamp-1-vm"
 UPTIME_NAME="lamp-uptime-check"
 POLICY_FILE="alert-policy.json"
