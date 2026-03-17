@@ -27,6 +27,8 @@ echo "${BOLD}${BLUE}▶ Enabling required APIs (Compute, Dataproc)...${RESET}"
 gcloud services enable compute.googleapis.com dataproc.googleapis.com
 
 # ----- Prompt for REGION (mandatory) -----
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+
 while :; do
   read -rp "Enter REGION (e.g., us-central1): " REGION
   REGION="${REGION:-}"
