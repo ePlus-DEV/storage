@@ -29,22 +29,7 @@ gcloud services enable compute.googleapis.com dataproc.googleapis.com
 # ----- Prompt for REGION (mandatory) -----
 export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
-while :; do
-  read -rp "Enter REGION (e.g., us-central1): " REGION
-  REGION="${REGION:-}"
-  if [[ -z "$REGION" ]]; then
-    echo "${RED}REGION cannot be empty.${RESET}"
-    continue
-  fi
-  if gcloud compute regions describe "$REGION" >/dev/null 2>&1; then
-    break
-  else
-    echo "${RED}Region '$REGION' is not valid or not available. Available regions:${RESET}"
-    gcloud compute regions list --format='value(name)'
-  fi
-done
-
-ZONE="${REGION}-a"
+export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 
 echo "${BOLD}${BLUE}▶ Setting gcloud properties (compute & dataproc region/zone)...${RESET}"
 gcloud config set project "${PROJECT_ID}" >/dev/null
