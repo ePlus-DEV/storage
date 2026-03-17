@@ -36,6 +36,17 @@ RANDOM_BG_COLOR=${BG_COLORS[$RANDOM % ${#BG_COLORS[@]}]}
 
 echo "${RANDOM_BG_COLOR}${RANDOM_TEXT_COLOR}${BOLD}Starting Execution - ePlus.DEV${RESET}"
 
+CLUSTER_NAME="example-cluster"
+
+run_cmd() {
+    "$@"
+    local status=$?
+    if [ $status -ne 0 ]; then
+        echo "${RED}${BOLD}Command failed:${RESET} $*"
+        exit $status
+    fi
+}
+
 # Step 1: Set Compute Zone
 echo "${BOLD}${BLUE}Setting Compute Zone${RESET}"
 export ZONE=$(gcloud compute project-info describe \
@@ -46,49 +57,102 @@ echo "${BOLD}${GREEN}Setting Compute Region${RESET}"
 export REGION=$(gcloud compute project-info describe \
 --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
+# Fallback in case default region is empty
+if [[ -z "$REGION" && -n "$ZONE" ]]; then
+    REGION="${ZONE%-*}"
+fi
+
 # Step 3: Get Project Number
 echo "${BOLD}${YELLOW}Getting Project Number${RESET}"
 export PROJECT_NUMBER="$(gcloud projects describe $DEVSHELL_PROJECT_ID --format='get(projectNumber)')"
 
-# Step 4: Grant Storage Admin Role
+echo "${CYAN}${BOLD}Project:${RESET} $DEVSHELL_PROJECT_ID"
+echo "${CYAN}${BOLD}Project Number:${RESET} $PROJECT_NUMBER"
+echo "${CYAN}${BOLD}Region:${RESET} $REGION"
+echo "${CYAN}${BOLD}Zone:${RESET} $ZONE"
+
+# Step 4: Enable required APIs
+echo "${BOLD}${MAGENTA}Enabling Required APIs${RESET}"
+run_cmd gcloud services enable dataproc.googleapis.com compute.googleapis.com storage.googleapis.com
+
+# Step 5: Grant Storage Admin Role
 echo "${BOLD}${MAGENTA}Granting Storage Admin Role to Compute Service Account${RESET}"
 gcloud projects add-iam-policy-binding $DEVSHELL_PROJECT_ID \
     --member serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com \
-    --role roles/storage.objectAdmin
+    --role roles/storage.objectAdmin --quiet >/dev/null
 
-# Step 5: Grant Dataproc Worker Role
+# Step 6: Grant Dataproc Worker Role
 echo "${BOLD}${CYAN}Granting Dataproc Worker Role to Compute Service Account${RESET}"
 gcloud projects add-iam-policy-binding $DEVSHELL_PROJECT_ID \
     --member serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com \
-    --role roles/dataproc.worker
+    --role roles/dataproc.worker --quiet >/dev/null
 
-# Step 6: Create Dataproc Cluster
-echo "${BOLD}${RED}Creating Dataproc Cluster${RESET}"
-gcloud dataproc clusters create example-cluster \
-    --enable-component-gateway \
-    --region $REGION \
-    --zone $ZONE \
-    --master-machine-type e2-standard-2 \
-    --master-boot-disk-size 30 \
-    --num-workers 2 \
-    --worker-machine-type e2-standard-2 \
-    --worker-boot-disk-size 30 \
-    --image-version 2.2-debian12 \
-    --project $DEVSHELL_PROJECT_ID
+# Wait for IAM propagation
+echo "${BOLD}${YELLOW}Waiting for IAM propagation${RESET}"
+sleep 20
 
-# Step 7: Submit Spark Job
+# Step 7: Check existing cluster
+echo "${BOLD}${BLUE}Checking Existing Dataproc Cluster${RESET}"
+EXISTING_STATE=$(gcloud dataproc clusters describe "$CLUSTER_NAME" \
+    --region "$REGION" \
+    --format="value(status.state)" 2>/dev/null)
+
+if [[ -n "$EXISTING_STATE" ]]; then
+    echo "${YELLOW}${BOLD}Cluster already exists with state:${RESET} $EXISTING_STATE"
+
+    if [[ "$EXISTING_STATE" == "ERROR" || "$EXISTING_STATE" == "CREATING" || "$EXISTING_STATE" == "DELETING" || "$EXISTING_STATE" == "UPDATING" ]]; then
+        echo "${RED}${BOLD}Deleting unusable cluster:${RESET} $CLUSTER_NAME"
+        run_cmd gcloud dataproc clusters delete "$CLUSTER_NAME" \
+            --region "$REGION" \
+            --quiet
+        EXISTING_STATE=""
+    fi
+fi
+
+# Step 8: Create Dataproc Cluster if needed
+if [[ -z "$EXISTING_STATE" ]]; then
+    echo "${BOLD}${RED}Creating Dataproc Cluster${RESET}"
+    run_cmd gcloud dataproc clusters create "$CLUSTER_NAME" \
+        --enable-component-gateway \
+        --region "$REGION" \
+        --zone "$ZONE" \
+        --master-machine-type e2-standard-2 \
+        --master-boot-disk-size 30 \
+        --num-workers 2 \
+        --worker-machine-type e2-standard-2 \
+        --worker-boot-disk-size 30 \
+        --image-version 2.2-debian12 \
+        --project "$DEVSHELL_PROJECT_ID"
+else
+    echo "${GREEN}${BOLD}Using existing healthy cluster:${RESET} $CLUSTER_NAME"
+fi
+
+# Step 9: Verify cluster status
+echo "${BOLD}${GREEN}Verifying Cluster Status${RESET}"
+CURRENT_STATE=$(gcloud dataproc clusters describe "$CLUSTER_NAME" \
+    --region "$REGION" \
+    --format="value(status.state)")
+
+echo "${CYAN}${BOLD}Current cluster state:${RESET} $CURRENT_STATE"
+
+if [[ "$CURRENT_STATE" != "RUNNING" ]]; then
+    echo "${RED}${BOLD}Cluster is not RUNNING. Current state:${RESET} $CURRENT_STATE"
+    exit 1
+fi
+
+# Step 10: Submit Spark Job
 echo "${BOLD}${BLUE}Submitting Spark Job to Cluster${RESET}"
-gcloud dataproc jobs submit spark \
-    --cluster example-cluster \
-    --region $REGION \
+run_cmd gcloud dataproc jobs submit spark \
+    --cluster "$CLUSTER_NAME" \
+    --region "$REGION" \
     --class org.apache.spark.examples.SparkPi \
     --jars file:///usr/lib/spark/examples/jars/spark-examples.jar \
     -- 1000
 
-# Step 8: Update Cluster Worker Count
+# Step 11: Update Cluster Worker Count
 echo "${BOLD}${GREEN}Updating Cluster to Increase Number of Workers${RESET}"
-gcloud dataproc clusters update example-cluster \
-    --region $REGION \
+run_cmd gcloud dataproc clusters update "$CLUSTER_NAME" \
+    --region "$REGION" \
     --num-workers 4
 
 echo
@@ -165,7 +229,7 @@ function random_congrats() {
 # Display a random congratulatory message
 random_congrats
 
-echo -e "\n"  # Adding one blank line
+echo -e "\n"
 
 cd
 
