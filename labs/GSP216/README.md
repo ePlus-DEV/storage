@@ -1,3 +1,3 @@
-# Create an Internal Load Balancer - GSP216
+# Enhance Application Reliability and Scalability with Internal Load Balancing - GSP216
 
-<https://eplus.dev/application-load-balancer-with-cloud-armor-gsp215>
+<https://eplus.dev/enhance-application-reliability-and-scalability-with-internal-load-balancing-gsp216>
