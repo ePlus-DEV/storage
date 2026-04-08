@@ -63,8 +63,8 @@ download_with_retry() {
 }
 
 # 4️⃣ Download latest notebooks with retry
-download_with_retry "https://raw.githubusercontent.com/ePlus-DEV/storage/main/labs/GSP785/measuring-accuracy.ipynb" "measuring-accuracy.ipynb"
-download_with_retry "https://raw.githubusercontent.com/ePlus-DEV/storage/main/labs/GSP785/notebook_template.ipynb" "notebook_template.ipynb"
+download_with_retry "https://raw.githubusercontent.com/ePlus-DEV/storage/main/labs/GSP758/measuring-accuracy.ipynb" "measuring-accuracy.ipynb"
+download_with_retry "https://raw.githubusercontent.com/ePlus-DEV/storage/main/labs/GSP758/notebook_template.ipynb" "notebook_template.ipynb"
 
 # 5️⃣ Replace project and region in all notebooks
 for FILE in measuring-accuracy.ipynb notebook_template.ipynb; do
