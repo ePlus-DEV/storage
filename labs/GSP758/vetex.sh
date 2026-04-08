@@ -15,6 +15,11 @@ CYAN="\e[36m"
 BOLD="\e[1m"
 RESET="\e[0m"
 
+# Clone
+gsutil cp gs://spls/gsp758/notebook/measuring-accuracy.ipynb .
+gsutil cp gs://spls/gsp758/notebook/simple_wer_v2.py .
+
+
 # 1️⃣ Detect project and region
 PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
 LOCATION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
