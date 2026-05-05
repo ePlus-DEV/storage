@@ -1,227 +1,212 @@
 #!/bin/bash
-# ============================================
-# 🌟 Google Cloud IAP Deployment Script
-# ✅ Updated to use Python 3.11 (python311)
-# ============================================
 
-# Define color variables
-BLACK=`tput setaf 0`
-RED=`tput setaf 1`
-GREEN=`tput setaf 2`
-YELLOW=`tput setaf 3`
-BLUE=`tput setaf 4`
-MAGENTA=`tput setaf 5`
-CYAN=`tput setaf 6`
-WHITE=`tput setaf 7`
+set -e
 
-BG_BLACK=`tput setab 0`
-BG_RED=`tput setab 1`
-BG_GREEN=`tput setab 2`
-BG_YELLOW=`tput setab 3`
-BG_BLUE=`tput setab 4`
-BG_MAGENTA=`tput setab 5`
-BG_CYAN=`tput setab 6`
-BG_WHITE=`tput setab 7`
+# =========================
+# Colors
+# =========================
+RED='\033[0;91m'
+GREEN='\033[0;92m'
+YELLOW='\033[0;93m'
+BLUE='\033[0;94m'
+CYAN='\033[0;96m'
+BOLD='\033[1m'
+NC='\033[0m'
 
-COLORS=(
-  "$(tput setaf 1)"  # Red
-  "$(tput setaf 2)"  # Green
-  "$(tput setaf 3)"  # Yellow
-  "$(tput setaf 4)"  # Blue
-  "$(tput setaf 5)"  # Magenta
-  "$(tput setaf 6)"  # Cyan
-)
+clear
 
-CREATE_MESSAGES=(
-  "Time to register your app: "
-  "Let's begin by creating OAuth consent credentials: "
-  "Set up your client app in Google Cloud: "
-  "Start by defining your OAuth screen here: "
-)
+echo -e "${CYAN}${BOLD}============================================================${NC}"
+echo -e "${CYAN}${BOLD}        User Authentication with IAP - ePlus.DEV       ${NC}"
+echo -e "${CYAN}${BOLD}============================================================${NC}"
+echo ""
 
-IAP_MESSAGES=(
-  "Now head over to configure IAP: "
-  "Enable and manage IAP settings below: "
-  "Secure your app with Identity-Aware Proxy: "
-  "Next stop: IAP console "
-)
+PROJECT_ID="$(gcloud config get-value project 2>/dev/null)"
+ACCOUNT="$(gcloud config get-value account 2>/dev/null)"
+APP_URL="https://${PROJECT_ID}.appspot.com"
 
-BOLD=`tput bold`
-RESET=`tput sgr0`
+if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then
+  echo -e "${RED}Project ID not found. Please make sure Cloud Shell is using the correct lab project.${NC}"
+  exit 1
+fi
 
-TEXT_COLORS=($RED $GREEN $YELLOW $BLUE $MAGENTA $CYAN)
-BG_COLORS=($BG_RED $BG_GREEN $BG_YELLOW $BG_BLUE $BG_MAGENTA $BG_CYAN)
+if [[ -z "$ACCOUNT" || "$ACCOUNT" == "(unset)" ]]; then
+  echo -e "${RED}Active account not found. Please run: gcloud auth list${NC}"
+  exit 1
+fi
 
-RANDOM_TEXT_COLOR=${TEXT_COLORS[$RANDOM % ${#TEXT_COLORS[@]}]}
-RANDOM_BG_COLOR=${BG_COLORS[$RANDOM % ${#BG_COLORS[@]}]}
+echo -e "${GREEN}Project:${NC} $PROJECT_ID"
+echo -e "${GREEN}Account:${NC} $ACCOUNT"
+echo -e "${GREEN}App URL:${NC} $APP_URL"
+echo ""
 
-#----------------------------------------------------start--------------------------------------------------#
+# =========================
+# Enable APIs
+# =========================
+echo -e "${BLUE}Enabling required APIs...${NC}"
+gcloud services enable \
+  appengine.googleapis.com \
+  iap.googleapis.com \
+  cloudbuild.googleapis.com \
+  --quiet
 
-echo "${RANDOM_BG_COLOR}${RANDOM_TEXT_COLOR}${BOLD}Starting Execution - ePlus.DEV${RESET}"
+# Lab note:
+# Disable App Engine Flex API before enabling IAP for App Engine.
+# This avoids the missing Flex service account issue in some lab projects.
+echo -e "${BLUE}Disabling App Engine Flex API if it is enabled...${NC}"
+gcloud services disable appengineflex.googleapis.com --quiet || true
 
-# Step 0: set compute region
-echo "${BOLD}${GREEN}Setting compute region...${RESET}"
-export REGION=$(gcloud compute project-info describe \
---format="value(commonInstanceMetadata.items[google-compute-default-region])")
+# =========================
+# Create App Engine app if needed
+# =========================
+echo -e "${BLUE}Checking App Engine application...${NC}"
+if ! gcloud app describe --project="$PROJECT_ID" >/dev/null 2>&1; then
+  echo -e "${YELLOW}App Engine application does not exist. Creating it in us-central...${NC}"
+  gcloud app create --region=us-central --project="$PROJECT_ID" --quiet
+else
+  echo -e "${GREEN}App Engine application already exists.${NC}"
+fi
 
-# Step 1: Enable IAP API
-echo "${BOLD}${RED}Enabling IAP API...${RESET}"
-gcloud services enable iap.googleapis.com
+# =========================
+# Download source code
+# =========================
+echo -e "${BLUE}Downloading lab source code...${NC}"
+cd "$HOME"
+rm -rf user-authentication-with-iap user-authentication-with-iap.zip
 
-# Step 2: Download sample application
-echo "${BOLD}${GREEN}Downloading sample application...${RESET}"
 gsutil cp gs://spls/gsp499/user-authentication-with-iap.zip .
+unzip -q user-authentication-with-iap.zip
 
-# Step 3: Unzip the downloaded file
-echo "${BOLD}${YELLOW}Unzipping the application package...${RESET}"
-unzip user-authentication-with-iap.zip
+# =========================
+# Helper deploy function
+# =========================
+deploy_step() {
+  local STEP_DIR="$1"
+  local STEP_NAME="$2"
 
-# Step 4: Navigate to HelloWorld directory
-echo "${BOLD}${BLUE}Navigating to 1-HelloWorld directory...${RESET}"
-cd user-authentication-with-iap/1-HelloWorld
+  echo ""
+  echo -e "${CYAN}${BOLD}============================================================${NC}"
+  echo -e "${CYAN}${BOLD}Deploying ${STEP_NAME}${NC}"
+  echo -e "${CYAN}${BOLD}============================================================${NC}"
 
-# Step 5: Enable Flex API
-echo "${BOLD}${RED}Enabling Flex API...${RESET}"
-gcloud services enable appengineflex.googleapis.com
+  cd "$HOME/user-authentication-with-iap/${STEP_DIR}"
 
-# Step 6: Modify app.yaml for Python 3.11
-echo "${BOLD}${GREEN}Updating app.yaml to Python 3.11...${RESET}"
-sed -i 's/python37/python311/g' app.yaml
-sed -i 's/python39/python311/g' app.yaml
-
-# Step 7: Create App Engine app
-echo "${BOLD}${MAGENTA}Creating App Engine application...${RESET}"
-gcloud app create --region=$REGION
-
-# Step 8: Deploy HelloWorld application with retry
-echo "${BOLD}${RED}Deploying HelloWorld application...${RESET}"
-deploy_function() {
-  yes | gcloud app deploy
-}
-
-deploy_success=false
-while [ "$deploy_success" = false ]; do
-  if deploy_function; then
-    echo "${BOLD}${GREEN}Function deployed successfully...${RESET}"
-    deploy_success=true
-  else
-    echo "${BOLD}${YELLOW}Retrying deployment in 10 seconds...${RESET}"
-    sleep 10
+  if [[ -f app.yaml ]]; then
+    sed -i 's/python37/python313/g' app.yaml
   fi
-done
 
-# Step 9: Navigate to 2-HelloUser
-echo "${BOLD}${MAGENTA}Navigating to 2-HelloUser...${RESET}"
-cd ~/user-authentication-with-iap/2-HelloUser
+  gcloud app deploy app.yaml --quiet
 
-# Step 10: Modify app.yaml for Python 3.11
-echo "${BOLD}${GREEN}Updating app.yaml to Python 3.11...${RESET}"
-sed -i 's/python37/python311/g' app.yaml
-sed -i 's/python39/python311/g' app.yaml
-
-# Step 11: Deploy 2-HelloUser application with retry
-echo "${BOLD}${RED}Deploying 2-HelloUser application...${RESET}"
-deploy_function() {
-  yes | gcloud app deploy
+  echo -e "${GREEN}Finished deploying ${STEP_NAME}.${NC}"
+  echo -e "${GREEN}Open app:${NC} $APP_URL"
 }
 
-deploy_success=false
-while [ "$deploy_success" = false ]; do
-  if deploy_function; then
-    echo "${BOLD}${GREEN}Function deployed successfully...${RESET}"
-    deploy_success=true
-  else
-    echo "${BOLD}${YELLOW}Retrying deployment in 10 seconds...${RESET}"
-    sleep 10
-  fi
-done
+# =========================
+# Task 1 - Hello World
+# =========================
+deploy_step "1-HelloWorld" "Task 1 - HelloWorld"
 
-# Step 12: Navigate to 3-HelloVerifiedUser
-echo "${BOLD}${MAGENTA}Navigating to 3-HelloVerifiedUser...${RESET}"
-cd ~/user-authentication-with-iap/3-HelloVerifiedUser
+echo ""
+echo -e "${YELLOW}${BOLD}TASK 1 CHECKPOINT${NC}"
+echo -e "${YELLOW}Open the URL below and verify the Hello World page:${NC}"
+echo -e "${CYAN}$APP_URL${NC}"
+echo ""
+echo -e "${YELLOW}Then click 'Check my progress' for:${NC}"
+echo -e "${YELLOW}- Deploy an App Engine application${NC}"
+echo ""
 
-# Step 13: Modify app.yaml for Python 3.11
-echo "${BOLD}${GREEN}Updating app.yaml to Python 3.11...${RESET}"
-sed -i 's/python37/python311/g' app.yaml
-sed -i 's/python39/python311/g' app.yaml
+# =========================
+# Add current student account to IAP role
+# =========================
+echo -e "${BLUE}Adding the current student account to the IAP-Secured Web App User role...${NC}"
 
-# Step 14: Deploy 3-HelloUser application with retry
-echo "${BOLD}${RED}Deploying 3-HelloUser application...${RESET}"
-deploy_function() {
-  yes | gcloud app deploy
-}
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="user:${ACCOUNT}" \
+  --role="roles/iap.httpsResourceAccessor" \
+  --quiet >/dev/null
 
-deploy_success=false
-while [ "$deploy_success" = false ]; do
-  if deploy_function; then
-    echo "${BOLD}${GREEN}Function deployed successfully...${RESET}"
-    deploy_success=true
-  else
-    echo "${BOLD}${YELLOW}Retrying deployment in 10 seconds...${RESET}"
-    sleep 10
-  fi
-done
+echo -e "${GREEN}IAP access role has been added for:${NC} $ACCOUNT"
 
-# Step 15: Generate application details JSON
-echo "${BOLD}${BLUE}Generating application details JSON...${RESET}"
-EMAIL="$(gcloud config get-value core/account 2>/dev/null)"
-LINK=$(gcloud app browse 2>/dev/null | grep -o 'https://.*')
-LINKU=${LINK#https://}
-PROJECT_ID="$DEVSHELL_PROJECT_ID"
+# =========================
+# Try to enable IAP from gcloud
+# =========================
+echo ""
+echo -e "${BLUE}Trying to enable IAP for App Engine using gcloud...${NC}"
 
-cat > details.json << EOF
-{
-  "App name": "IAP Example",
-  "Application home page": "$LINK",
-  "Application privacy Policy link": "$LINK/privacy",
-  "Authorized domains": "$LINKU",
-  "Developer Contact Information": "$EMAIL"
-}
-EOF
+set +e
+IAP_ENABLE_OUTPUT="$(gcloud iap web enable --resource-type=app-engine --versions=default 2>&1)"
+IAP_ENABLE_STATUS=$?
+set -e
 
-jq -r 'to_entries[] | "\(.key): \(.value)"' details.json | while IFS=: read -r key value; do
-  COLOR=${COLORS[$RANDOM % ${#COLORS[@]}]}
-  printf "${BOLD}${COLOR}%-35s${RESET}: %s\n" "$key" "$value"
-done
+if [[ $IAP_ENABLE_STATUS -eq 0 ]]; then
+  echo -e "${GREEN}IAP was enabled successfully using gcloud.${NC}"
+else
+  echo -e "${YELLOW}IAP could not be fully enabled using gcloud in this lab environment.${NC}"
+  echo -e "${YELLOW}This usually happens because the OAuth consent screen has not been configured yet.${NC}"
+  echo ""
+  echo -e "${CYAN}${BOLD}Please complete these steps manually in the Google Cloud Console:${NC}"
+  echo ""
+  echo -e "1. Go to: ${BOLD}Security > Identity-Aware Proxy${NC}"
+  echo -e "2. If asked to configure the OAuth consent screen:"
+  echo -e "   - App name: ${BOLD}IAP Example${NC}"
+  echo -e "   - Audience: ${BOLD}Internal${NC}"
+  echo -e "   - User support email: ${BOLD}${ACCOUNT}${NC}"
+  echo -e "   - Contact email: ${BOLD}${ACCOUNT}${NC}"
+  echo -e "   - Agree to the User Data Policy"
+  echo -e "   - Click ${BOLD}Create${NC}"
+  echo -e "3. Return to the Identity-Aware Proxy page and refresh it."
+  echo -e "4. Turn ON IAP for the ${BOLD}App Engine app${NC} row."
+  echo -e "5. Select the checkbox next to ${BOLD}App Engine app${NC}."
+  echo -e "6. Click ${BOLD}Add Principal${NC}."
+  echo -e "7. Principal: ${BOLD}${ACCOUNT}${NC}"
+  echo -e "8. Role: ${BOLD}Cloud IAP > IAP-Secured Web App User${NC}"
+  echo -e "9. Click ${BOLD}Save${NC}"
+  echo ""
+  echo -e "${YELLOW}gcloud error details:${NC}"
+  echo "$IAP_ENABLE_OUTPUT"
+fi
 
-# OAuth client creation
-echo
-RANDOM_MSG1=${CREATE_MESSAGES[$RANDOM % ${#CREATE_MESSAGES[@]}]}
-COLOR1=${COLORS[$RANDOM % ${#COLORS[@]}]}
-echo "${BOLD}${COLOR1}${RANDOM_MSG1}${RESET}""https://console.cloud.google.com/auth/branding?project=$DEVSHELL_PROJECT_ID"
+echo ""
+echo -e "${YELLOW}${BOLD}TASK 1 IAP CHECKPOINT${NC}"
+echo -e "${YELLOW}After enabling IAP and adding the principal, click 'Check my progress' for:${NC}"
+echo -e "${YELLOW}- Enable and add policy to IAP${NC}"
+echo ""
 
-# IAP configuration
-echo
-RANDOM_MSG2=${IAP_MESSAGES[$RANDOM % ${#IAP_MESSAGES[@]}]}
-COLOR2=${COLORS[$RANDOM % ${#COLORS[@]}]}
-echo "${BOLD}${COLOR2}${RANDOM_MSG2}${RESET}""https://console.cloud.google.com/security/iap?project=$DEVSHELL_PROJECT_ID"
+read -p "After finishing the Task 1 / IAP checkpoint in the Console, press Enter to continue with Task 2..."
 
-# Congratulatory message
-function random_congrats() {
-    MESSAGES=(
-        "${GREEN}Congratulations! You’ve successfully completed the lab!${RESET}"
-        "${CYAN}Well done! Your hard work has paid off!${RESET}"
-        "${YELLOW}Amazing job! You’re awesome!${RESET}"
-        "${BLUE}Outstanding! Your dedication shows!${RESET}"
-        "${MAGENTA}Great work! You’ve mastered it!${RESET}"
-    )
-    RANDOM_INDEX=$((RANDOM % ${#MESSAGES[@]}))
-    echo -e "${BOLD}${MESSAGES[$RANDOM_INDEX]}"
-}
+# =========================
+# Task 2 - Hello User
+# =========================
+deploy_step "2-HelloUser" "Task 2 - HelloUser"
 
-random_congrats
-echo -e "\n"
+echo ""
+echo -e "${YELLOW}${BOLD}TASK 2 CHECKPOINT${NC}"
+echo -e "${YELLOW}Open the app and verify that your email and persistent user ID are displayed:${NC}"
+echo -e "${CYAN}$APP_URL${NC}"
+echo ""
+echo -e "${YELLOW}Then click 'Check my progress' for:${NC}"
+echo -e "${YELLOW}- Access User Identity Information${NC}"
+echo ""
 
-# Cleanup temp files
-cd
-remove_files() {
-    for file in *; do
-        if [[ "$file" == gsp* || "$file" == arc* || "$file" == shell* ]]; then
-            if [[ -f "$file" ]]; then
-                rm "$file"
-                echo "File removed: $file"
-            fi
-        fi
-    done
-}
-remove_files
+read -p "After finishing the Task 2 checkpoint, press Enter to continue with Task 3..."
+
+# =========================
+# Task 3 - Hello Verified User
+# =========================
+deploy_step "3-HelloVerifiedUser" "Task 3 - HelloVerifiedUser"
+
+echo ""
+echo -e "${YELLOW}${BOLD}TASK 3 CHECKPOINT${NC}"
+echo -e "${YELLOW}If you turned IAP off earlier for testing, turn it back on now.${NC}"
+echo -e "${YELLOW}Refresh the app and verify the Verified User information:${NC}"
+echo -e "${CYAN}$APP_URL${NC}"
+echo ""
+echo -e "${YELLOW}Then click 'Check my progress' for:${NC}"
+echo -e "${YELLOW}- Use Cryptographic Verification${NC}"
+
+echo ""
+echo -e "${GREEN}${BOLD}============================================================${NC}"
+echo -e "${GREEN}${BOLD}Lab script finished.${NC}" - ePlus.DEV
+echo -e "${GREEN}${BOLD}============================================================${NC}"
+echo -e "${GREEN}App URL:${NC} $APP_URL"
+echo -e "${GREEN}Student account:${NC} $ACCOUNT"
+echo ""
