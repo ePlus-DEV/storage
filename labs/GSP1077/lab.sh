@@ -184,7 +184,7 @@ git push google master
 
 rm cloudbuild.yaml
 
-curl -LO raw.githubusercontent.com/quiccklabs/Labs_solutions/refs/heads/master/Google%20Kubernetes%20Engine%20Pipeline%20using%20Cloud%20Build/app-cloudbuild.yaml
+curl -LO raw.githubusercontent.com/ePlus-DEV/storage/refs/heads/main/labs/GSP1077/app-cloudbuild.yaml
 
 mv app-cloudbuild.yaml cloudbuild.yaml
 
