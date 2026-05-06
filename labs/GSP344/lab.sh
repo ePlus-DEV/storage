@@ -1,32 +1,69 @@
 #!/bin/bash
 set -e
 
+# =========================
 # Colors
-GREEN='\033[0;32m'
-CYAN='\033[0;36m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
+# =========================
+RED=$'\033[0;91m'
+GREEN=$'\033[0;92m'
+YELLOW=$'\033[0;93m'
+CYAN=$'\033[0;96m'
+BOLD=$'\033[1m'
+NC=$'\033[0m'
 
-echo -e "${CYAN}=================================================${NC}"
-echo -e "${GREEN} Starting Execution - ePlus.DEV ${NC}"
-echo -e "${CYAN}=================================================${NC}"
+clear
 
+echo "${CYAN}${BOLD}============================================================${NC}"
+echo "${GREEN}${BOLD} Starting Execution - ePlus.DEV ${NC}"
+echo "${CYAN}${BOLD}============================================================${NC}"
+echo ""
+
+# =========================
+# Helper functions
+# =========================
+ask_yes() {
+  echo ""
+  echo "${YELLOW}${BOLD}$1${NC}"
+  read -p "Type y to continue: " CONFIRM
+  if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+    echo "${RED}Stopped by user.${NC}"
+    exit 0
+  fi
+}
+
+check_progress_from_task5() {
+  echo ""
+  echo "${YELLOW}${BOLD}Please click 'Check my progress' now.${NC}"
+  read -p "After checking, type y to continue: " CONFIRM
+  if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+    echo "${RED}Stopped by user.${NC}"
+    exit 0
+  fi
+}
+
+# =========================
+# Config
+# =========================
 PROJECT_ID=$(gcloud projects list --format='value(PROJECT_ID)' --filter='qwiklabs-gcp' | head -n 1)
 REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 REPO="rest-api-repo"
 
 if [ -z "$PROJECT_ID" ]; then
-  echo -e "${RED}Cannot detect Qwiklabs project ID.${NC}"
+  echo "${RED}Cannot detect Qwiklabs project ID.${NC}"
   exit 1
 fi
 
 gcloud config set project "$PROJECT_ID"
 
-echo -e "${YELLOW}Project:${NC} $PROJECT_ID"
-echo -e "${YELLOW}Region:${NC} $REGION"
+echo "${GREEN}Project ID:${NC} $PROJECT_ID"
+echo "${GREEN}Region:${NC} $REGION"
+echo "${GREEN}Artifact Registry Repo:${NC} $REPO"
+echo ""
 
-echo -e "${CYAN}Enabling required services...${NC}"
+# =========================
+# Enable APIs
+# =========================
+echo "${CYAN}${BOLD}Enabling required services...${NC}"
 gcloud services enable \
   run.googleapis.com \
   cloudbuild.googleapis.com \
@@ -34,9 +71,14 @@ gcloud services enable \
   firestore.googleapis.com \
   appengine.googleapis.com
 
-echo -e "${CYAN}Task 1: Creating Firestore database in Native mode...${NC}"
+# =========================
+# Task 1
+# =========================
+echo ""
+echo "${CYAN}${BOLD}Task 1: Create Firestore database${NC}"
+
 if gcloud firestore databases describe --database="(default)" >/dev/null 2>&1; then
-  echo -e "${GREEN}Firestore database already exists. Skipping.${NC}"
+  echo "${GREEN}Firestore database already exists. Skipping.${NC}"
 else
   gcloud firestore databases create \
     --database="(default)" \
@@ -48,33 +90,60 @@ else
     --type=firestore-native
 fi
 
-echo -e "${CYAN}Cloning pet-theory repository...${NC}"
+echo "${GREEN}Task 1 done. No manual check pause here.${NC}"
+
+# =========================
+# Clone repo
+# =========================
+echo ""
+echo "${CYAN}${BOLD}Clone / update pet-theory repository${NC}"
+
 cd "$HOME"
-if [ ! -d "pet-theory" ]; then
-  git clone https://github.com/rosera/pet-theory.git
-else
-  echo -e "${GREEN}Repo already exists. Pulling latest...${NC}"
-  cd pet-theory
+
+if [ -d "$HOME/pet-theory" ]; then
+  echo "${YELLOW}Folder ~/pet-theory already exists. Resetting repo automatically...${NC}"
+  cd "$HOME/pet-theory"
+  git reset --hard
+  git clean -fd
   git pull || true
-  cd "$HOME"
+else
+  git clone https://github.com/rosera/pet-theory.git
 fi
 
-echo -e "${CYAN}Task 2: Importing Netflix CSV into Firestore...${NC}"
+# =========================
+# Task 2
+# =========================
+echo ""
+echo "${CYAN}${BOLD}Task 2: Import Netflix CSV into Firestore${NC}"
+
 cd "$HOME/pet-theory/lab06/firebase-import-csv/solution"
+
 npm install
 node index.js netflix_titles_original.csv
 
-echo -e "${CYAN}Creating Artifact Registry repository...${NC}"
+echo "${GREEN}Task 2 done. No manual check pause here.${NC}"
+
+# =========================
+# Artifact Registry
+# =========================
+echo ""
+echo "${CYAN}${BOLD}Create Artifact Registry repository${NC}"
+
 if gcloud artifacts repositories describe "$REPO" --location="$REGION" >/dev/null 2>&1; then
-  echo -e "${GREEN}Artifact Registry repo already exists. Skipping.${NC}"
+  echo "${GREEN}Artifact Registry repository already exists. Skipping.${NC}"
 else
   gcloud artifacts repositories create "$REPO" \
     --repository-format=docker \
     --location="$REGION" \
-    --description="Docker repository for Netflix lab"
+    --description="Docker repository for Netflix Firestore lab"
 fi
 
-echo -e "${CYAN}Task 3: Building and deploying REST API v0.1...${NC}"
+# =========================
+# Task 3
+# =========================
+echo ""
+echo "${CYAN}${BOLD}Task 3: Build and deploy REST API v0.1${NC}"
+
 cd "$HOME/pet-theory/lab06/firebase-rest-api/solution-01"
 
 REST_IMAGE_V01="$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/rest-api:0.1"
@@ -93,12 +162,20 @@ SERVICE_URL=$(gcloud run services describe netflix-dataset-service \
   --region "$REGION" \
   --format='value(status.url)')
 
-echo -e "${GREEN}REST API URL:${NC} $SERVICE_URL"
-echo -e "${CYAN}Testing REST API v0.1...${NC}"
-curl -s -X GET "$SERVICE_URL"
+echo ""
+echo "${GREEN}REST API v0.1 URL:${NC} $SERVICE_URL"
+echo "${CYAN}Testing REST API v0.1:${NC}"
+curl -s "$SERVICE_URL"
 echo ""
 
-echo -e "${CYAN}Task 4: Building and deploying REST API v0.2 with Firestore access...${NC}"
+echo "${GREEN}Task 3 done. No manual check pause here.${NC}"
+
+# =========================
+# Task 4
+# =========================
+echo ""
+echo "${CYAN}${BOLD}Task 4: Build and deploy REST API v0.2${NC}"
+
 cd "$HOME/pet-theory/lab06/firebase-rest-api/solution-02"
 
 REST_IMAGE_V02="$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/rest-api:0.2"
@@ -117,109 +194,121 @@ SERVICE_URL=$(gcloud run services describe netflix-dataset-service \
   --region "$REGION" \
   --format='value(status.url)')
 
-echo -e "${GREEN}REST API v0.2 URL:${NC} $SERVICE_URL"
-echo -e "${CYAN}Testing REST API v0.2 with /2019...${NC}"
-curl -s "$SERVICE_URL/2019" | head -c 500
+echo ""
+echo "${GREEN}REST API v0.2 URL:${NC} $SERVICE_URL"
+echo "${CYAN}Testing REST API v0.2 with /2019:${NC}"
+curl -s "$SERVICE_URL/2019" | head -c 800
 echo ""
 echo ""
 
-echo -e "${CYAN}Task 5: Deploying staging frontend...${NC}"
+echo "${GREEN}Task 4 done. No manual check pause here.${NC}"
+
+# =========================
+# Task 5
+# =========================
+echo ""
+echo "${CYAN}${BOLD}Task 5: Deploy staging frontend${NC}"
+
 cd "$HOME/pet-theory/lab06/firebase-frontend"
 
-FRONTEND_STAGING_IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/frontend-staging:0.1"
+echo "${YELLOW}Reset frontend app.js before staging to keep demo dataset.${NC}"
+git checkout -- public/app.js || true
 
-gcloud builds submit \
-  --tag "$FRONTEND_STAGING_IMAGE" \
-  --build-arg REST_API_SERVICE="$SERVICE_URL" \
-  . || gcloud builds submit --tag "$FRONTEND_STAGING_IMAGE" .
+echo "${CYAN}Checking staging app.js references:${NC}"
+grep -nE "REST_API_SERVICE|data/netflix|fetch" public/app.js || true
+
+STAGING_IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/frontend-staging:0.1"
+
+gcloud builds submit --tag "$STAGING_IMAGE" .
 
 gcloud run deploy frontend-staging-service \
-  --image "$FRONTEND_STAGING_IMAGE" \
+  --image "$STAGING_IMAGE" \
   --region "$REGION" \
   --platform managed \
   --allow-unauthenticated \
   --max-instances=1 \
-  --set-env-vars REST_API_SERVICE="$SERVICE_URL" \
   --quiet
 
 STAGING_URL=$(gcloud run services describe frontend-staging-service \
   --region "$REGION" \
   --format='value(status.url)')
 
-echo -e "${GREEN}Staging Frontend URL:${NC} $STAGING_URL"
+echo ""
+echo "${GREEN}Staging Frontend URL:${NC} $STAGING_URL"
 
-echo -e "${CYAN}Task 6: Updating app.js for production frontend...${NC}"
+check_progress_from_task5
+
+# =========================
+# Task 6
+# =========================
+echo ""
+echo "${CYAN}${BOLD}Task 6: Deploy production frontend${NC}"
+
 cd "$HOME/pet-theory/lab06/firebase-frontend/public"
 
-# Backup original app.js
-cp app.js app.js.bak
+ask_yes "This will patch public/app.js for production. Backup will be saved as app.js.before-production."
 
-# Try to replace common demo/local API patterns with the real REST API service URL.
-# The production frontend must call SERVICE_URL + /year, for example: https://xxx.run.app/2019
+cp app.js app.js.before-production
+
+PROD_API_URL="${SERVICE_URL}/2020"
+
+echo "${GREEN}Production API URL to inject:${NC} $PROD_API_URL"
+
 python3 <<PY
 from pathlib import Path
+import re
+
 p = Path("app.js")
 text = p.read_text()
-service_url = "$SERVICE_URL"
+prod_api_url = "$PROD_API_URL"
 
-# Replace obvious placeholders / demo API references if they exist.
-replacements = [
-    ("https://example.com", service_url),
-    ("http://localhost:8080", service_url),
-    ("http://localhost:8081", service_url),
-    ("REST_API_SERVICE", service_url),
-    ("SERVICE_URL", service_url),
-]
+pattern_const = r'const\s+REST_API_SERVICE\s*=\s*["\\'][^"\\']*["\\'];'
 
-for old, new in replacements:
-    text = text.replace(old, new)
-
-# If app.js still contains demo/static JSON logic, append an override fetch function.
-# This keeps the script safe even if the lab file differs slightly.
-override = f'''
-
-// Auto-added for production lab deployment
-const REST_API_SERVICE_AUTO = "{service_url}";
-
-async function getNetflixDataByYearAuto(year) {{
-  const response = await fetch(`${{REST_API_SERVICE_AUTO}}/${{year}}`);
-  return await response.json();
-}}
-'''
-
-if service_url not in text:
-    text += override
+if re.search(pattern_const, text):
+    text = re.sub(
+        pattern_const,
+        f'const REST_API_SERVICE = "{prod_api_url}";',
+        text
+    )
+elif "data/netflix.json" in text:
+    text = text.replace("data/netflix.json", prod_api_url)
+else:
+    text = f'const REST_API_SERVICE = "{prod_api_url}";\\n' + text
 
 p.write_text(text)
 PY
 
+echo ""
+echo "${CYAN}After patch, app.js references:${NC}"
+grep -nE "REST_API_SERVICE|data/netflix|run.app|fetch" app.js || true
+
 cd "$HOME/pet-theory/lab06/firebase-frontend"
 
-FRONTEND_PROD_IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/frontend-production:0.1"
+PROD_IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/frontend-production:0.1"
 
-gcloud builds submit \
-  --tag "$FRONTEND_PROD_IMAGE" \
-  --build-arg REST_API_SERVICE="$SERVICE_URL" \
-  . || gcloud builds submit --tag "$FRONTEND_PROD_IMAGE" .
+gcloud builds submit --tag "$PROD_IMAGE" .
 
 gcloud run deploy frontend-production-service \
-  --image "$FRONTEND_PROD_IMAGE" \
+  --image "$PROD_IMAGE" \
   --region "$REGION" \
   --platform managed \
   --allow-unauthenticated \
   --max-instances=1 \
-  --set-env-vars REST_API_SERVICE="$SERVICE_URL" \
   --quiet
 
 PROD_URL=$(gcloud run services describe frontend-production-service \
   --region "$REGION" \
   --format='value(status.url)')
 
-echo -e "${CYAN}=================================================${NC}"
-echo -e "${GREEN}Lab deployment completed.${NC}"
-echo -e "${CYAN}=================================================${NC}"
-echo -e "${GREEN}REST API:${NC} $SERVICE_URL"
-echo -e "${GREEN}Test API:${NC} $SERVICE_URL/2019"
-echo -e "${GREEN}Staging Frontend:${NC} $STAGING_URL"
-echo -e "${GREEN}Production Frontend:${NC} $PROD_URL"
-echo -e "${YELLOW}Now click Check my progress for each task.${NC}"
+echo ""
+echo "${CYAN}${BOLD}============================================================${NC}"
+echo "${GREEN}${BOLD}All tasks completed.${NC}"
+echo "${CYAN}${BOLD}============================================================${NC}"
+echo "${GREEN}REST API:${NC} $SERVICE_URL"
+echo "${GREEN}REST API Test 2019:${NC} $SERVICE_URL/2019"
+echo "${GREEN}REST API Test 2020:${NC} $SERVICE_URL/2020"
+echo "${GREEN}Staging Frontend:${NC} $STAGING_URL"
+echo "${GREEN}Production Frontend:${NC} $PROD_URL"
+echo "${CYAN}${BOLD}============================================================${NC}"
+echo ""
+echo "${YELLOW}${BOLD}Now click Check my progress for Task 6.${NC}"
