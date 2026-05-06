@@ -9,7 +9,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 echo -e "${CYAN}=================================================${NC}"
-echo -e "${GREEN} ePlus.DEV ${NC}"
+echo -e "${GREEN} Starting Execution - ePlus.DEV ${NC}"
 echo -e "${CYAN}=================================================${NC}"
 
 PROJECT_ID=$(gcloud projects list --format='value(PROJECT_ID)' --filter='qwiklabs-gcp' | head -n 1)
