@@ -14,11 +14,11 @@ npm install @google-cloud/firestore
 npm install @google-cloud/logging
 
 
-curl hhttps://raw.githubusercontent.com/ePlus-DEV/storage/blob/main/labs/GSP642/createTestData.js > importTestData.js
+curl https://raw.githubusercontent.com/ePlus-DEV/storage/refs/heads/main/labs/GSP642/createTestData.js > importTestData.js
 
 npm install faker@5.5.3
 
-curl hhttps://raw.githubusercontent.com/ePlus-DEV/storage/blob/main/labs/GSP642/importTestData.js > createTestData.js 
+curl https://raw.githubusercontent.com/ePlus-DEV/storage/refs/heads/main/labs/GSP642/importTestData.js > createTestData.js 
 
 
 node createTestData 1000
