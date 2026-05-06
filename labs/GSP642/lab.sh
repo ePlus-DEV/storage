@@ -14,11 +14,11 @@ npm install @google-cloud/firestore
 npm install @google-cloud/logging
 
 
-curl https://raw.githubusercontent.com/quiccklabs/Labs_solutions/master/Importing%20Data%20to%20a%20Firestore%20Database/importTestData.js > importTestData.js
+curl hhttps://raw.githubusercontent.com/ePlus-DEV/storage/blob/main/labs/GSP642/createTestData.js > importTestData.js
 
 npm install faker@5.5.3
 
-curl https://raw.githubusercontent.com/quiccklabs/Labs_solutions/master/Importing%20Data%20to%20a%20Firestore%20Database/createTestData.js > createTestData.js 
+curl hhttps://raw.githubusercontent.com/ePlus-DEV/storage/blob/main/labs/GSP642/importTestData.js > createTestData.js 
 
 
 node createTestData 1000
