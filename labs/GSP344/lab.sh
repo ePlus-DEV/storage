@@ -13,7 +13,7 @@ echo -e "${GREEN} ePlus.DEV ${NC}"
 echo -e "${CYAN}=================================================${NC}"
 
 PROJECT_ID=$(gcloud projects list --format='value(PROJECT_ID)' --filter='qwiklabs-gcp' | head -n 1)
-REGION="us-west1"
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 REPO="rest-api-repo"
 
 if [ -z "$PROJECT_ID" ]; then
