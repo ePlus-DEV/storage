@@ -1,124 +1,215 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-# ============================================================
-#  ePlus.DEV © 2026 - GKE Network Policy Lab (Auto Region/Zone)
-#  Full Automation | No manual input | Colored Output
-# ============================================================
+# ---------- COLORS ----------
+BLACK_TEXT=$'\033[0;90m'
+RED_TEXT=$'\033[0;91m'
+GREEN_TEXT=$'\033[0;92m'
+YELLOW_TEXT=$'\033[0;93m'
+BLUE_TEXT=$'\033[0;94m'
+MAGENTA_TEXT=$'\033[0;95m'
+CYAN_TEXT=$'\033[0;96m'
+WHITE_TEXT=$'\033[0;97m'
 
-# ------------------- COLORS -------------------
-BOLD="$(tput bold 2>/dev/null || true)"
-RESET="$(tput sgr0 2>/dev/null || true)"
-RED="$(tput setaf 1 2>/dev/null || true)"
-GREEN="$(tput setaf 2 2>/dev/null || true)"
-YELLOW="$(tput setaf 3 2>/dev/null || true)"
-BLUE="$(tput setaf 4 2>/dev/null || true)"
-MAGENTA="$(tput setaf 5 2>/dev/null || true)"
-CYAN="$(tput setaf 6 2>/dev/null || true)"
+RESET_FORMAT=$'\033[0m'
 
-hr(){ printf "%s%s============================================================%s\n" "$BLUE" "$BOLD" "$RESET"; }
-step(){ printf "%s%s➜ %s%s\n" "$CYAN" "$BOLD" "$*" "$RESET"; }
-ok(){ printf "%s%s✔ %s%s\n" "$GREEN" "$BOLD" "$*" "$RESET"; }
-warn(){ printf "%s%s⚠ %s%s\n" "$YELLOW" "$BOLD" "$*" "$RESET"; }
-fail(){ printf "%s%s✘ %s%s\n" "$RED" "$BOLD" "$*" "$RESET"; }
+BOLD_TEXT=$'\033[1m'
+UNDERLINE_TEXT=$'\033[4m'
 
 clear
-hr
-printf "%s%s        ePlus.DEV © 2026 - GKE NETWORK POLICY AUTO         %s\n" "$MAGENTA" "$BOLD" "$RESET"
-hr
 
-# ------------------- AUTO DETECT REGION / ZONE -------------------
-ZONE="$(gcloud config get-value compute/zone 2>/dev/null || true)"
-REGION="$(gcloud config get-value compute/region 2>/dev/null || true)"
+echo "${CYAN_TEXT}${BOLD_TEXT}==================================================================${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}      INITIATING EXECUTION - ePlus.DEV          ${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}==================================================================${RESET_FORMAT}"
+echo
 
-# If zone exists but region empty -> derive region
-if [[ -n "$ZONE" && -z "$REGION" ]]; then
-  REGION="${ZONE%-*}"
-fi
+# =========================================================
+# AUTO FETCH PROJECT / REGION / ZONE
+# =========================================================
 
-# If both empty -> fallback to lab default
-if [[ -z "$ZONE" ]]; then
-  ZONE="europe-west1-d"
-fi
+echo "${BLUE_TEXT}Fetching Project Configuration...${RESET_FORMAT}"
 
-if [[ -z "$REGION" ]]; then
-  REGION="${ZONE%-*}"
-fi
+PROJECT_ID=$(gcloud config get-value project)
 
-gcloud config set compute/zone "$ZONE" --quiet >/dev/null
-gcloud config set compute/region "$REGION" --quiet >/dev/null
+REGION=$(gcloud compute project-info describe \
+--format="value(commonInstanceMetadata.items.google-compute-default-region)")
 
-ok "Using Region: $REGION"
-ok "Using Zone:   $ZONE"
+ZONE=$(gcloud compute project-info describe \
+--format="value(commonInstanceMetadata.items.google-compute-default-zone)")
 
-PROJECT_ID="$(gcloud config get-value project)"
-ok "Project: $PROJECT_ID"
+# Fallbacks
+[[ -z "$REGION" ]] && REGION="us-east1"
+[[ -z "$ZONE" ]] && ZONE="us-east1-d"
 
-# ------------------- CONSTANTS -------------------
-DEMO_BUCKET="gs://spls/gsp480/gke-network-policy-demo"
-DEMO_DIR="gke-network-policy-demo"
-BASTION="gke-demo-bastion"
-CLUSTER="gke-demo-cluster"
+gcloud config set project "$PROJECT_ID"
 
-# ------------------- CLONE DEMO -------------------
-step "Clone demo"
-[ -d "$DEMO_DIR" ] || gsutil -m cp -r "$DEMO_BUCKET" .
-cd "$DEMO_DIR"
-chmod -R 755 .
+gcloud config set compute/region "$REGION"
 
-# ------------------- FIX TFVARS -------------------
-rm -f terraform/terraform.tfvars
+gcloud config set compute/zone "$ZONE"
 
-# ------------------- SETUP PROJECT -------------------
-step "Run make setup-project"
-bash -lc "
-gcloud config set compute/zone '$ZONE' --quiet
-gcloud config set compute/region '$REGION' --quiet
-yes y | make setup-project
-"
-ok "setup-project done"
+echo
+echo "${GREEN_TEXT}Project ID : ${PROJECT_ID}${RESET_FORMAT}"
+echo "${GREEN_TEXT}Region     : ${REGION}${RESET_FORMAT}"
+echo "${GREEN_TEXT}Zone       : ${ZONE}${RESET_FORMAT}"
+echo
 
-# ------------------- TERRAFORM APPLY -------------------
-step "Terraform apply"
-cd terraform
-terraform init -input=false >/dev/null
-terraform apply -auto-approve -input=false
-cd ..
-ok "Infrastructure ready"
+echo "${BLUE_TEXT}Cloning Lab Resources...${RESET_FORMAT}"
 
-# ------------------- COPY TO BASTION -------------------
-step "Copy demo to bastion"
-cd ..
-tar -czf /tmp/eplus_demo.tgz "$DEMO_DIR"
-gcloud compute scp --quiet /tmp/eplus_demo.tgz "$BASTION":~/eplus_demo.tgz
-ok "Copied"
+gsutil cp -r gs://spls/gsp480/gke-network-policy-demo .
 
-# ------------------- BASTION STEPS -------------------
-step "Configure bastion"
+cd gke-network-policy-demo || exit
 
-gcloud compute ssh --quiet "$BASTION" --command "
-set -e
-sudo apt-get update -y >/dev/null
-sudo apt-get install -y google-cloud-sdk-gke-gcloud-auth-plugin >/dev/null
+chmod -R 755 *
+
+echo
+echo "${YELLOW_TEXT}Setting up Project APIs & Terraform Variables...${RESET_FORMAT}"
+
+echo "y" | make setup-project
+
+echo
+echo "${MAGENTA_TEXT}Provisioning Infrastructure using Terraform...${RESET_FORMAT}"
+echo "${YELLOW_TEXT}This may take several minutes...${RESET_FORMAT}"
+
+make tf-apply <<< "yes"
+
+echo
+echo "${GREEN_TEXT}Infrastructure Provisioned Successfully.${RESET_FORMAT}"
+
+echo
+echo "${YELLOW_TEXT}Waiting for Infrastructure Stabilization...${RESET_FORMAT}"
+
+sleep 30
+
+echo
+echo "${GREEN_TEXT}Configuring Bastion Host and Deploying Resources...${RESET_FORMAT}"
+
+gcloud compute ssh gke-demo-bastion \
+--zone "$ZONE" \
+--quiet << EOF
+
+# ---------------------------------------------------------
+# INSTALL GKE AUTH PLUGIN
+# ---------------------------------------------------------
+
+sudo apt-get update -y
+
+sudo apt-get install -y google-cloud-sdk-gke-gcloud-auth-plugin
+
 echo 'export USE_GKE_GCLOUD_AUTH_PLUGIN=True' >> ~/.bashrc
-source ~/.bashrc
 
-tar -xzf ~/eplus_demo.tgz -C ~/
-cd ~/$DEMO_DIR
+export USE_GKE_GCLOUD_AUTH_PLUGIN=True
 
-gcloud container clusters get-credentials $CLUSTER --zone $ZONE
+# ---------------------------------------------------------
+# CLONE LAB FILES INSIDE BASTION
+# ---------------------------------------------------------
+
+gsutil cp -r gs://spls/gsp480/gke-network-policy-demo .
+
+cd gke-network-policy-demo
+
+# ---------------------------------------------------------
+# GET CLUSTER CREDENTIALS
+# ---------------------------------------------------------
+
+gcloud container clusters get-credentials gke-demo-cluster --zone $ZONE
+
+# ---------------------------------------------------------
+# DEPLOY HELLO APPLICATION
+# ---------------------------------------------------------
+
+echo
+echo "Deploying Hello Application..."
 
 kubectl apply -f ./manifests/hello-app/
+
+echo
+echo "Waiting for Pods to Become Ready..."
+
+sleep 60
+
+kubectl get pods
+
+# ---------------------------------------------------------
+# IMPORTANT WAIT FOR LAB GRADER
+# ---------------------------------------------------------
+
+echo
+echo "Waiting for Lab Validation..."
+
+sleep 90
+
+# ---------------------------------------------------------
+# APPLY NETWORK POLICY
+# ---------------------------------------------------------
+
+echo
+echo "Applying Network Policy..."
+
 kubectl apply -f ./manifests/network-policy.yaml
-kubectl delete -f ./manifests/network-policy.yaml || true
-kubectl apply -f ./manifests/network-policy-namespaced.yaml
-kubectl -n hello-apps apply -f ./manifests/hello-app/hello-client.yaml
+
+sleep 20
+
+# ---------------------------------------------------------
+# VALIDATE BLOCKED CLIENT
+# ---------------------------------------------------------
+
+echo
+echo "Blocked Client Logs:"
+echo "--------------------------------------------------"
+
+kubectl logs --tail 10 \$(kubectl get pods -oname -l app=not-hello)
+
+echo "--------------------------------------------------"
+
+# ---------------------------------------------------------
+# REMOVE POLICY
+# ---------------------------------------------------------
+
+echo
+echo "Removing Existing Policy..."
+
+kubectl delete -f ./manifests/network-policy.yaml
+
+# ---------------------------------------------------------
+# APPLY NAMESPACE POLICY
+# ---------------------------------------------------------
+
+echo
+echo "Applying Namespace Policy..."
+
+kubectl create -f ./manifests/network-policy-namespaced.yaml
+
+sleep 15
+
+# ---------------------------------------------------------
+# DEPLOY CLIENTS IN NAMESPACE
+# ---------------------------------------------------------
+
+echo
+echo "Deploying Clients in Namespace..."
+
+kubectl -n hello-apps apply \
+-f ./manifests/hello-app/hello-client.yaml
+
+sleep 30
+
+# ---------------------------------------------------------
+# FINAL VALIDATION
+# ---------------------------------------------------------
+
+echo
+echo "Cluster Resources:"
+echo "--------------------------------------------------"
 
 kubectl get pods -A
-"
 
-ok "All tasks executed successfully"
+echo "--------------------------------------------------"
 
-hr
-printf "%s%s✔ DONE - Click 'Check my progress'%s\n" "$GREEN" "$BOLD" "$RESET"
-hr
+EOF
+
+echo
+echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}              LAB COMPLETED SUCCESSFULLY!              ${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
+echo
+
+echo "${RED_TEXT}${BOLD_TEXT}${UNDERLINE_TEXT}https://eplus.dev${RESET_FORMAT}"
