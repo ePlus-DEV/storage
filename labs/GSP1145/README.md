@@ -1,3 +1,3 @@
-# Create and Add Aspects to Dataplex Assets - GSP1145
+# Create and Add Aspects to Knowledge Catalog Assets - GSP1145
 
-<https://eplus.dev/create-and-add-aspects-to-dataplex-assets-gsp1145>
+<https://eplus.dev/create-and-add-aspects-to-knowledge-catalog-assets-gsp1145>
