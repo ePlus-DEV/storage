@@ -18,14 +18,55 @@ BG_WHITE=`tput setab 7`
 
 BOLD=`tput bold`
 RESET=`tput sgr0`
+
 #----------------------------------------------------start--------------------------------------------------#
 
 echo "${BG_MAGENTA}${BOLD}Starting Execution${RESET}"
+
+ask_required() {
+  local var_name="$1"
+  local label="$2"
+  local value=""
+
+  while [ -z "$value" ]; do
+    echo -ne "${CYAN}${BOLD}${label}: ${RESET}"
+    read value
+
+    if [ -z "$value" ]; then
+      echo "${RED}${BOLD}This field is required. Please enter a value.${RESET}"
+    fi
+  done
+
+  export "$var_name=$value"
+}
+
+echo "${YELLOW}${BOLD}Please enter required lab values:${RESET}"
+
+ask_required VPC_NAME "Enter VPC_NAME"
+ask_required SUBNET_A "Enter SUBNET_A"
+ask_required SUBNET_B "Enter SUBNET_B"
+ask_required FWL_1 "Enter FWL_1"
+ask_required FWL_2 "Enter FWL_2"
+ask_required FWL_3 "Enter FWL_3"
+ask_required ZONE_1 "Enter ZONE_1"
+ask_required ZONE_2 "Enter ZONE_2"
 
 export REGION_1=${ZONE_1%-*}
 export REGION_2=${ZONE_2%-*}
 export VM_1=us-test-01
 export VM_2=us-test-02
+
+echo "${GREEN}${BOLD}Using values:${RESET}"
+echo "VPC_NAME=$VPC_NAME"
+echo "SUBNET_A=$SUBNET_A"
+echo "SUBNET_B=$SUBNET_B"
+echo "FWL_1=$FWL_1"
+echo "FWL_2=$FWL_2"
+echo "FWL_3=$FWL_3"
+echo "ZONE_1=$ZONE_1"
+echo "ZONE_2=$ZONE_2"
+echo "REGION_1=$REGION_1"
+echo "REGION_2=$REGION_2"
 
 gcloud compute networks create $VPC_NAME \
     --project=$DEVSHELL_PROJECT_ID \
@@ -81,21 +122,22 @@ gcloud compute instances create $VM_1 \
     --project=$DEVSHELL_PROJECT_ID \
     --zone=$ZONE_1 \
     --subnet=$SUBNET_A \
-    --tags=allow-icmp
+    --tags=all,allow-icmp
 
 gcloud compute instances create $VM_2 \
     --project=$DEVSHELL_PROJECT_ID \
     --zone=$ZONE_2 \
     --subnet=$SUBNET_B \
-    --tags=allow-icmp
+    --tags=all,allow-icmp
 
 sleep 10
 
 export EXTERNAL_IP2=$(gcloud compute instances describe $VM_2 \
     --zone=$ZONE_2 \
+    --project=$DEVSHELL_PROJECT_ID \
     --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
 
-echo $EXTERNAL_IP2
+echo "${GREEN}${BOLD}VM_2 External IP:${RESET} $EXTERNAL_IP2"
 
 gcloud compute ssh $VM_1 \
     --zone=$ZONE_1 \
