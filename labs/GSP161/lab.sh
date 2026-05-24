@@ -1,195 +1,370 @@
 #!/bin/bash
-# Define color variables
+set -Eeuo pipefail
 
-BLACK=`tput setaf 0`
-RED=`tput setaf 1`
-GREEN=`tput setaf 2`
-YELLOW=`tput setaf 3`
-BLUE=`tput setaf 4`
-MAGENTA=`tput setaf 5`
-CYAN=`tput setaf 6`
-WHITE=`tput setaf 7`
+# -----------------------------
+# ePlus.DEV Cloud Lab Setup Script
+# Fixed version
+# -----------------------------
 
-BG_BLACK=`tput setab 0`
-BG_RED=`tput setab 1`
-BG_GREEN=`tput setab 2`
-BG_YELLOW=`tput setab 3`
-BG_BLUE=`tput setab 4`
-BG_MAGENTA=`tput setab 5`
-BG_CYAN=`tput setab 6`
-BG_WHITE=`tput setab 7`
+# Color variables
+BLACK=$(tput setaf 0 || true)
+RED=$(tput setaf 1 || true)
+GREEN=$(tput setaf 2 || true)
+YELLOW=$(tput setaf 3 || true)
+BLUE=$(tput setaf 4 || true)
+MAGENTA=$(tput setaf 5 || true)
+CYAN=$(tput setaf 6 || true)
+WHITE=$(tput setaf 7 || true)
 
-BOLD=`tput bold`
-RESET=`tput sgr0`
+BG_RED=$(tput setab 1 || true)
+BG_GREEN=$(tput setab 2 || true)
+BG_BLUE=$(tput setab 4 || true)
 
-# Array of color codes excluding black and white
-TEXT_COLORS=($RED $GREEN $YELLOW $BLUE $MAGENTA $CYAN)
-BG_COLORS=($BG_RED $BG_GREEN $BG_YELLOW $BG_BLUE $BG_MAGENTA $BG_CYAN)
+BOLD=$(tput bold || true)
+RESET=$(tput sgr0 || true)
 
-# Pick random colors
+TEXT_COLORS=("$RED" "$GREEN" "$YELLOW" "$BLUE" "$MAGENTA" "$CYAN")
+BG_COLORS=("$BG_RED" "$BG_GREEN" "$BG_BLUE")
+
 RANDOM_TEXT_COLOR=${TEXT_COLORS[$RANDOM % ${#TEXT_COLORS[@]}]}
 RANDOM_BG_COLOR=${BG_COLORS[$RANDOM % ${#BG_COLORS[@]}]}
 
-#----------------------------------------------------start--------------------------------------------------#
+log() {
+  echo "${BOLD}${CYAN}[$(date '+%H:%M:%S')] $*${RESET}"
+}
 
-# Welcome message
-clear
+success() {
+  echo "${BOLD}${GREEN}✅ $*${RESET}"
+}
+
+warn() {
+  echo "${BOLD}${YELLOW}⚠️  $*${RESET}"
+}
+
+error() {
+  echo "${BOLD}${RED}❌ $*${RESET}"
+}
+
+die() {
+  error "$*"
+  exit 1
+}
+
+run() {
+  echo "${BOLD}${BLUE}> $*${RESET}"
+  "$@"
+}
+
+region_from_zone() {
+  echo "$1" | sed 's/-[a-z]$//'
+}
+
+get_vm_zone() {
+  local vm_name="$1"
+
+  gcloud compute instances list \
+    --project="$PROJECT_ID" \
+    --filter="name=($vm_name)" \
+    --format="value(zone)" | awk -F/ 'NR==1{print $NF}'
+}
+
+wait_for_ssh() {
+  local vm_name="$1"
+  local zone="$2"
+
+  log "Waiting for SSH on ${vm_name} (${zone})..."
+
+  for i in {1..20}; do
+    if gcloud compute ssh "$vm_name" \
+      --project="$PROJECT_ID" \
+      --zone="$zone" \
+      --quiet \
+      --command="echo SSH_OK" >/dev/null 2>&1; then
+      success "SSH is ready on ${vm_name}"
+      return 0
+    fi
+
+    echo "Waiting SSH... attempt $i/20"
+    sleep 10
+  done
+
+  die "SSH is not ready on ${vm_name} after waiting."
+}
+
+ensure_subnet_exists() {
+  local region="$1"
+  local subnet="subnet-${region}"
+
+  if ! gcloud compute networks subnets describe "$subnet" \
+    --project="$PROJECT_ID" \
+    --region="$region" >/dev/null 2>&1; then
+    warn "Subnet ${subnet} was not found in region ${region}."
+    echo
+    echo "Available subnets:"
+    gcloud compute networks subnets list \
+      --project="$PROJECT_ID" \
+      --format="table(name,region,network,range)"
+    echo
+    die "Please use a zone whose region has subnet ${subnet}, or create the subnet first."
+  fi
+
+  success "Subnet exists: ${subnet}"
+}
+
+create_instance_if_missing() {
+  local vm_name="$1"
+  local zone="$2"
+  local machine_type="${3:-e2-standard-2}"
+  local tags="${4:-ssh,http,rules}"
+
+  local region
+  region=$(region_from_zone "$zone")
+  local subnet="subnet-${region}"
+
+  ensure_subnet_exists "$region"
+
+  local existing_zone
+  existing_zone=$(get_vm_zone "$vm_name" || true)
+
+  if [[ -n "$existing_zone" ]]; then
+    success "Instance ${vm_name} already exists in zone ${existing_zone}. Skipping create."
+    return 0
+  fi
+
+  log "Creating instance ${vm_name} in ${zone} using ${subnet}"
+
+  run gcloud compute instances create "$vm_name" \
+    --project="$PROJECT_ID" \
+    --zone="$zone" \
+    --subnet="$subnet" \
+    --machine-type="$machine_type" \
+    --tags="$tags"
+
+  local created_zone
+  created_zone=$(get_vm_zone "$vm_name" || true)
+
+  if [[ -z "$created_zone" ]]; then
+    die "Instance ${vm_name} was not created. Please check the error above."
+  fi
+
+  success "Created ${vm_name} in ${created_zone}"
+}
+
+install_tools() {
+  local vm_name="$1"
+
+  local zone
+  zone=$(get_vm_zone "$vm_name" || true)
+
+  if [[ -z "$zone" ]]; then
+    die "Instance ${vm_name} was not found in project ${PROJECT_ID}."
+  fi
+
+  log "Installing tools on ${vm_name} in zone ${zone}"
+
+  cat > prepare_disk.sh <<'EOF_END'
+#!/bin/bash
+set -Eeuo pipefail
+
+sudo apt-get update
+sudo apt-get -y install traceroute mtr tcpdump iperf whois host dnsutils siege
+
+echo "Tools installed successfully."
+EOF_END
+
+  run gcloud compute scp prepare_disk.sh "${vm_name}:/tmp/prepare_disk.sh" \
+    --project="$PROJECT_ID" \
+    --zone="$zone" \
+    --quiet
+
+  run gcloud compute ssh "$vm_name" \
+    --project="$PROJECT_ID" \
+    --zone="$zone" \
+    --quiet \
+    --command="bash /tmp/prepare_disk.sh"
+}
+
+start_iperf_server() {
+  local vm_name="$1"
+
+  local zone
+  zone=$(get_vm_zone "$vm_name" || true)
+
+  if [[ -z "$zone" ]]; then
+    die "Instance ${vm_name} was not found in project ${PROJECT_ID}."
+  fi
+
+  log "Starting iperf server on ${vm_name}"
+
+  cat > prepare_disk.sh <<'EOF_END'
+#!/bin/bash
+set -Eeuo pipefail
+
+nohup iperf -s > ~/iperf-server.log 2>&1 &
+echo "iperf server started."
+EOF_END
+
+  run gcloud compute scp prepare_disk.sh "${vm_name}:/tmp/prepare_disk.sh" \
+    --project="$PROJECT_ID" \
+    --zone="$zone" \
+    --quiet
+
+  run gcloud compute ssh "$vm_name" \
+    --project="$PROJECT_ID" \
+    --zone="$zone" \
+    --quiet \
+    --command="bash /tmp/prepare_disk.sh"
+}
+
+run_iperf_client() {
+  local client_vm="$1"
+  local server_vm="$2"
+
+  local client_zone
+  client_zone=$(get_vm_zone "$client_vm" || true)
+
+  local server_zone
+  server_zone=$(get_vm_zone "$server_vm" || true)
+
+  if [[ -z "$client_zone" ]]; then
+    die "Client instance ${client_vm} was not found."
+  fi
+
+  if [[ -z "$server_zone" ]]; then
+    die "Server instance ${server_vm} was not found."
+  fi
+
+  log "Running iperf client on ${client_vm} to ${server_vm}.${server_zone}"
+
+  cat > prepare_disk.sh <<EOF_END
+#!/bin/bash
+set -Eeuo pipefail
+
+sudo apt-get update
+sudo apt-get -y install traceroute mtr tcpdump iperf whois host dnsutils siege
+
+iperf -c ${server_vm}.${server_zone}
+EOF_END
+
+  run gcloud compute scp prepare_disk.sh "${client_vm}:/tmp/prepare_disk.sh" \
+    --project="$PROJECT_ID" \
+    --zone="$client_zone" \
+    --quiet
+
+  run gcloud compute ssh "$client_vm" \
+    --project="$PROJECT_ID" \
+    --zone="$client_zone" \
+    --quiet \
+    --command="bash /tmp/prepare_disk.sh"
+}
+
+cleanup_local_files() {
+  for file in *; do
+    if [[ "$file" == gsp* || "$file" == arc* || "$file" == shell* ]]; then
+      if [[ -f "$file" ]]; then
+        rm -f "$file"
+        echo "File removed: $file"
+      fi
+    fi
+  done
+
+  rm -f prepare_disk.sh
+}
+
+clear || true
+
 echo "${BG_BLUE}${BOLD}${WHITE}╔════════════════════════════════════════════════════════╗${RESET}"
-echo "${BG_BLUE}${BOLD}${WHITE}   Welcome to ePlus.DEV Cloud Lab Setup Script        ${RESET}"
+echo "${BG_BLUE}${BOLD}${WHITE}   Welcome to ePlus.DEV Cloud Lab Setup Script          ${RESET}"
 echo "${BG_BLUE}${BOLD}${WHITE}╚════════════════════════════════════════════════════════╝${RESET}"
 echo
 echo "${GREEN}${BOLD}This script will help you set up your cloud lab environment${RESET}"
 echo "${CYAN}For more tutorials, visit: https://eplus.dev${RESET}"
 echo
-
 echo "${RANDOM_BG_COLOR}${RANDOM_TEXT_COLOR}${BOLD}Starting Execution${RESET}"
+echo
 
-# Step 1: Get default zone & region
-echo "${BOLD}${BLUE}Getting default zone & region${RESET}"
-export ZONE_1=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+PROJECT_ID="${DEVSHELL_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
 
-export REGION_1=$(gcloud compute project-info describe \
---format="value(commonInstanceMetadata.items[google-compute-default-region])")
+if [[ -z "$PROJECT_ID" ]]; then
+  die "PROJECT_ID is empty. Please run: gcloud config set project YOUR_PROJECT_ID"
+fi
 
-gcloud config set compute/zone $ZONE_1
-gcloud config set compute/region $REGION_1
+gcloud config set project "$PROJECT_ID" >/dev/null
 
-get_and_export_zones() {
-  echo
-  echo "${YELLOW}${BOLD}Please enter values for the following:${RESET}"
+log "Using project: ${PROJECT_ID}"
 
-  echo
-  read -p "$(echo -e "${CYAN}${BOLD}Enter ZONE_2 (e.g., us-central1-a): ${RESET}")" ZONE_2
-  export ZONE_2=$ZONE_2
-  REGION_2=$(echo "$ZONE_2" | sed 's/-[a-z]$//')
-  export REGION_2=$REGION_2
+ZONE_1=$(gcloud compute project-info describe \
+  --project="$PROJECT_ID" \
+  --format="value(commonInstanceMetadata.items[google-compute-default-zone])" 2>/dev/null || true)
 
-  echo
+REGION_1=$(gcloud compute project-info describe \
+  --project="$PROJECT_ID" \
+  --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null || true)
 
-  read -p "$(echo -e "${CYAN}${BOLD}Enter ZONE_3 (e.g., us-central1-b): ${RESET}")" ZONE_3
-  export ZONE_3=$ZONE_3
-  REGION_3=$(echo "$ZONE_3" | sed 's/-[a-z]$//')
-  export REGION_3=$REGION_3
-  echo
-}
+if [[ -z "$ZONE_1" ]]; then
+  warn "Default zone metadata is empty."
+  read -r -p "$(echo -e "${CYAN}${BOLD}Enter ZONE_1 (e.g., us-west1-b): ${RESET}")" ZONE_1
+fi
 
-get_and_export_zones
+if [[ -z "$REGION_1" ]]; then
+  REGION_1=$(region_from_zone "$ZONE_1")
+fi
 
-# Step 2: Create VM us-test-01
-echo "${BOLD}${BLUE}Creating instance us-test-01${RESET}"
-gcloud compute instances create us-test-01 \
---subnet subnet-$REGION_1 \
---zone $ZONE_1 \
---machine-type e2-standard-2 \
---tags ssh,http,rules
+gcloud config set compute/zone "$ZONE_1" >/dev/null
+gcloud config set compute/region "$REGION_1" >/dev/null
 
-# Step 3: Create VM us-test-02
-echo "${BOLD}${GREEN}Creating instance us-test-02${RESET}"
-gcloud compute instances create us-test-02 \
---subnet subnet-$REGION_2 \
---zone $ZONE_2 \
---machine-type e2-standard-2 \
---tags ssh,http,rules
+echo
+echo "${YELLOW}${BOLD}Please enter values for the following:${RESET}"
+echo
 
-# Step 4: Create VM us-test-03
-echo "${BOLD}${CYAN}Creating instance us-test-03${RESET}"
-gcloud compute instances create us-test-03 \
---subnet subnet-$REGION_3 \
---zone $ZONE_3 \
---machine-type e2-standard-2 \
---tags ssh,http,rules
-
-# Step 5: Create VM us-test-04
-echo "${BOLD}${YELLOW}Creating instance us-test-04${RESET}"
-gcloud compute instances create us-test-04 \
---subnet subnet-$REGION_1 \
---zone $ZONE_1 \
---tags ssh,http
-
-# Step 6: Install tools on us-test-01
-echo "${BOLD}${RED}Installing tools on us-test-01${RESET}"
-cat > prepare_disk.sh <<'EOF_END'
-sudo apt-get update
-sudo apt-get -y install traceroute mtr tcpdump iperf whois host dnsutils siege
-
-timeout 10 traceroute -m 8 www.icann.org
-EOF_END
-
-gcloud compute scp prepare_disk.sh us-test-01:/tmp --project=$DEVSHELL_PROJECT_ID --zone=$ZONE_1 --quiet
-gcloud compute ssh us-test-01 --project=$DEVSHELL_PROJECT_ID --zone=$ZONE_1 --quiet --command="bash /tmp/prepare_disk.sh"
-
-# Step 7: Install tools on us-test-02
-echo "${BOLD}${BLUE}Installing tools on us-test-02${RESET}"
-cat > prepare_disk.sh <<'EOF_END'
-sudo apt-get update
-sudo apt-get -y install traceroute mtr tcpdump iperf whois host dnsutils siege
-
-timeout 10 traceroute -m 8 www.icann.org
-EOF_END
-
-gcloud compute scp prepare_disk.sh us-test-02:/tmp --project=$DEVSHELL_PROJECT_ID --zone=$ZONE_2 --quiet
-gcloud compute ssh us-test-02 --project=$DEVSHELL_PROJECT_ID --zone=$ZONE_2 --quiet --command="bash /tmp/prepare_disk.sh"
-
-# Step 8: Start iperf server on us-test-01
-echo "${BOLD}${GREEN}Starting iperf server on us-test-01${RESET}"
-cat > prepare_disk.sh <<'EOF_END'
-nohup iperf -s > iperf-server.log 2>&1 &
-EOF_END
-
-gcloud compute scp prepare_disk.sh us-test-01:/tmp --project=$DEVSHELL_PROJECT_ID --zone=$ZONE_1 --quiet
-gcloud compute ssh us-test-01 --project=$DEVSHELL_PROJECT_ID --zone=$ZONE_1 --quiet --command="bash /tmp/prepare_disk.sh"
-
-# Step 9: Run iperf client from us-test-02 to us-test-01
-echo "${BOLD}${CYAN}Running iperf client on us-test-02${RESET}"
-cat > prepare_disk.sh <<EOF_END
-sudo apt-get update
-
-sudo apt-get -y install traceroute mtr tcpdump iperf whois host dnsutils siege
-
-iperf -c us-test-01.$ZONE_1 #run in client mode
-EOF_END
-
-gcloud compute scp prepare_disk.sh us-test-02:/tmp --project=$DEVSHELL_PROJECT_ID --zone=$ZONE_2 --quiet
-gcloud compute ssh us-test-02 --project=$DEVSHELL_PROJECT_ID --zone=$ZONE_2 --quiet --command="bash /tmp/prepare_disk.sh"
-
-# Step 10: Install tools on us-test-04
-echo "${BOLD}${MAGENTA}Installing tools on us-test-04${RESET}"
-cat > prepare_disk.sh <<'EOF_END'
-sudo apt-get update
-
-sudo apt-get -y install traceroute mtr tcpdump iperf whois host dnsutils siege
-EOF_END
-
-gcloud compute scp prepare_disk.sh us-test-04:/tmp --project=$DEVSHELL_PROJECT_ID --zone=$ZONE_1 --quiet
-gcloud compute ssh us-test-04 --project=$DEVSHELL_PROJECT_ID --zone=$ZONE_1 --quiet --command="bash /tmp/prepare_disk.sh"
+read -r -p "$(echo -e "${CYAN}${BOLD}Enter ZONE_2 (e.g., us-central1-a): ${RESET}")" ZONE_2
+REGION_2=$(region_from_zone "$ZONE_2")
 
 echo
 
-# Completion message
+read -r -p "$(echo -e "${CYAN}${BOLD}Enter ZONE_3 (e.g., us-central1-b): ${RESET}")" ZONE_3
+REGION_3=$(region_from_zone "$ZONE_3")
+
+echo
+echo "${BOLD}${MAGENTA}Configuration summary:${RESET}"
+echo "PROJECT_ID = ${PROJECT_ID}"
+echo "ZONE_1     = ${ZONE_1}"
+echo "REGION_1   = ${REGION_1}"
+echo "ZONE_2     = ${ZONE_2}"
+echo "REGION_2   = ${REGION_2}"
+echo "ZONE_3     = ${ZONE_3}"
+echo "REGION_3   = ${REGION_3}"
+echo
+
+ensure_subnet_exists "$REGION_1"
+ensure_subnet_exists "$REGION_2"
+ensure_subnet_exists "$REGION_3"
+
+create_instance_if_missing "us-test-01" "$ZONE_1" "e2-standard-2" "ssh,http,rules"
+create_instance_if_missing "us-test-02" "$ZONE_2" "e2-standard-2" "ssh,http,rules"
+create_instance_if_missing "us-test-03" "$ZONE_3" "e2-standard-2" "ssh,http,rules"
+create_instance_if_missing "us-test-04" "$ZONE_1" "e2-standard-2" "ssh,http"
+
+wait_for_ssh "us-test-01" "$(get_vm_zone us-test-01)"
+wait_for_ssh "us-test-02" "$(get_vm_zone us-test-02)"
+wait_for_ssh "us-test-04" "$(get_vm_zone us-test-04)"
+
+install_tools "us-test-01"
+install_tools "us-test-02"
+
+start_iperf_server "us-test-01"
+run_iperf_client "us-test-02" "us-test-01"
+
+install_tools "us-test-04"
+
 echo
 echo "${BG_GREEN}${BOLD}${BLACK}╔════════════════════════════════════════════════════════╗${RESET}"
-echo "${BG_GREEN}${BOLD}${BLACK}   Congratulations! Lab Setup Completed Successfully!      ${RESET}"
+echo "${BG_GREEN}${BOLD}${BLACK}   Congratulations! Lab Setup Completed Successfully!   ${RESET}"
 echo "${BG_GREEN}${BOLD}${BLACK}╚════════════════════════════════════════════════════════╝${RESET}"
 echo
 echo "${MAGENTA}${BOLD}Thank you for using ePlus.DEV Cloud Lab Setup Script${RESET}"
 echo "${CYAN}${BOLD}For more tutorials and cloud computing content, subscribe to:${RESET}"
-echo "${BLUE}${UNDERLINE}https://eplus.dev${RESET}"
+echo "${BLUE}https://eplus.dev${RESET}"
 echo
 
-# Cleanup function
-remove_files() {
-    # Loop through all files in the current directory
-    for file in *; do
-        # Check if the file name starts with "gsp", "arc", or "shell"
-        if [[ "$file" == gsp* || "$file" == arc* || "$file" == shell* ]]; then
-            # Check if it's a regular file (not a directory)
-            if [[ -f "$file" ]]; then
-                # Remove the file and echo the file name
-                rm "$file"
-                echo "File removed: $file"
-            fi
-        fi
-    done
-}
-
-remove_files
+cleanup_local_files
