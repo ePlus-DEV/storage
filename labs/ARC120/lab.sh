@@ -3,6 +3,7 @@
 # ==============================
 # ePlus.DEV - GCP Challenge Lab
 # Cloud Storage + VM + Disk + NGINX
+# Using gcloud storage instead of gsutil
 # ==============================
 
 BLACK=`tput setaf 0`
@@ -53,12 +54,14 @@ echo ""
 # ------------------------------
 # Step 2: Create Cloud Storage bucket
 # ------------------------------
-echo "${BLUE}${BOLD}[2/6] Creating Cloud Storage bucket...${RESET}"
+echo "${BLUE}${BOLD}[2/6] Creating Cloud Storage bucket using gcloud storage...${RESET}"
 
-if gsutil ls -b "gs://${BUCKET_NAME}" >/dev/null 2>&1; then
+if gcloud storage buckets describe "gs://${BUCKET_NAME}" >/dev/null 2>&1; then
   echo "${YELLOW}[SKIP] Bucket already exists: gs://${BUCKET_NAME}${RESET}"
 else
-  gsutil mb -l US "gs://${BUCKET_NAME}"
+  gcloud storage buckets create "gs://${BUCKET_NAME}" \
+    --location="US"
+
   echo "${GREEN}[OK] Bucket created: gs://${BUCKET_NAME}${RESET}"
 fi
 
@@ -76,11 +79,6 @@ else
     --zone="${ZONE}" \
     --machine-type="e2-medium" \
     --network-interface=network-tier=PREMIUM,stack-type=IPV4_ONLY,subnet=default \
-    --metadata=startup-script='#!/bin/bash
-apt-get update
-apt-get install -y nginx
-systemctl enable nginx
-systemctl start nginx' \
     --maintenance-policy=MIGRATE \
     --provisioning-model=STANDARD \
     --scopes=https://www.googleapis.com/auth/cloud-platform \
@@ -105,7 +103,7 @@ else
     --target-tags=http-server \
     --description="Allow HTTP traffic on port 80"
 
-  echo "${GREEN}[OK] Firewall rule created.${RESET}"
+  echo "${GREEN}[OK] Firewall rule created: default-allow-http${RESET}"
 fi
 
 echo ""
@@ -126,11 +124,11 @@ else
   echo "${GREEN}[OK] Disk created: ${DISK_NAME}${RESET}"
 fi
 
-ATTACHED_DISKS=$(gcloud compute instances describe "${INSTANCE_NAME}" \
+ATTACHED_DISK=$(gcloud compute instances describe "${INSTANCE_NAME}" \
   --zone="${ZONE}" \
-  --format="value(disks[].source)" | grep "${DISK_NAME}" || true)
+  --format="value(disks[].source)" | grep "/${DISK_NAME}$" || true)
 
-if [ -n "${ATTACHED_DISKS}" ]; then
+if [ -n "${ATTACHED_DISK}" ]; then
   echo "${YELLOW}[SKIP] Disk already attached to ${INSTANCE_NAME}${RESET}"
 else
   gcloud compute instances attach-disk "${INSTANCE_NAME}" \
@@ -143,7 +141,7 @@ fi
 echo ""
 
 # ------------------------------
-# Step 6: Install / verify NGINX
+# Step 6: Install NGINX
 # ------------------------------
 echo "${BLUE}${BOLD}[6/6] Installing and verifying NGINX...${RESET}"
 
@@ -159,10 +157,12 @@ gcloud compute ssh "${INSTANCE_NAME}" \
 
     echo "[VM] Enabling NGINX..."
     sudo systemctl enable nginx
+
+    echo "[VM] Starting NGINX..."
     sudo systemctl restart nginx
 
     echo "[VM] Checking NGINX status..."
-    sudo systemctl status nginx --no-pager || true
+    sudo systemctl is-active nginx
   '
 
 echo ""
@@ -188,4 +188,6 @@ echo ""
 echo "${YELLOW}${BOLD}Open this URL to test NGINX:${RESET}"
 echo "http://${EXTERNAL_IP}/"
 echo ""
-echo "${GREEN}You should see: Welcome to nginx!${RESET}"
+echo "${GREEN}Expected result: Welcome to nginx!${RESET}"
+echo ""
+echo "${MAGENTA}${BOLD}Now click Check my progress for each task.${RESET}"
