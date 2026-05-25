@@ -29,12 +29,7 @@ PROJECT_ID=$(gcloud config get-value project)
 
 echo -e "${YELLOW}Detected Project:${RESET} ${GREEN}$PROJECT_ID${RESET}"
 
-# ❗ Force user to enter zone
-read -p "👉 Please enter your ZONE (e.g., europe-west4-a): " ZONE
-if [ -z "$ZONE" ]; then
-  echo -e "${RED}❌ ERROR: Zone is required. Aborting.${RESET}"
-  exit 1
-fi
+ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 
 echo -e "${GREEN}✅ Zone confirmed:${RESET} $ZONE\n"
 
