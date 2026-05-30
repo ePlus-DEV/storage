@@ -1,108 +1,127 @@
 #!/bin/bash
-# Define color variables
+BLACK_TEXT=$'\033[0;90m'
+RED_TEXT=$'\033[0;91m'
+GREEN_TEXT=$'\033[0;92m'
+YELLOW_TEXT=$'\033[0;93m'
+BLUE_TEXT=$'\033[0;94m'
+MAGENTA_TEXT=$'\033[0;95m'
+CYAN_TEXT=$'\033[0;96m'
+WHITE_TEXT=$'\033[0;97m'
+TEAL_TEXT=$'\033[38;5;50m'
+PURPLE_TEXT=$'\033[0;35m'
+GOLD_TEXT=$'\033[0;33m'
+LIME_TEXT=$'\033[0;92m'
+MAROON_TEXT=$'\033[0;91m'
+NAVY_TEXT=$'\033[0;94m'
 
-BLACK=`tput setaf 0`
-RED=`tput setaf 1`
-GREEN=`tput setaf 2`
-YELLOW=`tput setaf 3`
-BLUE=`tput setaf 4`
-MAGENTA=`tput setaf 5`
-CYAN=`tput setaf 6`
-WHITE=`tput setaf 7`
+BOLD_TEXT=$'\033[1m'
+UNDERLINE_TEXT=$'\033[4m'
+BLINK_TEXT=$'\033[5m'
+NO_COLOR=$'\033[0m'
+RESET_FORMAT=$'\033[0m'
+REVERSE_TEXT=$'\033[7m'
 
-BG_BLACK=`tput setab 0`
-BG_RED=`tput setab 1`
-BG_GREEN=`tput setab 2`
-BG_YELLOW=`tput setab 3`
-BG_BLUE=`tput setab 4`
-BG_MAGENTA=`tput setab 5`
-BG_CYAN=`tput setab 6`
-BG_WHITE=`tput setab 7`
+clear
+# Welcome message
+echo "${CYAN_TEXT}${BOLD_TEXT}==================================================================${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}      ePlus.DEV - INITIATING EXECUTION...  ${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}==================================================================${RESET_FORMAT}"
+echo
 
-BOLD=`tput bold`
-RESET=`tput sgr0`
-#----------------------------------------------------start--------------------------------------------------#
+# Fetching the region
+read -p "${YELLOW_TEXT}${BOLD_TEXT}Enter REGION:${RESET_FORMAT} " REGION
+echo
 
-echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV ${RESET}"
-
+echo "${YELLOW_TEXT}${BOLD_TEXT}Step 1: Authenticating with gcloud...${RESET_FORMAT}"
 gcloud auth list
+echo
 
-REGION=$(gcloud compute project-info describe \
-  --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-
+echo "${YELLOW_TEXT}${BOLD_TEXT}Step 2: Creating 'test' directory...${RESET_FORMAT}"
 mkdir test && cd test
+echo
 
+echo "${YELLOW_TEXT}${BOLD_TEXT}Step 3: Creating Dockerfile...${RESET_FORMAT}"
 cat > Dockerfile <<EOF
-# Use an official Node runtime as the parent image
 FROM node:lts
-
-# Set the working directory in the container to /app
 WORKDIR /app
-
-# Copy the current directory contents into the container at /app
 ADD . /app
-
-# Make the container's port 80 available to the outside world
 EXPOSE 80
-
-# Run app.js using node when the container launches
 CMD ["node", "app.js"]
 EOF
+echo
 
-
-
-cat > app.js << EOF;
+echo "${YELLOW_TEXT}${BOLD_TEXT}Step 4: Creating app.js...${RESET_FORMAT}"
+cat > app.js <<EOF
 const http = require("http");
 
 const hostname = "0.0.0.0";
 const port = 80;
 
 const server = http.createServer((req, res) => {
-	res.statusCode = 200;
-	res.setHeader("Content-Type", "text/plain");
-	res.end("Welcome to Cloud\n");
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "text/plain");
+  res.end("Welcome to Cloud\n");
 });
 
 server.listen(port, hostname, () => {
-	console.log("Server running at http://%s:%s/", hostname, port);
-});
-
-process.on("SIGINT", function () {
-	console.log("Caught interrupt signal and will exit");
-	process.exit();
+  console.log("Server running at http://%s:%s/", hostname, port);
 });
 EOF
+echo
 
+echo "${YELLOW_TEXT}${BOLD_TEXT}Step 5: Building Docker image...${RESET_FORMAT}"
 docker build -t node-app:0.2 .
+echo
 
+echo "${YELLOW_TEXT}${BOLD_TEXT}Step 6: Running Docker container...${RESET_FORMAT}"
 docker run -p 8080:80 --name my-app-2 -d node-app:0.2
+echo
+
+echo "${YELLOW_TEXT}${BOLD_TEXT}Step 7: Listing running containers...${RESET_FORMAT}"
 docker ps
+echo
 
-
-
+echo "${YELLOW_TEXT}${BOLD_TEXT}Step 8: Creating Artifact Registry...${RESET_FORMAT}"
 gcloud artifacts repositories create my-repository \
-    --repository-format=docker \
-    --location=$REGION \
-    --description="Subscribe to quicklab" 
+  --repository-format=docker \
+  --location=$REGION \
+  --description="Docker repository"
+echo
 
+echo "${YELLOW_TEXT}${BOLD_TEXT}Step 9: Configuring Docker auth...${RESET_FORMAT}"
 gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
+echo
 
+DEVSHELL_PROJECT_ID=$(gcloud config get-value project)
+
+echo "${YELLOW_TEXT}${BOLD_TEXT}Step 10: Building image for Artifact Registry...${RESET_FORMAT}"
 docker build -t $REGION-docker.pkg.dev/$DEVSHELL_PROJECT_ID/my-repository/node-app:0.2 .
+echo
 
+echo "${YELLOW_TEXT}${BOLD_TEXT}Step 11: Pushing image to Artifact Registry...${RESET_FORMAT}"
 docker push $REGION-docker.pkg.dev/$DEVSHELL_PROJECT_ID/my-repository/node-app:0.2
+echo
 
+echo "${YELLOW_TEXT}${BOLD_TEXT}Step 12: Cleaning Docker containers and images...${RESET_FORMAT}"
 docker stop $(docker ps -q)
 docker rm $(docker ps -aq)
+docker rmi -f $(docker images -aq)
+echo
 
-docker rmi $REGION-docker.pkg.dev/$DEVSHELL_PROJECT_ID/my-repository/node-app:0.2
-docker rmi node:lts
-docker rmi -f $(docker images -aq) # remove remaining images
-docker images
-
+echo "${YELLOW_TEXT}${BOLD_TEXT}Step 13: Running image from Artifact Registry...${RESET_FORMAT}"
 docker run -p 4000:80 -d $REGION-docker.pkg.dev/$DEVSHELL_PROJECT_ID/my-repository/node-app:0.2
+echo
 
+# Delete script if exists
+SCRIPT_NAME="TechCode.sh"
+if [ -f "$SCRIPT_NAME" ]; then
+  rm -- "$SCRIPT_NAME"
+fi
 
-
-echo "${BG_RED}${BOLD}Congratulations For Completing!!! - ePlus.DEV ${RESET}"
-
-#-----------------------------------------------------end----------------------------------------------------------#
+echo
+echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}              LAB COMPLETED SUCCESSFULLY!              ${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
+echo
+echo "${RED_TEXT}${BOLD_TEXT}${UNDERLINE_TEXT}https://eplus.dev${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}Don't forget to Like, Share and Subscribe for more Videos${RESET_FORMAT}"
