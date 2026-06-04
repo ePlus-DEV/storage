@@ -26,18 +26,9 @@ echo
 echo "${BLUE}${BOLD}⚡ Initializing Load Balancer Configuration...${RESET}"
 echo
 
-# User Input Section
-echo "${GREEN}${BOLD}▬▬▬▬▬▬▬▬▬ ZONE CONFIGURATION ▬▬▬▬▬▬▬▬▬${RESET}"
-read -p "${YELLOW}${BOLD}Enter the ZONE (e.g., us-central1-a): ${RESET}" ZONE
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 
-# Validate Zone Input
-if [[ -z "$ZONE" ]]; then
-  echo "${RED}${BOLD}Error: Zone cannot be empty.${RESET}"
-  exit 1
-fi
-
-export ZONE
-export REGION=${ZONE%-*}
 gcloud config set compute/region $REGION
 gcloud config set compute/zone $ZONE
 
