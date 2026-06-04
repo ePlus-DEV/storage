@@ -123,50 +123,62 @@ gcloud services enable \
 success "Required APIs are enabled."
 
 # ================= CREATE API KEY =================
-step "[2/5] Creating API key automatically"
+step "[2/5] Creating restricted API key automatically"
 
-KEY_DISPLAY_NAME="eplus-lab-api-key"
+KEY_DISPLAY_NAME="API key 3"
 
-EXISTING_KEY_NAME=$(gcloud services api-keys list \
+warn "Creating new API key with Cloud Speech-to-Text API restriction..."
+
+gcloud services enable apikeys.googleapis.com \
   --project="$PROJECT_ID" \
-  --filter="displayName=${KEY_DISPLAY_NAME}" \
+  --quiet
+
+gcloud alpha services api-keys create \
+  --project="$PROJECT_ID" \
+  --display-name="$KEY_DISPLAY_NAME" \
+  --api-target=service=speech.googleapis.com \
+  --quiet
+
+warn "Waiting for API key to become available..."
+sleep 15
+
+KEY_NAME=$(gcloud alpha services api-keys list \
+  --project="$PROJECT_ID" \
+  --filter="displayName='${KEY_DISPLAY_NAME}'" \
   --format="value(name)" \
   --limit=1 2>/dev/null || true)
 
-if [ -n "$EXISTING_KEY_NAME" ]; then
-  info "Existing API key found: ${EXISTING_KEY_NAME}"
+if [ -z "$KEY_NAME" ]; then
+  error "Cannot find created API key."
+  exit 1
+fi
 
-  API_KEY=$(gcloud services api-keys get-key-string "$EXISTING_KEY_NAME" \
+API_KEY=$(gcloud alpha services api-keys get-key-string "$KEY_NAME" \
+  --project="$PROJECT_ID" \
+  --format="value(keyString)" 2>/dev/null || true)
+
+if [ -z "$API_KEY" ]; then
+  warn "Failed to get key string by resource name. Trying to parse from key list..."
+
+  API_KEY=$(gcloud alpha services api-keys list \
     --project="$PROJECT_ID" \
-    --format="value(keyString)" 2>/dev/null || true)
-else
-  warn "Creating new API key..."
-
-  gcloud services api-keys create \
-    --project="$PROJECT_ID" \
-    --display-name="$KEY_DISPLAY_NAME" \
-    --quiet
-
-  sleep 10
-
-  NEW_KEY_NAME=$(gcloud services api-keys list \
-    --project="$PROJECT_ID" \
-    --filter="displayName=${KEY_DISPLAY_NAME}" \
-    --format="value(name)" \
-    --limit=1)
-
-  API_KEY=$(gcloud services api-keys get-key-string "$NEW_KEY_NAME" \
-    --project="$PROJECT_ID" \
-    --format="value(keyString)" 2>/dev/null || true)
+    --filter="displayName='${KEY_DISPLAY_NAME}'" \
+    --format="value(keyString)" \
+    --limit=1 2>/dev/null || true)
 fi
 
 if [ -z "$API_KEY" ]; then
-  error "Cannot create or get API key."
+  error "Cannot create or get API key string."
+  echo "${YELLOW}${BOLD}Please check APIs & Services > Credentials manually.${RESET}"
   exit 1
 fi
 
 export API_KEY
-success "API key is ready."
+echo "$API_KEY" > api_key.txt
+
+info "API key resource: ${KEY_NAME}"
+success "API key is ready and restricted to Cloud Speech-to-Text API."
+success "API key saved to api_key.txt."
 # ==================================================
 
 # ================= GET VM ZONE =================
@@ -240,6 +252,10 @@ vm_warn() {
   echo "${YELLOW}${BOLD}➜ $1${RESET}"
 }
 
+get_access_token() {
+  gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token
+}
+
 echo ""
 echo "${BG_MAGENTA}${WHITE}${BOLD} Running inside lab-vm - © ePlus.DEV ${RESET}"
 
@@ -273,10 +289,13 @@ EOF
 
 vm_info "Calling Text-to-Speech API..."
 
+ACCESS_TOKEN=$(get_access_token)
+
 curl -s -X POST \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
   -H "Content-Type: application/json; charset=utf-8" \
   -d @synthesize-text.json \
-  "https://texttospeech.googleapis.com/v1/text:synthesize?key=${API_KEY}" \
+  "https://texttospeech.googleapis.com/v1/text:synthesize" \
   -o "$task_2_file_name"
 
 vm_info "Creating tts_decode.py..."
@@ -327,7 +346,7 @@ cat > "$task_3_request_file" <<'EOF'
 }
 EOF
 
-vm_info "Calling Cloud Speech-to-Text API..."
+vm_info "Calling Cloud Speech-to-Text API with restricted API key..."
 
 curl -s -X POST \
   -H "Content-Type: application/json; charset=utf-8" \
@@ -342,13 +361,16 @@ vm_step "Task 4: Translate Japanese to English"
 
 vm_info "Translating: ${task_4_sentence}"
 
+ACCESS_TOKEN=$(get_access_token)
+
 curl -s -X POST \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
   -H "Content-Type: application/json; charset=utf-8" \
   --data-urlencode "q=${task_4_sentence}" \
   --data "source=ja" \
   --data "target=en" \
   --data "format=text" \
-  "https://translation.googleapis.com/language/translate/v2?key=${API_KEY}" \
+  "https://translation.googleapis.com/language/translate/v2" \
   -o "$task_4_file"
 
 vm_success "Task 4 completed."
@@ -358,10 +380,13 @@ vm_step "Task 5: Detect language"
 
 vm_info "Detecting language for: ${task_5_sentence}"
 
+ACCESS_TOKEN=$(get_access_token)
+
 curl -s -X POST \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
   -H "Content-Type: application/json; charset=utf-8" \
   --data-urlencode "q=${task_5_sentence}" \
-  "https://translation.googleapis.com/language/translate/v2/detect?key=${API_KEY}" \
+  "https://translation.googleapis.com/language/translate/v2/detect" \
   -o "$task_5_file"
 
 vm_success "Task 5 completed."
