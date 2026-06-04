@@ -24,29 +24,66 @@ BOLD=$(tput bold || true)
 RESET=$(tput sgr0 || true)
 # =================================================
 
-echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV${RESET}"
+banner() {
+  echo ""
+  echo "${BG_MAGENTA}${WHITE}${BOLD}============================================================${RESET}"
+  echo "${BG_MAGENTA}${WHITE}${BOLD}              Google Cloud Speech API Lab                  ${RESET}"
+  echo "${BG_MAGENTA}${WHITE}${BOLD}                    © ePlus.DEV                             ${RESET}"
+  echo "${BG_MAGENTA}${WHITE}${BOLD}============================================================${RESET}"
+  echo ""
+}
 
-# ================= TASK CONFIG =================
-echo "${CYAN}${BOLD}Please enter the required lab values below.${RESET}"
+step() {
+  echo ""
+  echo "${BG_BLUE}${WHITE}${BOLD} $1 ${RESET}"
+}
 
-read -rp "Task 2 output file name: " task_2_file_name
-read -rp "Task 3 request file name: " task_3_request_file
-read -rp "Task 3 response file name: " task_3_response_file
-read -rp "Task 4 Japanese sentence to translate into English: " task_4_sentence
-read -rp "Task 4 output file name: " task_4_file
-read -rp "Task 5 sentence for language detection: " task_5_sentence
-read -rp "Task 5 output file name: " task_5_file
+success() {
+  echo "${GREEN}${BOLD}✔ $1${RESET}"
+}
 
-if [ -z "$task_2_file_name" ] || \
-   [ -z "$task_3_request_file" ] || \
-   [ -z "$task_3_response_file" ] || \
-   [ -z "$task_4_sentence" ] || \
-   [ -z "$task_4_file" ] || \
-   [ -z "$task_5_sentence" ] || \
-   [ -z "$task_5_file" ]; then
-  echo "${RED}${BOLD}ERROR: All fields are required.${RESET}"
-  exit 1
-fi
+info() {
+  echo "${CYAN}${BOLD}ℹ $1${RESET}"
+}
+
+warn() {
+  echo "${YELLOW}${BOLD}➜ $1${RESET}"
+}
+
+error() {
+  echo "${RED}${BOLD}✘ $1${RESET}"
+}
+
+ask_required() {
+  local prompt="$1"
+  local var_name="$2"
+  local value=""
+
+  while true; do
+    read -rp "$prompt" value
+    if [ -n "$value" ]; then
+      printf -v "$var_name" '%s' "$value"
+      break
+    fi
+    echo "${RED}${BOLD}This field is required. Please enter a value.${RESET}"
+  done
+}
+
+banner
+
+# ================= REQUIRED INPUT =================
+step "Required lab values"
+
+echo "${YELLOW}${BOLD}Enter the exact values required by your lab.${RESET}"
+echo ""
+
+ask_required "Task 2 output file name: " task_2_file_name
+ask_required "Task 3 request file name: " task_3_request_file
+ask_required "Task 3 response file name: " task_3_response_file
+ask_required "Task 4 Japanese sentence to translate into English: " task_4_sentence
+ask_required "Task 4 output file name: " task_4_file
+ask_required "Task 5 sentence for language detection: " task_5_sentence
+ask_required "Task 5 output file name: " task_5_file
 
 export task_2_file_name
 export task_3_request_file
@@ -55,19 +92,26 @@ export task_4_sentence
 export task_4_file
 export task_5_sentence
 export task_5_file
-# ===============================================
 
-export PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
-export DEVSHELL_PROJECT_ID="$PROJECT_ID"
+success "All required values have been entered."
+# ==================================================
+
+# ================= PROJECT CONFIG =================
+PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
 
 if [ -z "$PROJECT_ID" ]; then
-  echo "${RED}${BOLD}ERROR: Cannot detect PROJECT_ID.${RESET}"
+  error "Cannot detect PROJECT_ID."
   exit 1
 fi
 
-echo "${CYAN}Project ID: ${PROJECT_ID}${RESET}"
+export PROJECT_ID
+export DEVSHELL_PROJECT_ID="$PROJECT_ID"
 
-echo "${YELLOW}${BOLD}[1/5] Enabling required APIs...${RESET}"
+info "Project ID: ${PROJECT_ID}"
+# ==================================================
+
+step "[1/5] Enabling required APIs"
+
 gcloud services enable \
   speech.googleapis.com \
   texttospeech.googleapis.com \
@@ -76,7 +120,10 @@ gcloud services enable \
   --project="$PROJECT_ID" \
   --quiet
 
-echo "${YELLOW}${BOLD}[2/5] Creating or getting API key automatically...${RESET}"
+success "Required APIs are enabled."
+
+# ================= CREATE API KEY =================
+step "[2/5] Creating API key automatically"
 
 KEY_DISPLAY_NAME="eplus-lab-api-key"
 
@@ -87,38 +134,43 @@ EXISTING_KEY_NAME=$(gcloud services api-keys list \
   --limit=1 2>/dev/null || true)
 
 if [ -n "$EXISTING_KEY_NAME" ]; then
+  info "Existing API key found: ${EXISTING_KEY_NAME}"
+
   API_KEY=$(gcloud services api-keys get-key-string "$EXISTING_KEY_NAME" \
     --project="$PROJECT_ID" \
-    --format="value(keyString)")
+    --format="value(keyString)" 2>/dev/null || true)
 else
-  API_KEY=$(gcloud services api-keys create \
+  warn "Creating new API key..."
+
+  gcloud services api-keys create \
     --project="$PROJECT_ID" \
     --display-name="$KEY_DISPLAY_NAME" \
+    --quiet
+
+  sleep 10
+
+  NEW_KEY_NAME=$(gcloud services api-keys list \
+    --project="$PROJECT_ID" \
+    --filter="displayName=${KEY_DISPLAY_NAME}" \
+    --format="value(name)" \
+    --limit=1)
+
+  API_KEY=$(gcloud services api-keys get-key-string "$NEW_KEY_NAME" \
+    --project="$PROJECT_ID" \
     --format="value(keyString)" 2>/dev/null || true)
-
-  if [ -z "$API_KEY" ]; then
-    sleep 8
-    NEW_KEY_NAME=$(gcloud services api-keys list \
-      --project="$PROJECT_ID" \
-      --filter="displayName=${KEY_DISPLAY_NAME}" \
-      --format="value(name)" \
-      --limit=1)
-
-    API_KEY=$(gcloud services api-keys get-key-string "$NEW_KEY_NAME" \
-      --project="$PROJECT_ID" \
-      --format="value(keyString)")
-  fi
 fi
 
 if [ -z "$API_KEY" ]; then
-  echo "${RED}${BOLD}ERROR: Cannot create or get API key.${RESET}"
+  error "Cannot create or get API key."
   exit 1
 fi
 
 export API_KEY
-echo "${GREEN}API key is ready.${RESET}"
+success "API key is ready."
+# ==================================================
 
-echo "${YELLOW}${BOLD}[3/5] Getting zone of lab-vm...${RESET}"
+# ================= GET VM ZONE =================
+step "[3/5] Getting lab-vm zone"
 
 ZONE=$(gcloud compute instances list \
   --project="$PROJECT_ID" \
@@ -127,21 +179,22 @@ ZONE=$(gcloud compute instances list \
   --limit=1)
 
 if [ -z "$ZONE" ]; then
-  echo "${RED}${BOLD}ERROR: lab-vm not found.${RESET}"
+  error "lab-vm not found."
   exit 1
 fi
 
 export ZONE
-echo "${GREEN}lab-vm zone: ${ZONE}${RESET}"
+success "lab-vm zone: ${ZONE}"
+# ===============================================
 
-echo "${YELLOW}${BOLD}[4/5] Connecting to lab-vm and running lab tasks...${RESET}"
+# ================= RUN TASKS ON VM =================
+step "[4/5] Running tasks 2 to 5 on lab-vm"
 
 gcloud compute ssh lab-vm \
   --project="$PROJECT_ID" \
   --zone="$ZONE" \
   --quiet \
   --command="API_KEY='$API_KEY' \
-PROJECT_ID='$PROJECT_ID' \
 task_2_file_name='$task_2_file_name' \
 task_3_request_file='$task_3_request_file' \
 task_3_response_file='$task_3_response_file' \
@@ -153,20 +206,59 @@ bash -s" <<'REMOTE_SCRIPT'
 
 set -e
 
-echo "Running inside lab-vm..."
+# ================= COLOR CONFIG INSIDE VM =================
+BLACK=$(tput setaf 0 || true)
+RED=$(tput setaf 1 || true)
+GREEN=$(tput setaf 2 || true)
+YELLOW=$(tput setaf 3 || true)
+BLUE=$(tput setaf 4 || true)
+CYAN=$(tput setaf 6 || true)
+WHITE=$(tput setaf 7 || true)
 
-audio_uri="gs://cloud-samples-data/speech/corbeau_renard.flac"
+BG_BLUE=$(tput setab 4 || true)
+BG_GREEN=$(tput setab 2 || true)
+BG_MAGENTA=$(tput setab 5 || true)
+BG_RED=$(tput setab 1 || true)
+
+BOLD=$(tput bold || true)
+RESET=$(tput sgr0 || true)
+
+vm_step() {
+  echo ""
+  echo "${BG_BLUE}${WHITE}${BOLD} $1 ${RESET}"
+}
+
+vm_success() {
+  echo "${GREEN}${BOLD}✔ $1${RESET}"
+}
+
+vm_info() {
+  echo "${CYAN}${BOLD}ℹ $1${RESET}"
+}
+
+vm_warn() {
+  echo "${YELLOW}${BOLD}➜ $1${RESET}"
+}
+
+echo ""
+echo "${BG_MAGENTA}${WHITE}${BOLD} Running inside lab-vm - © ePlus.DEV ${RESET}"
 
 if [ -f "venv/bin/activate" ]; then
   source venv/bin/activate
+  vm_success "Python virtual environment activated."
+else
+  vm_warn "venv/bin/activate not found. Continuing without activating venv."
 fi
 
-echo "[Task 2] Creating Text-to-Speech request file..."
+# ================= TASK 2 =================
+vm_step "Task 2: Create synthetic speech from text"
 
-cat > synthesize-text.json <<EOF
+vm_info "Creating synthesize-text.json..."
+
+cat > synthesize-text.json <<'EOF'
 {
   "input": {
-    "text": "Cloud Text-to-Speech API allows developers to include natural-sounding, synthetic human speech as playable audio in their applications. The Text-to-Speech API converts text or Speech Synthesis Markup Language input into audio data like MP3 or LINEAR16."
+    "text": "Cloud Text-to-Speech API allows developers to include natural-sounding, synthetic human speech as playable audio in their applications. The Text-to-Speech API converts text or Speech Synthesis Markup Language (SSML) input into audio data like MP3 or LINEAR16 (the encoding used in WAV files)."
   },
   "voice": {
     "languageCode": "en-gb",
@@ -179,18 +271,50 @@ cat > synthesize-text.json <<EOF
 }
 EOF
 
-echo "[Task 2] Calling Text-to-Speech API..."
+vm_info "Calling Text-to-Speech API..."
 
 curl -s -X POST \
-  -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
   -H "Content-Type: application/json; charset=utf-8" \
   -d @synthesize-text.json \
-  "https://texttospeech.googleapis.com/v1/text:synthesize" \
+  "https://texttospeech.googleapis.com/v1/text:synthesize?key=${API_KEY}" \
   -o "$task_2_file_name"
 
-echo "[Task 3] Creating Speech-to-Text request file..."
+vm_info "Creating tts_decode.py..."
 
-cat > "$task_3_request_file" <<EOF
+cat > tts_decode.py <<'EOF'
+import argparse
+from base64 import decodebytes
+import json
+
+def decode_tts_output(input_file, output_file):
+    with open(input_file) as input:
+        response = json.load(input)
+        audio_data = response['audioContent']
+        with open(output_file, "wb") as new_file:
+            new_file.write(decodebytes(audio_data.encode('utf-8')))
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input', required=True)
+    parser.add_argument('--output', required=True)
+    args = parser.parse_args()
+    decode_tts_output(args.input, args.output)
+EOF
+
+vm_info "Decoding MP3 audio file..."
+
+python tts_decode.py \
+  --input "$task_2_file_name" \
+  --output synthesize-text-audio.mp3
+
+vm_success "Task 2 completed."
+
+# ================= TASK 3 =================
+vm_step "Task 3: Speech-to-Text transcription in French"
+
+vm_info "Creating ${task_3_request_file}..."
+
+cat > "$task_3_request_file" <<'EOF'
 {
   "config": {
     "encoding": "FLAC",
@@ -198,59 +322,82 @@ cat > "$task_3_request_file" <<EOF
     "languageCode": "fr-FR"
   },
   "audio": {
-    "uri": "$audio_uri"
+    "uri": "gs://cloud-samples-data/speech/corbeau_renard.flac"
   }
 }
 EOF
 
-echo "[Task 3] Calling Speech-to-Text API for French..."
+vm_info "Calling Cloud Speech-to-Text API..."
 
 curl -s -X POST \
-  -H "Content-Type: application/json" \
+  -H "Content-Type: application/json; charset=utf-8" \
   --data-binary @"$task_3_request_file" \
   "https://speech.googleapis.com/v1/speech:recognize?key=${API_KEY}" \
   -o "$task_3_response_file"
 
-echo "[Task 4] Calling Translation API: Japanese to English..."
+vm_success "Task 3 completed."
+
+# ================= TASK 4 =================
+vm_step "Task 4: Translate Japanese to English"
+
+vm_info "Translating: ${task_4_sentence}"
 
 curl -s -X POST \
-  -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
   -H "Content-Type: application/json; charset=utf-8" \
-  -d "{\"q\": \"$task_4_sentence\"}" \
-  "https://translation.googleapis.com/language/translate/v2?key=${API_KEY}&source=ja&target=en" \
+  --data-urlencode "q=${task_4_sentence}" \
+  --data "source=ja" \
+  --data "target=en" \
+  --data "format=text" \
+  "https://translation.googleapis.com/language/translate/v2?key=${API_KEY}" \
   -o "$task_4_file"
 
-echo "[Task 5] Calling Translation Detect API..."
+vm_success "Task 4 completed."
+
+# ================= TASK 5 =================
+vm_step "Task 5: Detect language"
+
+vm_info "Detecting language for: ${task_5_sentence}"
 
 curl -s -X POST \
-  -H "Authorization: Bearer $(gcloud auth application-default print-access-token)" \
   -H "Content-Type: application/json; charset=utf-8" \
-  -d "{\"q\": [\"$task_5_sentence\"]}" \
+  --data-urlencode "q=${task_5_sentence}" \
   "https://translation.googleapis.com/language/translate/v2/detect?key=${API_KEY}" \
   -o "$task_5_file"
 
+vm_success "Task 5 completed."
+
 echo ""
-echo "Generated files:"
+echo "${BG_GREEN}${BLACK}${BOLD} Generated files ${RESET}"
+
 ls -lh \
+  synthesize-text.json \
   "$task_2_file_name" \
+  tts_decode.py \
+  synthesize-text-audio.mp3 \
   "$task_3_request_file" \
   "$task_3_response_file" \
   "$task_4_file" \
   "$task_5_file"
 
 echo ""
-echo "Preview response files:"
-echo "----- $task_3_response_file -----"
+echo "${BG_BLUE}${WHITE}${BOLD} Preview: ${task_3_response_file} ${RESET}"
 cat "$task_3_response_file" || true
+
 echo ""
-echo "----- $task_4_file -----"
+echo "${BG_BLUE}${WHITE}${BOLD} Preview: ${task_4_file} ${RESET}"
 cat "$task_4_file" || true
+
 echo ""
-echo "----- $task_5_file -----"
+echo "${BG_BLUE}${WHITE}${BOLD} Preview: ${task_5_file} ${RESET}"
 cat "$task_5_file" || true
+
 echo ""
+echo "${BG_GREEN}${BLACK}${BOLD} All VM tasks completed successfully - © ePlus.DEV ${RESET}"
 
 REMOTE_SCRIPT
 
-echo "${YELLOW}${BOLD}[5/5] Lab tasks completed.${RESET}"
-echo "${BG_RED}${BOLD}Congratulations For Completing The Lab !!! - ePlus.DEV${RESET}"
+step "[5/5] Lab completed"
+success "All tasks completed successfully."
+
+echo ""
+echo "${BG_RED}${WHITE}${BOLD} Congratulations For Completing The Lab !!! - ePlus.DEV ${RESET}"
