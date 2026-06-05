@@ -1,340 +1,400 @@
 #!/bin/bash
+set -euo pipefail
 
-# ==========================================================
-# © ePlus.DEV - Google Cloud Skills Boost Automation Script
-# Network and HTTP Load Balancer Setup
-# ==========================================================
+# ================= COLOR =================
+BLACK=$(tput setaf 0 || true)
+RED=$(tput setaf 1 || true)
+GREEN=$(tput setaf 2 || true)
+YELLOW=$(tput setaf 3 || true)
+BLUE=$(tput setaf 4 || true)
+MAGENTA=$(tput setaf 5 || true)
+CYAN=$(tput setaf 6 || true)
+WHITE=$(tput setaf 7 || true)
+BOLD=$(tput bold || true)
+RESET=$(tput sgr0 || true)
 
-# Colors - ePlus.DEV style
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-WHITE='\033[1;37m'
-BOLD='\033[1m'
-NC='\033[0m'
+echo "${MAGENTA}${BOLD}"
+echo "============================================================"
+echo "        Build Global and Regional Load Balancing Lab"
+echo "                    © ePlus.DEV"
+echo "============================================================"
+echo "${RESET}"
 
-# Function to show spinner while commands run
-spinner() {
-    local pid=$!
-    local delay=0.25
-    local spinstr='|/-\'
-    while ps -p $pid > /dev/null 2>&1; do
-        local temp=${spinstr#?}
-        printf " ${CYAN}[%c]${NC}  " "$spinstr"
-        spinstr=$temp${spinstr%"$temp"}
-        sleep $delay
-        printf "\b\b\b\b\b\b"
-    done
-    printf "      \b\b\b\b\b\b"
-}
+# ================= CONFIG =================
+PROJECT_ID=$(gcloud config get-value project)
+NETWORK="lb-network"
 
-print_banner() {
-    clear
-    echo -e "${MAGENTA}${BOLD}"
-    echo "============================================================"
-    echo "   ______      ____  __           ____  _______    __"
-    echo "  / ____/___  / / / / /___  _____/ / / / ___/ /   / /"
-    echo " / / __/ __ \/ / / / / __ \/ ___/ / /  \__ \/ /   / / "
-    echo "/ /_/ / /_/ / / /_/ / /_/ / /  / / /  ___/ / /___/ /___"
-    echo "\____/\____/_/\____/\____/_/  /_/_/  /____/_____/_____/"
-    echo "============================================================"
-    echo -e "${NC}"
-    echo -e "${CYAN}${BOLD}        Network and HTTP Load Balancer Lab Setup${NC}"
-    echo -e "${YELLOW}${BOLD}        © ePlus.DEV - Automation Script${NC}"
-    echo -e "${GREEN}        Fast. Clean. Lab-ready.${NC}"
-    echo "------------------------------------------------------------"
-    echo ""
-}
+# Auto detect Region B by proxy-only subnet CIDR
+REGION_B=${REGION_B:-$(gcloud compute networks subnets list \
+  --filter="network:($NETWORK) AND ipCidrRange=10.129.0.0/23" \
+  --format="value(region.basename())" | head -n1)}
 
-success() {
-    echo -e "${GREEN}Done${NC}"
-}
-
-info() {
-    echo -e "${CYAN}$1${NC}"
-}
-
-warn() {
-    echo -e "${YELLOW}$1${NC}"
-}
-
-error() {
-    echo -e "${RED}$1${NC}"
-}
-
-print_banner
-
-# Fetch zone and region
-echo -ne "${CYAN}Detecting default zone and region...${NC} "
-
-ZONE=$(gcloud compute project-info describe \
-  --format="value(commonInstanceMetadata.items[google-compute-default-zone])" 2>/dev/null)
-
-REGION=$(gcloud compute project-info describe \
-  --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null)
-
-PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
-
-sleep 1 & spinner
-
-if [ -z "$ZONE" ]; then
-    echo ""
-    warn "Could not detect default zone."
-    read -p "Please enter your preferred zone, example us-central1-a: " ZONE
-    REGION=${ZONE%-*}
-else
-    echo ""
-    echo -e "${GREEN}Detected Project:${NC} ${WHITE}$PROJECT_ID${NC}"
-    echo -e "${GREEN}Detected Zone:${NC} ${WHITE}$ZONE${NC}"
-    echo -e "${GREEN}Detected Region:${NC} ${WHITE}$REGION${NC}"
+if [[ -z "${REGION_B}" ]]; then
+  echo "${YELLOW}Không tìm thấy proxy-only subnet 10.129.0.0/23. Tự chọn Region B từ subnet trong lb-network...${RESET}"
+  REGION_B=$(gcloud compute networks subnets list \
+    --filter="network:($NETWORK)" \
+    --format="value(region.basename())" | sort -u | head -n1)
 fi
 
+# Auto detect Region A as another region in lb-network
+REGION_A=${REGION_A:-$(gcloud compute networks subnets list \
+  --filter="network:($NETWORK)" \
+  --format="value(region.basename())" | sort -u | grep -v "^${REGION_B}$" | head -n1)}
+
+if [[ -z "${REGION_A}" ]]; then
+  echo "${YELLOW}Không tìm thấy Region A khác Region B, dùng tạm Region B.${RESET}"
+  REGION_A="$REGION_B"
+fi
+
+SUBNET_B=$(gcloud compute networks subnets list \
+  --filter="network:($NETWORK) AND region:($REGION_B)" \
+  --format="value(name)" | grep -v proxy | head -n1)
+
+SUBNET_A=$(gcloud compute networks subnets list \
+  --filter="network:($NETWORK) AND region:($REGION_A)" \
+  --format="value(name)" | grep -v proxy | head -n1)
+
+ZONE_B=$(gcloud compute zones list \
+  --filter="region:($REGION_B) status=UP" \
+  --format="value(name)" | head -n1)
+
+echo "${CYAN}Project : ${PROJECT_ID}${RESET}"
+echo "${CYAN}Network : ${NETWORK}${RESET}"
+echo "${CYAN}Region A: ${REGION_A} / Subnet: ${SUBNET_A}${RESET}"
+echo "${CYAN}Region B: ${REGION_B} / Subnet: ${SUBNET_B} / Zone: ${ZONE_B}${RESET}"
 echo ""
 
-# Create web instances
-info "[1/13] Creating web instances: web1, web2, web3..."
+# ================= HELPERS =================
+exists_mig() {
+  gcloud compute instance-groups managed describe "$1" --region "$2" >/dev/null 2>&1
+}
 
-for i in {1..3}; do
-    echo -ne "Creating ${WHITE}web$i${NC}... "
+exists_fw() {
+  gcloud compute firewall-rules describe "$1" >/dev/null 2>&1
+}
 
-    gcloud compute instances create web$i \
-        --zone=$ZONE \
-        --machine-type=e2-small \
-        --tags=network-lb-tag \
-        --image-family=debian-12 \
-        --image-project=debian-cloud \
-        --metadata=startup-script='#!/bin/bash
-apt-get update
-apt-get install apache2 -y
-service apache2 restart
-echo "<h3>© ePlus.DEV - Web Server: web'$i'</h3>" | tee /var/www/html/index.html' \
-        > /dev/null 2>&1 &
+exists_regional_hc() {
+  gcloud compute health-checks describe "$1" --region "$2" >/dev/null 2>&1
+}
 
-    spinner
-    success
+exists_global_hc() {
+  gcloud compute health-checks describe "$1" --global >/dev/null 2>&1
+}
+
+exists_regional_backend() {
+  gcloud compute backend-services describe "$1" --region "$2" >/dev/null 2>&1
+}
+
+exists_global_backend() {
+  gcloud compute backend-services describe "$1" --global >/dev/null 2>&1
+}
+
+# ============================================================
+# TASK 1 - REGIONAL INTERNAL PROXY NLB
+# ============================================================
+echo "${MAGENTA}${BOLD}[Task 1] Secure internal transaction processor${RESET}"
+
+echo "${YELLOW}Creating regional MIG: mig-proxy-internal...${RESET}"
+if ! exists_mig mig-proxy-internal "$REGION_B"; then
+  gcloud compute instance-groups managed create mig-proxy-internal \
+    --region="$REGION_B" \
+    --template=template-proxy-internal \
+    --size=2
+else
+  echo "${GREEN}mig-proxy-internal already exists.${RESET}"
+fi
+
+gcloud compute instance-groups managed set-named-ports mig-proxy-internal \
+  --region="$REGION_B" \
+  --named-ports=tcp80:80
+
+echo "${YELLOW}Creating internal proxy firewall rules...${RESET}"
+if ! exists_fw fw-allow-hc-proxy-internal; then
+  gcloud compute firewall-rules create fw-allow-hc-proxy-internal \
+    --network="$NETWORK" \
+    --direction=INGRESS \
+    --action=ALLOW \
+    --rules=tcp:80 \
+    --source-ranges=130.211.0.0/22,35.191.0.0/16 \
+    --target-tags=tag-proxy-internal
+else
+  echo "${GREEN}fw-allow-hc-proxy-internal already exists.${RESET}"
+fi
+
+if ! exists_fw fw-allow-proxy-only-internal; then
+  gcloud compute firewall-rules create fw-allow-proxy-only-internal \
+    --network="$NETWORK" \
+    --direction=INGRESS \
+    --action=ALLOW \
+    --rules=tcp:80 \
+    --source-ranges=10.129.0.0/23 \
+    --target-tags=tag-proxy-internal
+else
+  echo "${GREEN}fw-allow-proxy-only-internal already exists.${RESET}"
+fi
+
+echo "${YELLOW}Ensuring proxy-only subnet exists in Region B...${RESET}"
+PROXY_SUBNET=$(gcloud compute networks subnets list \
+  --filter="network:($NETWORK) AND region:($REGION_B) AND purpose:REGIONAL_MANAGED_PROXY" \
+  --format="value(name)" | head -n1 || true)
+
+if [[ -z "$PROXY_SUBNET" ]]; then
+  gcloud compute networks subnets create proxy-only-subnet \
+    --network="$NETWORK" \
+    --region="$REGION_B" \
+    --range=10.129.0.0/23 \
+    --purpose=REGIONAL_MANAGED_PROXY \
+    --role=ACTIVE
+fi
+
+echo "${YELLOW}Creating internal proxy NLB backend components...${RESET}"
+if ! exists_regional_hc hc-internal-proxy "$REGION_B"; then
+  gcloud compute health-checks create tcp hc-internal-proxy \
+    --region="$REGION_B" \
+    --port=80
+fi
+
+if ! exists_regional_backend service-internal-proxy "$REGION_B"; then
+  gcloud compute backend-services create service-internal-proxy \
+    --region="$REGION_B" \
+    --load-balancing-scheme=INTERNAL_MANAGED \
+    --protocol=TCP \
+    --port-name=tcp80 \
+    --health-checks=hc-internal-proxy \
+    --health-checks-region="$REGION_B"
+fi
+
+gcloud compute backend-services add-backend service-internal-proxy \
+  --region="$REGION_B" \
+  --instance-group=mig-proxy-internal \
+  --instance-group-region="$REGION_B" \
+  --balancing-mode=CONNECTION \
+  --max-connections-per-instance=100 || true
+
+if ! gcloud compute target-tcp-proxies describe proxy-internal-proxy --region="$REGION_B" >/dev/null 2>&1; then
+  gcloud compute target-tcp-proxies create proxy-internal-proxy \
+    --region="$REGION_B" \
+    --backend-service=service-internal-proxy \
+    --backend-service-region="$REGION_B"
+fi
+
+echo "${YELLOW}Reserving internal IP: ip-internal-proxy...${RESET}"
+if ! gcloud compute addresses describe ip-internal-proxy --region="$REGION_B" >/dev/null 2>&1; then
+  gcloud compute addresses create ip-internal-proxy \
+    --region="$REGION_B" \
+    --subnet="$SUBNET_B" \
+    --addresses="" \
+    --purpose=SHARED_LOADBALANCER_VIP
+fi
+
+INTERNAL_IP=$(gcloud compute addresses describe ip-internal-proxy \
+  --region="$REGION_B" \
+  --format="value(address)")
+
+echo "${YELLOW}Creating forwarding rule: rule-internal-proxy on TCP 110...${RESET}"
+if ! gcloud compute forwarding-rules describe rule-internal-proxy --region="$REGION_B" >/dev/null 2>&1; then
+  gcloud compute forwarding-rules create rule-internal-proxy \
+    --region="$REGION_B" \
+    --load-balancing-scheme=INTERNAL_MANAGED \
+    --network="$NETWORK" \
+    --subnet="$SUBNET_B" \
+    --address=ip-internal-proxy \
+    --ports=110 \
+    --target-tcp-proxy=proxy-internal-proxy \
+    --target-tcp-proxy-region="$REGION_B"
+fi
+
+echo "${YELLOW}Creating SSH firewall and client VM...${RESET}"
+if ! exists_fw fw-allow-ssh; then
+  gcloud compute firewall-rules create fw-allow-ssh \
+    --network="$NETWORK" \
+    --direction=INGRESS \
+    --action=ALLOW \
+    --rules=tcp:22 \
+    --source-ranges=0.0.0.0/0 \
+    --target-tags=allow-ssh
+fi
+
+if ! gcloud compute instances describe vm-client-internal --zone="$ZONE_B" >/dev/null 2>&1; then
+  gcloud compute instances create vm-client-internal \
+    --zone="$ZONE_B" \
+    --machine-type=e2-micro \
+    --network="$NETWORK" \
+    --subnet="$SUBNET_B" \
+    --tags=allow-ssh \
+    --quiet
+fi
+
+echo "${YELLOW}Testing internal proxy LB from client VM...${RESET}"
+sleep 20
+gcloud compute ssh vm-client-internal \
+  --zone="$ZONE_B" \
+  --quiet \
+  --command="curl -s --connect-timeout 5 http://${INTERNAL_IP}:110 || true"
+
+echo "${GREEN}Internal Proxy LB IP: ${INTERNAL_IP}:110${RESET}"
+echo ""
+
+# ============================================================
+# TASK 2 - GLOBAL EXTERNAL HTTPS ALB
+# ============================================================
+echo "${MAGENTA}${BOLD}[Task 2] Global external market data feed HTTPS ALB${RESET}"
+
+echo "${YELLOW}Creating MIG: mig-alb-api-a in ${REGION_A}...${RESET}"
+if ! exists_mig mig-alb-api-a "$REGION_A"; then
+  gcloud compute instance-groups managed create mig-alb-api-a \
+    --region="$REGION_A" \
+    --template=template-alb-api \
+    --size=2
+else
+  echo "${GREEN}mig-alb-api-a already exists.${RESET}"
+fi
+
+gcloud compute instance-groups managed set-named-ports mig-alb-api-a \
+  --region="$REGION_A" \
+  --named-ports=http80:80
+
+echo "${YELLOW}Creating MIG: mig-alb-api-b in ${REGION_B}...${RESET}"
+if ! exists_mig mig-alb-api-b "$REGION_B"; then
+  gcloud compute instance-groups managed create mig-alb-api-b \
+    --region="$REGION_B" \
+    --template=template-alb-api \
+    --size=2
+else
+  echo "${GREEN}mig-alb-api-b already exists.${RESET}"
+fi
+
+gcloud compute instance-groups managed set-named-ports mig-alb-api-b \
+  --region="$REGION_B" \
+  --named-ports=http80:80
+
+echo "${YELLOW}Creating ALB firewall rule...${RESET}"
+if ! exists_fw fw-allow-health-check-and-proxy; then
+  gcloud compute firewall-rules create fw-allow-health-check-and-proxy \
+    --network="$NETWORK" \
+    --direction=INGRESS \
+    --action=ALLOW \
+    --rules=tcp:80 \
+    --source-ranges=130.211.0.0/22,35.191.0.0/16
+else
+  echo "${GREEN}fw-allow-health-check-and-proxy already exists.${RESET}"
+fi
+
+echo "${YELLOW}Creating global HTTP health check...${RESET}"
+if ! exists_global_hc http-check-alb; then
+  gcloud compute health-checks create http http-check-alb \
+    --global \
+    --port=80
+fi
+
+echo "${YELLOW}Creating global backend service...${RESET}"
+if ! exists_global_backend service-alb-global; then
+  gcloud compute backend-services create service-alb-global \
+    --global \
+    --load-balancing-scheme=EXTERNAL_MANAGED \
+    --protocol=HTTP \
+    --port-name=http80 \
+    --health-checks=http-check-alb
+fi
+
+echo "${YELLOW}Adding both regional MIGs as RATE backends, max RPS = 1...${RESET}"
+gcloud compute backend-services add-backend service-alb-global \
+  --global \
+  --instance-group=mig-alb-api-a \
+  --instance-group-region="$REGION_A" \
+  --balancing-mode=RATE \
+  --max-rate-per-instance=1 || true
+
+gcloud compute backend-services add-backend service-alb-global \
+  --global \
+  --instance-group=mig-alb-api-b \
+  --instance-group-region="$REGION_B" \
+  --balancing-mode=RATE \
+  --max-rate-per-instance=1 || true
+
+echo "${YELLOW}Generating self-signed SSL certificate...${RESET}"
+if ! gcloud compute ssl-certificates describe cert-self-signed --global >/dev/null 2>&1; then
+  openssl genrsa -out key.pem 2048
+  openssl req -new -x509 -key key.pem -out cert.pem -days 1 -subj "/CN=example.com"
+
+  gcloud compute ssl-certificates create cert-self-signed \
+    --certificate=cert.pem \
+    --private-key=key.pem \
+    --global
+fi
+
+echo "${YELLOW}Reserving global static IP: ip-alb-global...${RESET}"
+if ! gcloud compute addresses describe ip-alb-global --global >/dev/null 2>&1; then
+  gcloud compute addresses create ip-alb-global \
+    --ip-version=IPV4 \
+    --global
+fi
+
+ALB_IP=$(gcloud compute addresses describe ip-alb-global \
+  --global \
+  --format="value(address)")
+
+echo "${YELLOW}Creating URL map, HTTPS proxy, and forwarding rule...${RESET}"
+if ! gcloud compute url-maps describe map-alb-global >/dev/null 2>&1; then
+  gcloud compute url-maps create map-alb-global \
+    --default-service=service-alb-global
+fi
+
+if ! gcloud compute target-https-proxies describe proxy-alb-global >/dev/null 2>&1; then
+  gcloud compute target-https-proxies create proxy-alb-global \
+    --url-map=map-alb-global \
+    --ssl-certificates=cert-self-signed
+fi
+
+if ! gcloud compute forwarding-rules describe rule-alb-global --global >/dev/null 2>&1; then
+  gcloud compute forwarding-rules create rule-alb-global \
+    --global \
+    --load-balancing-scheme=EXTERNAL_MANAGED \
+    --address=ip-alb-global \
+    --target-https-proxy=proxy-alb-global \
+    --ports=443
+fi
+
+echo "${GREEN}Global HTTPS ALB IP: ${ALB_IP}${RESET}"
+echo ""
+
+# ============================================================
+# TASK 3 - TEST DISTRIBUTION + FAILOVER
+# ============================================================
+echo "${MAGENTA}${BOLD}[Task 3] Test global distribution and failover${RESET}"
+
+echo "${YELLOW}Waiting for ALB health checks...${RESET}"
+sleep 60
+
+echo "${CYAN}Test HTTPS ALB:${RESET}"
+for i in {1..10}; do
+  curl -k -s "https://${ALB_IP}" | grep "Hello from" || true
+  sleep 0.5
 done
 
 echo ""
+echo "${YELLOW}Finding one VM from mig-alb-api-a to stop nginx...${RESET}"
+read -r INST_A ZONE_A_INST <<< "$(gcloud compute instance-groups managed list-instances mig-alb-api-a \
+  --region="$REGION_A" \
+  --format="value(instance.basename(),zone.basename())" | head -n1)"
 
-# Create firewall rule
-info "[2/13] Creating firewall rule for Network Load Balancer..."
-
-echo -ne "Creating ${WHITE}www-firewall-network-lb${NC}... "
-
-gcloud compute firewall-rules create www-firewall-network-lb \
-    --allow tcp:80 \
-    --target-tags network-lb-tag \
-    > /dev/null 2>&1 &
-
-spinner
-success
+echo "${CYAN}Stopping nginx on ${INST_A} / ${ZONE_A_INST}...${RESET}"
+gcloud compute ssh "$INST_A" \
+  --zone="$ZONE_A_INST" \
+  --quiet \
+  --command="sudo systemctl stop nginx"
 
 echo ""
-
-# Network Load Balancer Setup
-info "[3/13] Setting up Network Load Balancer..."
-
-echo -ne "Creating static IP address... "
-
-gcloud compute addresses create network-lb-ip-1 \
-    --region=$REGION \
-    > /dev/null 2>&1 &
-
-spinner
-success
-
-echo -ne "Creating legacy HTTP health check... "
-
-gcloud compute http-health-checks create basic-check \
-    > /dev/null 2>&1 &
-
-spinner
-success
-
-echo -ne "Creating target pool... "
-
-gcloud compute target-pools create www-pool \
-    --region=$REGION \
-    --http-health-check basic-check \
-    > /dev/null 2>&1 &
-
-spinner
-success
-
-echo -ne "Adding web instances to target pool... "
-
-gcloud compute target-pools add-instances www-pool \
-    --instances web1,web2,web3 \
-    --zone=$ZONE \
-    > /dev/null 2>&1 &
-
-spinner
-success
-
-echo -ne "Creating forwarding rule for Network Load Balancer... "
-
-gcloud compute forwarding-rules create www-rule \
-    --region=$REGION \
-    --ports 80 \
-    --address network-lb-ip-1 \
-    --target-pool www-pool \
-    > /dev/null 2>&1 &
-
-spinner
-success
-
-IPADDRESS=$(gcloud compute forwarding-rules describe www-rule \
-    --region=$REGION \
-    --format="json" | jq -r .IPAddress)
-
-echo -e "${GREEN}Network Load Balancer IP:${NC} ${WHITE}$IPADDRESS${NC}"
+echo "${GREEN}${BOLD}DONE - Resources created.${RESET}"
+echo "${YELLOW}Now click Check my progress for Task 3 while nginx is stopped.${RESET}"
 echo ""
-
-# HTTP Load Balancer Setup
-info "[4/13] Setting up HTTP Load Balancer..."
-
-echo -ne "Creating instance template... "
-
-gcloud compute instance-templates create lb-backend-template \
-   --region=$REGION \
-   --network=default \
-   --subnet=default \
-   --tags=allow-health-check \
-   --machine-type=e2-medium \
-   --image-family=debian-12 \
-   --image-project=debian-cloud \
-   --metadata=startup-script='#!/bin/bash
-apt-get update
-apt-get install apache2 -y
-a2ensite default-ssl
-a2enmod ssl
-vm_hostname="$(curl -H "Metadata-Flavor:Google" http://169.254.169.254/computeMetadata/v1/instance/name)"
-echo "© ePlus.DEV - Page served from: $vm_hostname" | tee /var/www/html/index.html
-systemctl restart apache2' \
-   > /dev/null 2>&1 &
-
-spinner
-success
-
-echo -ne "Creating managed instance group... "
-
-gcloud compute instance-groups managed create lb-backend-group \
-   --template=lb-backend-template \
-   --size=2 \
-   --zone=$ZONE \
-   > /dev/null 2>&1 &
-
-spinner
-success
-
-echo -ne "Creating health check firewall rule... "
-
-gcloud compute firewall-rules create fw-allow-health-check \
-  --network=default \
-  --action=allow \
-  --direction=ingress \
-  --source-ranges=130.211.0.0/22,35.191.0.0/16 \
-  --target-tags=allow-health-check \
-  --rules=tcp:80 \
-  > /dev/null 2>&1 &
-
-spinner
-success
-
-echo -ne "Creating global IPv4 address... "
-
-gcloud compute addresses create lb-ipv4-1 \
-  --ip-version=IPV4 \
-  --global \
-  > /dev/null 2>&1 &
-
-spinner
-success
-
-LB_IP=$(gcloud compute addresses describe lb-ipv4-1 \
-  --format="get(address)" \
-  --global)
-
-echo -e "${GREEN}HTTP Load Balancer IP:${NC} ${WHITE}$LB_IP${NC}"
-
-echo -ne "Creating HTTP health check... "
-
-gcloud compute health-checks create http http-basic-check \
-  --port 80 \
-  > /dev/null 2>&1 &
-
-spinner
-success
-
-echo -ne "Creating backend service... "
-
-gcloud compute backend-services create web-backend-service \
-  --protocol=HTTP \
-  --port-name=http \
-  --health-checks=http-basic-check \
-  --global \
-  > /dev/null 2>&1 &
-
-spinner
-success
-
-echo -ne "Adding backend to service... "
-
-gcloud compute backend-services add-backend web-backend-service \
-  --instance-group=lb-backend-group \
-  --instance-group-zone=$ZONE \
-  --global \
-  > /dev/null 2>&1 &
-
-spinner
-success
-
-echo -ne "Creating URL map... "
-
-gcloud compute url-maps create web-map-http \
-    --default-service web-backend-service \
-    > /dev/null 2>&1 &
-
-spinner
-success
-
-echo -ne "Creating target HTTP proxy... "
-
-gcloud compute target-http-proxies create http-lb-proxy \
-    --url-map web-map-http \
-    > /dev/null 2>&1 &
-
-spinner
-success
-
-echo -ne "Creating forwarding rule for HTTP Load Balancer... "
-
-gcloud compute forwarding-rules create http-content-rule \
-    --address=lb-ipv4-1 \
-    --global \
-    --target-http-proxy=http-lb-proxy \
-    --ports=80 \
-    > /dev/null 2>&1 &
-
-spinner
-success
-
+echo "${CYAN}ALB IP:${RESET} https://${ALB_IP}"
+echo "${CYAN}Internal Proxy IP:${RESET} ${INTERNAL_IP}:110"
 echo ""
-echo -e "${MAGENTA}${BOLD}============================================================${NC}"
-echo -e "${GREEN}${BOLD} Setup Complete!${NC}"
-echo -e "${MAGENTA}${BOLD}============================================================${NC}"
-echo -e "${CYAN}Project ID:${NC} ${WHITE}$PROJECT_ID${NC}"
-echo -e "${CYAN}Zone:${NC} ${WHITE}$ZONE${NC}"
-echo -e "${CYAN}Region:${NC} ${WHITE}$REGION${NC}"
+echo "${MAGENTA}${BOLD}Test distribution command:${RESET}"
+echo "while true; do curl -k -s https://${ALB_IP} | grep 'Hello from'; sleep 0.5; done"
 echo ""
-echo -e "${YELLOW}Network Load Balancer IP:${NC} ${WHITE}$IPADDRESS${NC}"
-echo -e "${YELLOW}HTTP Load Balancer IP:${NC} ${WHITE}$LB_IP${NC}"
+echo "${MAGENTA}${BOLD}Restore backend after scoring Task 3:${RESET}"
+echo "gcloud compute ssh ${INST_A} --zone=${ZONE_A_INST} --command='sudo systemctl start nginx'"
 echo ""
-echo -e "${GREEN}Network LB Test:${NC} ${WHITE}http://$IPADDRESS${NC}"
-echo -e "${GREEN}HTTP LB Test:${NC} ${WHITE}http://$LB_IP${NC}"
-echo ""
-echo -e "${MAGENTA}${BOLD}© ePlus.DEV - All rights reserved.${NC}"
-echo -e "${MAGENTA}${BOLD}============================================================${NC}"
+echo "${MAGENTA}${BOLD}© ePlus.DEV${RESET}"
