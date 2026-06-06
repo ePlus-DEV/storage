@@ -27,6 +27,9 @@ echo "${BG_MAGENTA}${BOLD}Starting Execution${RESET}"
 
 gcloud services enable monitoring.googleapis.com
 
+read -p "Enter METRIC: " METRIC
+read -p "Enter VALUE: " VALUE
+
 export ZONE=$(gcloud compute instances list video-queue-monitor --format 'csv[no-heading](zone)')
 
 export REGION="${ZONE%-*}"
