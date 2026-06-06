@@ -23,25 +23,20 @@ BOLD=`tput bold`
 RESET=`tput sgr0`
 #----------------------------------------------------start--------------------------------------------------#
 
-echo "${BG_BLUE}${BOLD}ePlus.DEV - Starting Execution${RESET}"
+echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV ${RESET}"
 
-# Prompt for and export required environment variables
-echo "${YELLOW}${BOLD}Please enter the following required environment variables:${RESET}"
-read -p "Enter USER_2 (e.g., student3517@qwiklabs.com): " USER_2
-export USER_2
-read -p "Enter ZONE (e.g., us-central1-a): " ZONE
-export ZONE
-read -p "Enter TOPIC (e.g., thumbnail-topic): " TOPIC
-export TOPIC
-read -p "Enter FUNCTION (e.g., thumbnail-generator): " FUNCTION
-export FUNCTION
 
-echo "${GREEN}${BOLD}Environment variables set:${RESET}"
-echo "USER_2=$USER_2"
-echo "ZONE=$ZONE"
-echo "TOPIC=$TOPIC"
-echo "FUNCTION=$FUNCTION"
 echo ""
+echo ""
+echo "Please export the values."
+
+
+# Prompt user to input three regions
+read -p "Enter USERNAME2: " USERNAME2
+read -p "Enter ZONE: " ZONE
+read -p "Enter TOPIC_NAME: " TOPIC_NAME
+read -p "Enter FUNCTION_NAME: " FUNCTION_NAME
+
 
 export REGION="${ZONE%-*}"
 
@@ -93,7 +88,7 @@ const gcs = new Storage();
 const { PubSub } = require('@google-cloud/pubsub');
 const imagemagick = require("imagemagick-stream");
 
-functions.cloudEvent('$FUNCTION_NAME', cloudEvent => {
+functions.cloudEvent('$FUNCTION_NAME_NAME', cloudEvent => {
   const event = cloudEvent.data;
 
   console.log(`Event: ${event}`);
@@ -156,7 +151,7 @@ functions.cloudEvent('$FUNCTION_NAME', cloudEvent => {
 });
 EOF_END
 
-sed -i "8c\functions.cloudEvent('$FUNCTION', cloudEvent => { " index.js
+sed -i "8c\functions.cloudEvent('$FUNCTION_NAME', cloudEvent => { " index.js
 
 sed -i "18c\  const topicName = '$TOPIC';" index.js
 
@@ -191,19 +186,19 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
 
 # Your existing deployment command
 deploy_function() {
-    gcloud functions deploy $FUNCTION \
+    gcloud functions deploy $FUNCTION_NAME \
     --gen2 \
     --runtime nodejs20 \
     --trigger-resource $DEVSHELL_PROJECT_ID-bucket \
     --trigger-event google.storage.object.finalize \
-    --entry-point $FUNCTION \
+    --entry-point $FUNCTION_NAME \
     --region=$REGION \
     --source . \
     --quiet
 }
 
 # Variables
-SERVICE_NAME="$FUNCTION"
+SERVICE_NAME="$FUNCTION_NAME"
 
 # Loop until the Cloud Run service is created
 while true; do
@@ -225,13 +220,9 @@ curl -o map.jpg https://storage.googleapis.com/cloud-training/gsp315/map.jpg
 gsutil cp map.jpg gs://$DEVSHELL_PROJECT_ID-bucket/map.jpg
 
 gcloud projects remove-iam-policy-binding $DEVSHELL_PROJECT_ID \
---member=user:$USER_2 \
+--member=user:$USERNAME2 \
 --role=roles/viewer
 
-echo "${BG_GREEN}${BOLD}Congratulations For Completing The Lab !!!${RESET}"
-echo ""
-echo "${CYAN}${BOLD}Don't forget to subscribe to ePlus.DEV:${RESET}"
-echo "${YELLOW}https://eplus.dev${RESET}"
-echo "${MAGENTA}For more helpful cloud computing tutorials and guides!${RESET}"
+echo "${BG_RED}${BOLD}Congratulations For Completing!!! - ePlus.DEV ${RESET}"
 
 #-----------------------------------------------------end----------------------------------------------------------#
