@@ -20,27 +20,9 @@ BOLD=`tput bold`
 RESET=`tput sgr0`
 #----------------------------------------------------start--------------------------------------------------#
 
-echo "${YELLOW}${BOLD}
+echo "${YELLOW}${BOLD}Starting${RESET}" "${GREEN}${BOLD}Execution${RESET}" "- ePlus.DEV"
 
-Starting Execution - ePlus.DEV
-
-
-${RESET}"
-#gcloud auth list
-#gcloud config list project
 export PROJECT_ID=$(gcloud info --format='value(config.project)')
-#export BUCKET_NAME=$(gcloud info --format='value(config.project)')
-#export EMAIL=$(gcloud config get-value core/account)
-#gcloud config set compute/region us-central1
-#gcloud config set compute/zone us-central1-a
-#export ZONE=us-central1-a
-
-
-
-#USER_EMAIL=$(gcloud auth list --limit=1 2>/dev/null | grep '@' | awk '{print $2}')
-#----------------------------------------------------code--------------------------------------------------#
-
-
 
 bq mk fruit_store
 
@@ -48,13 +30,7 @@ bq mk --table --description "Table for fruit details" $DEVSHELL_PROJECT_ID:fruit
 
 bq load --source_format=NEWLINE_DELIMITED_JSON --autodetect $DEVSHELL_PROJECT_ID:fruit_store.fruit_details gs://data-insights-course/labs/optimizing-for-performance/shopping_cart.json
 
-echo "${GREEN}${BOLD}
-
-Task 2 Completed
-
-${RESET}"
-
-#task 3
+echo "${GREEN}${BOLD}Task 2. Practice working with arrays in SQL Completed ${RESET}"
 
 bq query --use_legacy_sql=false \
 "
@@ -71,15 +47,7 @@ GROUP BY fullVisitorId, date
 ORDER BY date
 "
 
-
-echo "${GREEN}${BOLD}
-
-Task 3 Completed
-
-${RESET}"
-
-#task 4
-
+echo "${GREEN}${BOLD}Task 3. Create your own arrays with ARRAY_AGG() Completed${RESET}"
 
 bq query --use_legacy_sql=false \
 "
@@ -92,15 +60,8 @@ WHERE visitId = 1501570398
 LIMIT 10
 "
 
-echo "${GREEN}${BOLD}
+echo "${GREEN}${BOLD}Task 4. Query tables containing arrays Completed${RESET}"
 
-Task 4 Completed
-
-${RESET}"
-
-#task 6
-
-# Define the schema in a JSON file, e.g., schema.json
 echo '[
     {
         "name": "race",
@@ -133,13 +94,7 @@ bq mk --table --schema=schema.json --description "Table for race details" $DEVSH
 
 bq load --source_format=NEWLINE_DELIMITED_JSON --schema=schema.json $DEVSHELL_PROJECT_ID:racing.race_results gs://data-insights-course/labs/optimizing-for-performance/race_results.json
 
-echo "${GREEN}${BOLD}
-
-Task 6 Completed
-
-${RESET}"
-
-#task 7
+echo "${GREEN}${BOLD}Task 6. Practice with STRUCTs and arrays Completed${RESET}"
 
 bq query --use_legacy_sql=false \
 "
@@ -148,14 +103,7 @@ SELECT COUNT(p.name) AS racer_count
 FROM racing.race_results AS r, UNNEST(r.participants) AS p
 "
 
-echo "${GREEN}${BOLD}
-
-Task 7 Completed
-
-${RESET}"
-
-#task 8
-
+echo "${GREEN}${BOLD}Task 7. Lab question: STRUCT() Completed${RESET}"
 
 bq query --use_legacy_sql=false \
 "
@@ -171,13 +119,7 @@ GROUP BY p.name
 ORDER BY total_race_time ASC;
 "
 
-echo "${GREEN}${BOLD}
-
-Task 8 Completed
-
-${RESET}"
-
-#task 9
+echo "${GREEN}${BOLD}Task 8. Lab question: Unpacking arrays with UNNEST( ) Completed${RESET}"
 
 bq query --use_legacy_sql=false \
 "
@@ -191,12 +133,8 @@ FROM racing.race_results AS r
 WHERE split_time = 23.2;
 "
 
-echo "${GREEN}${BOLD}
-
-Task 9 Completed
-
-${RESET}"
+echo "${GREEN}${BOLD}Task 9. Filter within array values Completed${RESET}"
 
 echo "${RED}${BOLD}Congratulations${RESET}" "${WHITE}${BOLD}for${RESET}" "${GREEN}${BOLD}Completing the Lab !!! - ePlus.DEV${RESET}"
 
-exit 0
+#-----------------------------------------------------end----------------------------------------------------------#
