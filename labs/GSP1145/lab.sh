@@ -3,7 +3,7 @@
 set -uo pipefail
 
 # ============================================================
-#  KNOWLEDGE CATALOG ASPECT LAB - ONE SHOT
+#  Create and Add Aspects to Knowledge Catalog Assets - GSP1145
 #  Copyright © ePlus.DEV
 # ============================================================
 
