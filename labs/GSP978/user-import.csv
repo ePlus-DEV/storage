@@ -1,0 +1,5 @@
+First Name [Required],Last Name [Required],Email Address [Required],Password [Required],Password Hash Function [UPLOAD ONLY],Org Unit Path [Required],New Primary Email [UPLOAD ONLY],Recovery Email,Home Secondary Email,Work Secondary Email,Recovery Phone [MUST BE IN THE E.164 FORMAT],Work Phone,Home Phone,Mobile Phone,Work Address,Home Address,Employee ID,Employee Type,Employee Title,Manager Email,Department,Cost Center,Building ID,Floor Name,Floor Section,Change Password at Next Sign-In,New Status [UPLOAD ONLY],Advanced Protection Program enrollment
+aa,aa,aa@goog-test.reseller.gappslabs.co.s-kcvhcbfr.qwiklabs-gsuite.net,****,,/Teachers,,,,,,,,,,,,,,,,,,,,True,,False
+Workspace,User,student@goog-test.reseller.gappslabs.co.s-kcvhcbfr.qwiklabs-gsuite.net,****,,/,,,,,,,,,,,,,,,,,,,,False,,False
+Maria,Kearns,maria@goog-test.reseller.gappslabs.co.s-kcvhcbfr.qwiklabs-gsuite.net,Lab@12345678,,/Students,,,,,,,,,,,,,,,,,,,,False,,False
+Emma,Wilson,emma@goog-test.reseller.gappslabs.co.s-kcvhcbfr.qwiklabs-gsuite.net,Lab@12345678,,/Students/History,,,,,,,,,,,,,,,,,,,,False,,False
