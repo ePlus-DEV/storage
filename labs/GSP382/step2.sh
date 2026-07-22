@@ -1,29 +1,34 @@
 #!/bin/bash
-# Define color variables
 
-BLACK=`tput setaf 0`
-RED=`tput setaf 1`
-GREEN=`tput setaf 2`
-YELLOW=`tput setaf 3`
-BLUE=`tput setaf 4`
-MAGENTA=`tput setaf 5`
-CYAN=`tput setaf 6`
-WHITE=`tput setaf 7`
+BLACK_TEXT=$'\033[0;90m'
+RED_TEXT=$'\033[0;91m'
+GREEN_TEXT=$'\033[0;92m'
+YELLOW_TEXT=$'\033[0;93m'
+BLUE_TEXT=$'\033[0;94m'
+MAGENTA_TEXT=$'\033[0;95m'
+CYAN_TEXT=$'\033[0;96m'
+WHITE_TEXT=$'\033[0;97m'
+TEAL_TEXT=$'\033[38;5;50m'
+PURPLE_TEXT=$'\033[0;35m'
+GOLD_TEXT=$'\033[0;33m'
+LIME_TEXT=$'\033[0;92m'
+MAROON_TEXT=$'\033[0;91m'
+NAVY_TEXT=$'\033[0;94m'
 
-BG_BLACK=`tput setab 0`
-BG_RED=`tput setab 1`
-BG_GREEN=`tput setab 2`
-BG_YELLOW=`tput setab 3`
-BG_BLUE=`tput setab 4`
-BG_MAGENTA=`tput setab 5`
-BG_CYAN=`tput setab 6`
-BG_WHITE=`tput setab 7`
+BOLD_TEXT=$'\033[1m'
+UNDERLINE_TEXT=$'\033[4m'
+BLINK_TEXT=$'\033[5m'
+NO_COLOR=$'\033[0m'
+RESET_FORMAT=$'\033[0m'
+REVERSE_TEXT=$'\033[7m'
 
-BOLD=`tput bold`
-RESET=`tput sgr0`
-#----------------------------------------------------start--------------------------------------------------#
+clear
 
-echo "${BG_MAGENTA}${BOLD}Starting Execution${RESET}"
+# Welcome message
+echo "${CYAN_TEXT}${BOLD_TEXT}==================================================================${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}      ePlus.DEV - INITIATING EXECUTION...  ${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}==================================================================${RESET_FORMAT}"
+echo
 
 export ZONE=$(gcloud compute project-info describe \
 --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
@@ -41,10 +46,15 @@ curl -LO raw.githubusercontent.com/Cloud-Wala-Banda/Labs-Solutions/refs/heads/ma
 
 gsutil cp findings.jsonl gs://scc-export-bucket-$DEVSHELL_PROJECT_ID
 
-echo "${CYAN}${BOLD}Click here: "${RESET}""${BLUE}${BOLD}""https://console.cloud.google.com/security/web-scanner/scanConfigs/edit?project=$DEVSHELL_PROJECT_ID"""${RESET}"
+echo "${YELLOW_TEXT}${BOLD_TEXT}Click here: "${RESET_FORMAT}""${BLUE_TEXT}${BOLD_TEXT}""https://console.cloud.google.com/security/web-scanner/scanConfigs/edit?project=$DEVSHELL_PROJECT_ID"""${RESET_FORMAT}"
 
-echo "${YELLOW}${BOLD}Copy this: "${RESET}""${GREEN}${BOLD}""http://$VM_EXT_IP:8080"""${RESET}"
+echo "${YELLOW_TEXT}${BOLD_TEXT}Copy this: "${RESET_FORMAT}""${GREEN_TEXT}${BOLD_TEXT}""http://$VM_EXT_IP:8080"""${RESET_FORMAT}"
 
-echo "${YELLOW}${BOLD}NOW${RESET}" "${WHITE}${BOLD}FOLLOW${RESET}" "${GREEN}${BOLD}VIDEO'S INSTRUCTIONS${RESET}"
-
-#-----------------------------------------------------end----------------------------------------------------------#
+# Final message
+echo
+echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}              LAB COMPLETED SUCCESSFULLY!              ${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
+echo
+echo "${RED_TEXT}${BOLD_TEXT}${UNDERLINE_TEXT}https://www.eplus.dev${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}Don't forget to Like, Share and Subscribe for more Videos${RESET_FORMAT}"
