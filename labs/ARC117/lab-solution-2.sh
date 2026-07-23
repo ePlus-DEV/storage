@@ -22,7 +22,7 @@ BOLD=`tput bold`
 RESET=`tput sgr0`
 #----------------------------------------------------start--------------------------------------------------#
 
-echo "${YELLOW}${BOLD}Starting${RESET}" "${GREEN}${BOLD}Execution${RESET}"
+echo "${YELLOW}${BOLD}Starting${RESET}" "${GREEN}${BOLD}Execution - ePlus.DEV${RESET}"
 
 export ID=$DEVSHELL_PROJECT_ID
 
@@ -51,6 +51,6 @@ gcloud dataplex assets create raw-event-files \
 --resource-type=STORAGE_BUCKET \
 --resource-name=projects/my-project/buckets/${ID}
 
-echo "${RED}${BOLD}Congratulations${RESET}" "${WHITE}${BOLD}for${RESET}" "${GREEN}${BOLD}Completing the Lab !!!${RESET}"
+echo "${RED}${BOLD}Congratulations${RESET}" "${WHITE}${BOLD}for${RESET}" "${GREEN}${BOLD}Completing the Lab !!! - ePlus.DEV${RESET}"
 
 #-----------------------------------------------------end----------------------------------------------------------#
