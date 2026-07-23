@@ -28,17 +28,9 @@ command -v gsutil >/dev/null 2>&1 || die "gsutil not found in PATH"
 info "Active account:"
 gcloud auth list || true
 
-# ---- Ask for REGION --------------------------------------------------------
-read -rp "$(echo -e "${CYAN}Enter REGION [us-central1]: ${NC}")" INPUT_REGION
-REGION="${INPUT_REGION:-us-central1}"
-[[ -n "$REGION" ]] || die "REGION must not be empty"
-
-# ---- Detect PROJECT_ID (ACTIVE) -------------------------------------------
-PROJECT_ID="$(gcloud projects list --filter='lifecycleState:ACTIVE' --format='value(projectId)' | head -n1 || true)"
-[[ -n "${PROJECT_ID:-}" ]] || die "No ACTIVE project found. Please Start/Resume your Qwiklabs lab."
-
-hl "Using PROJECT_ID: $PROJECT_ID"
-hl "Using REGION   : $REGION"
+PROJECT_ID=$(gcloud projects list --format="value(projectId)" --limit=1)
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 
 # ---- Set config ------------------------------------------------------------
 gcloud config set project "$PROJECT_ID" >/dev/null
