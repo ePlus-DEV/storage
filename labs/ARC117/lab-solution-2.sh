@@ -24,6 +24,8 @@ RESET=`tput sgr0`
 
 echo "${YELLOW}${BOLD}Starting${RESET}" "${GREEN}${BOLD}Execution - ePlus.DEV${RESET}"
 
+LOCATION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+
 export ID=$DEVSHELL_PROJECT_ID
 
 gcloud services enable datacatalog.googleapis.com
