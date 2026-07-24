@@ -16,11 +16,14 @@ UNDERLINE_TEXT=$'\033[4m'
 
 clear
 
+
 echo
 echo "${MAGENTA_TEXT}${BOLD_TEXT}==============================================================${RESET_FORMAT}"
 echo "${CYAN_TEXT}${BOLD_TEXT}     🚀 ePlus.DEV – GCP Lab      ${RESET_FORMAT}"
 echo "${MAGENTA_TEXT}${BOLD_TEXT}==============================================================${RESET_FORMAT}"
 echo
+
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
 echo "${CYAN_TEXT}${BOLD_TEXT}Step 1:${RESET_FORMAT} ${CYAN_TEXT}Creating a subscription to the topic...${RESET_FORMAT}"
 echo
