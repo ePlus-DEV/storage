@@ -22,9 +22,8 @@ echo "${CYAN_TEXT}${BOLD_TEXT}╔═══════════════�
 echo "${CYAN_TEXT}${BOLD_TEXT}║    🚀 ePlus.DEV - CLOUD LAB 🚀  ║${RESET_FORMAT}"
 echo "${CYAN_TEXT}${BOLD_TEXT}╚════════════════════════════════════════════╝${RESET_FORMAT}"
 echo
-echo "${WHITE_TEXT}📺 YouTube: ${BLUE_TEXT}https://www.youtube.com/@drabhishek.5460${RESET_FORMAT}"
-echo "${WHITE_TEXT}⭐ Subscribe for more Cloud & DevOps Tutorials! ⭐${RESET_FORMAT}"
-echo
+
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
 # Step 1: Create Pub/Sub Topic
 echo
