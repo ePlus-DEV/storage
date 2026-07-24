@@ -1,581 +1,399 @@
-cat > lab.sh <<'EOF'
-#!/usr/bin/env bash
-
-# ============================================================
-# Organize and Govern Data with Knowledge Catalog
-# Challenge Lab
-#
-# Lake + Raw Zone + Storage Asset + Aspect
-#
-# © ePlus.DEV
-# ============================================================
+#!/bin/bash
 
 set -Eeuo pipefail
 
-# ------------------------------------------------------------
-# Colors
-# ------------------------------------------------------------
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-CYAN='\033[0;36m'
-WHITE='\033[1;37m'
-GRAY='\033[0;90m'
-NC='\033[0m'
+# ============================================================
+# Color variables
+# ============================================================
+BLACK=$(tput setaf 0)
+RED=$(tput setaf 1)
+GREEN=$(tput setaf 2)
+YELLOW=$(tput setaf 3)
+BLUE=$(tput setaf 4)
+MAGENTA=$(tput setaf 5)
+CYAN=$(tput setaf 6)
+WHITE=$(tput setaf 7)
 
-# ------------------------------------------------------------
+BG_BLACK=$(tput setab 0)
+BG_RED=$(tput setab 1)
+BG_GREEN=$(tput setab 2)
+BG_YELLOW=$(tput setab 3)
+BG_BLUE=$(tput setab 4)
+BG_MAGENTA=$(tput setab 5)
+BG_CYAN=$(tput setab 6)
+BG_WHITE=$(tput setab 7)
+
+BOLD=$(tput bold)
+RESET=$(tput sgr0)
+
+# ============================================================
 # Output helpers
-# ------------------------------------------------------------
-banner() {
-  clear || true
+# ============================================================
+info() {
+  echo "${BLUE}${BOLD}ℹ${RESET} $1"
+}
 
-  echo -e "${CYAN}"
-  echo "╔════════════════════════════════════════════════════════════╗"
-  echo "║        KNOWLEDGE CATALOG CHALLENGE LAB                    ║"
-  echo "║                                                          ║"
-  echo "║     Lake • Raw Zone • Storage Asset • Aspect             ║"
-  echo "║                                                          ║"
-  echo "║                     © ePlus.DEV                           ║"
-  echo "╚════════════════════════════════════════════════════════════╝"
-  echo -e "${NC}"
+success() {
+  echo "${GREEN}${BOLD}✔${RESET} $1"
+}
+
+warning() {
+  echo "${YELLOW}${BOLD}⚠${RESET} $1"
+}
+
+error() {
+  echo "${RED}${BOLD}✘${RESET} $1"
 }
 
 section() {
   echo
-  echo -e "${PURPLE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo -e "${WHITE}$1${NC}"
-  echo -e "${PURPLE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-}
-
-info() {
-  echo -e "${BLUE}ℹ${NC} $1"
-}
-
-success() {
-  echo -e "${GREEN}✔${NC} $1"
-}
-
-warning() {
-  echo -e "${YELLOW}⚠${NC} $1"
-}
-
-error() {
-  echo -e "${RED}✘${NC} $1"
+  echo "${MAGENTA}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+  echo "${WHITE}${BOLD}$1${RESET}"
+  echo "${MAGENTA}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 }
 
 on_error() {
   local exit_code=$?
-  local line_number="$1"
+  local line_number=$1
 
   echo
-  error "Script failed at line ${line_number}."
-  error "Exit code: ${exit_code}"
-  echo -e "${GRAY}© ePlus.DEV${NC}"
+  error "Script failed at line ${line_number} with exit code ${exit_code}."
+  echo "${CYAN}${BOLD}© ePlus.DEV${RESET}"
 
   exit "${exit_code}"
 }
 
 trap 'on_error $LINENO' ERR
 
-# ------------------------------------------------------------
-# Retry helper
-# ------------------------------------------------------------
-retry() {
-  local max_attempts="$1"
-  local delay_seconds="$2"
+trim_value() {
+  local value="$1"
 
-  shift 2
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
 
-  local attempt=1
-
-  while true; do
-    if "$@"; then
-      return 0
-    fi
-
-    if (( attempt >= max_attempts )); then
-      error "Command failed after ${max_attempts} attempts."
-      return 1
-    fi
-
-    warning "Attempt ${attempt}/${max_attempts} failed."
-    warning "Retrying in ${delay_seconds} seconds..."
-
-    sleep "${delay_seconds}"
-    ((attempt++))
-  done
+  printf '%s' "${value}"
 }
-
-# ------------------------------------------------------------
-# Verify required commands
-# ------------------------------------------------------------
-require_command() {
-  local command_name="$1"
-
-  if ! command -v "${command_name}" >/dev/null 2>&1; then
-    error "Required command not found: ${command_name}"
-    exit 1
-  fi
-}
-
-# ------------------------------------------------------------
-# Extract exact Dataplex entry from search JSON
-# ------------------------------------------------------------
-extract_entry_name() {
-  local json_data="$1"
-
-  printf '%s' "${json_data}" |
-    jq -r --arg fqn "${ZONE_FQN}" '
-      if type == "array" then
-        .[]
-      elif type == "object" and (.results? != null) then
-        .results[]
-      else
-        empty
-      end
-      | (.dataplexEntry // .)
-      | select(.fullyQualifiedName? == $fqn)
-      | .name
-    ' 2>/dev/null |
-    head -n 1
-}
-
-# ------------------------------------------------------------
-# Search using gcloud CLI
-# ------------------------------------------------------------
-search_entry_with_gcloud() {
-  local query=""
-  local search_json=""
-  local found_entry=""
-
-  local queries=(
-    "fully_qualified_name=${ZONE_FQN}"
-    "fully_qualified_name=\"${ZONE_FQN}\""
-    "displayname:\"${ZONE_DISPLAY_NAME}\" projectid:${PROJECT_ID} location=${REGION}"
-    "name:${ZONE_ID} projectid:${PROJECT_ID} location=${REGION}"
-  )
-
-  for query in "${queries[@]}"; do
-    search_json="$(
-      gcloud dataplex entries search "${query}" \
-        --project="${PROJECT_ID}" \
-        --scope="projects/${PROJECT_ID}" \
-        --limit=100 \
-        --page-size=100 \
-        --format=json \
-        2>/dev/null || true
-    )"
-
-    if [[ -z "${search_json}" ]]; then
-      continue
-    fi
-
-    found_entry="$(extract_entry_name "${search_json}")"
-
-    if [[ -n "${found_entry}" && "${found_entry}" != "null" ]]; then
-      printf '%s' "${found_entry}"
-      return 0
-    fi
-  done
-
-  return 1
-}
-
-# ------------------------------------------------------------
-# Search using Dataplex REST API
-#
-# IMPORTANT:
-# searchEntries requires POST, not GET.
-# Request body must be empty.
-# ------------------------------------------------------------
-search_entry_with_rest() {
-  local access_token=""
-  local search_url=""
-  local search_json=""
-  local found_entry=""
-
-  access_token="$(gcloud auth print-access-token)"
-
-  search_url="$(
-    python3 - "${PROJECT_ID}" "${ZONE_FQN}" <<'PY'
-import sys
-import urllib.parse
-
-project_id = sys.argv[1]
-zone_fqn = sys.argv[2]
-
-endpoint = (
-    f"https://dataplex.googleapis.com/v1/"
-    f"projects/{project_id}/locations/global:searchEntries"
-)
-
-parameters = {
-    "query": f"fully_qualified_name={zone_fqn}",
-    "scope": f"projects/{project_id}",
-    "pageSize": "100",
-}
-
-print(endpoint + "?" + urllib.parse.urlencode(parameters))
-PY
-  )"
-
-  # Do not use curl -G here. This endpoint requires POST.
-  search_json="$(
-    curl -sS \
-      --request POST \
-      --header "Authorization: Bearer ${access_token}" \
-      --header "x-goog-user-project: ${PROJECT_ID}" \
-      --header "Content-Length: 0" \
-      "${search_url}" \
-      2>/dev/null || true
-  )"
-
-  if [[ -z "${search_json}" ]]; then
-    return 1
-  fi
-
-  found_entry="$(extract_entry_name "${search_json}")"
-
-  if [[ -n "${found_entry}" && "${found_entry}" != "null" ]]; then
-    printf '%s' "${found_entry}"
-    return 0
-  fi
-
-  return 1
-}
-
-# ------------------------------------------------------------
-# Find the Knowledge Catalog entry for the zone
-# ------------------------------------------------------------
-find_zone_entry() {
-  local found_entry=""
-
-  found_entry="$(search_entry_with_gcloud || true)"
-
-  if [[ -n "${found_entry}" ]]; then
-    printf '%s' "${found_entry}"
-    return 0
-  fi
-
-  found_entry="$(search_entry_with_rest || true)"
-
-  if [[ -n "${found_entry}" ]]; then
-    printf '%s' "${found_entry}"
-    return 0
-  fi
-
-  return 1
-}
-
-banner
 
 # ============================================================
-# Environment validation
+# Start
 # ============================================================
-section "Environment validation"
+clear
 
-require_command gcloud
-require_command curl
-require_command jq
-require_command python3
+echo "${CYAN}${BOLD}"
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║        KNOWLEDGE CATALOG CHALLENGE LAB                    ║"
+echo "║                                                            ║"
+echo "║      Lake • Zone • Storage Asset • Custom Aspect          ║"
+echo "║                                                            ║"
+echo "║                     © ePlus.DEV                            ║"
+echo "╚════════════════════════════════════════════════════════════╝"
+echo "${RESET}"
 
-success "Required commands are available."
+echo "${YELLOW}${BOLD}Starting${RESET} ${GREEN}${BOLD}Execution - ePlus.DEV${RESET}"
 
 # ============================================================
-# Detect Google Cloud configuration
+# Detect project
 # ============================================================
-section "Detecting Google Cloud configuration"
+section "Detecting project and region"
 
-PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
+ID="${DEVSHELL_PROJECT_ID:-}"
 
-if [[ -z "${PROJECT_ID}" || "${PROJECT_ID}" == "(unset)" ]]; then
-  PROJECT_ID="$(
-    gcloud projects list \
-      --format="value(projectId)" \
-      --limit=1
-  )"
+if [[ -z "${ID}" ]]; then
+  ID=$(gcloud config get-value project 2>/dev/null || true)
 fi
 
-if [[ -z "${PROJECT_ID}" ]]; then
-  error "Unable to detect PROJECT_ID."
+if [[ -z "${ID}" || "${ID}" == "(unset)" ]]; then
+  ID=$(gcloud projects list \
+    --format="value(projectId)" \
+    --limit=1)
+fi
+
+ID=$(trim_value "${ID}")
+
+if [[ -z "${ID}" ]]; then
+  error "Unable to detect the Project ID."
   exit 1
 fi
 
-gcloud config set project "${PROJECT_ID}" >/dev/null
+export ID
 
-PROJECT_NUMBER="$(
-  gcloud projects describe "${PROJECT_ID}" \
-    --format="value(projectNumber)"
-)"
+gcloud config set project "${ID}" >/dev/null
 
-CURRENT_ACCOUNT="$(
-  gcloud config get-value account 2>/dev/null || true
-)"
+PROJECT_NUMBER=$(gcloud projects describe "${ID}" \
+  --format="value(projectNumber)")
 
-DEFAULT_REGION="$(
-  gcloud compute project-info describe \
-    --project="${PROJECT_ID}" \
-    --format="value(commonInstanceMetadata.items[google-compute-default-region])" \
-    2>/dev/null || true
-)"
+# ============================================================
+# Detect region from project metadata
+# ============================================================
+LOCATION=$(gcloud compute project-info describe \
+  --project="${ID}" \
+  --format="value(commonInstanceMetadata.items[google-compute-default-region])" \
+  2>/dev/null || true)
 
-DEFAULT_ZONE="$(
-  gcloud compute project-info describe \
-    --project="${PROJECT_ID}" \
+LOCATION=$(trim_value "${LOCATION}")
+
+# Fallback: active gcloud configuration.
+if [[ -z "${LOCATION}" || "${LOCATION}" == "(unset)" ]]; then
+  LOCATION=$(gcloud config get-value compute/region 2>/dev/null || true)
+  LOCATION=$(trim_value "${LOCATION}")
+
+  if [[ "${LOCATION}" == "(unset)" ]]; then
+    LOCATION=""
+  fi
+fi
+
+# Fallback: derive region from default zone.
+if [[ -z "${LOCATION}" ]]; then
+  DEFAULT_ZONE=$(gcloud compute project-info describe \
+    --project="${ID}" \
     --format="value(commonInstanceMetadata.items[google-compute-default-zone])" \
-    2>/dev/null || true
-)"
+    2>/dev/null || true)
 
-# ------------------------------------------------------------
-# Exact lab requirements
-# ------------------------------------------------------------
-REGION="us-west1"
+  DEFAULT_ZONE=$(trim_value "${DEFAULT_ZONE}")
 
-# In this lab, the required bucket name is the same as PROJECT_ID.
-BUCKET_NAME="${PROJECT_ID}"
+  if [[ -z "${DEFAULT_ZONE}" || "${DEFAULT_ZONE}" == "(unset)" ]]; then
+    DEFAULT_ZONE=$(gcloud config get-value compute/zone 2>/dev/null || true)
+    DEFAULT_ZONE=$(trim_value "${DEFAULT_ZONE}")
+  fi
 
-# Resource IDs
+  if [[ -n "${DEFAULT_ZONE}" && "${DEFAULT_ZONE}" != "(unset)" ]]; then
+    LOCATION="${DEFAULT_ZONE%-*}"
+  fi
+fi
+
+# Manual input only when automatic detection fails.
+while [[ -z "${LOCATION}" ]]; do
+  echo
+  read -r -p "Enter the lab region: " LOCATION
+  LOCATION=$(trim_value "${LOCATION}")
+
+  if [[ -z "${LOCATION}" ]]; then
+    error "Region cannot be empty."
+  fi
+done
+
+export LOCATION
+
+gcloud config set compute/region "${LOCATION}" >/dev/null
+gcloud config set dataplex/location "${LOCATION}" >/dev/null 2>&1 || true
+
+echo "${CYAN}${BOLD}Project ID:${RESET}     ${ID}"
+echo "${CYAN}${BOLD}Project number:${RESET} ${PROJECT_NUMBER}"
+echo "${CYAN}${BOLD}Region:${RESET}         ${LOCATION}"
+echo "${CYAN}${BOLD}Bucket:${RESET}         ${ID}"
+
+# ============================================================
+# Resource names
+# ============================================================
 LAKE_ID="customer-engagements"
 ZONE_ID="raw-event-data"
 ASSET_ID="raw-event-files"
+
 ASPECT_TYPE_ID="protected-raw-data-aspect"
-
-# Display names required by the grader
-LAKE_DISPLAY_NAME="Customer Engagements"
-ZONE_DISPLAY_NAME="Raw Event Data"
-ASSET_DISPLAY_NAME="Raw Event Files"
 ASPECT_DISPLAY_NAME="Protected Raw Data Aspect"
-
-# Aspect field
 ASPECT_FIELD_ID="protected_raw_data_flag"
 ASPECT_FIELD_DISPLAY_NAME="Protected Raw Data Flag"
 
-# Fully qualified name of the zone
-ZONE_FQN="dataplex:${PROJECT_ID}.${REGION}.${LAKE_ID}.${ZONE_ID}"
-
-# Root-level aspect key
-ASPECT_KEY="${PROJECT_ID}.${REGION}.${ASPECT_TYPE_ID}"
-
-# Working files
 WORK_DIR="${HOME}/knowledge-catalog-lab"
 ASPECT_TEMPLATE_FILE="${WORK_DIR}/aspect-template.json"
 ASPECT_DATA_FILE="${WORK_DIR}/aspect-data.json"
+ENTRY_FILE="${WORK_DIR}/bucket-entry.json"
+VERIFY_FILE="${WORK_DIR}/verify-entry.json"
 
 mkdir -p "${WORK_DIR}"
-cd "${WORK_DIR}"
-
-echo -e "${CYAN}Project ID:${NC}             ${PROJECT_ID}"
-echo -e "${CYAN}Project number:${NC}         ${PROJECT_NUMBER}"
-echo -e "${CYAN}Current account:${NC}        ${CURRENT_ACCOUNT}"
-echo -e "${CYAN}Detected region:${NC}        ${DEFAULT_REGION:-Not configured}"
-echo -e "${CYAN}Required region:${NC}        ${REGION}"
-echo -e "${CYAN}Detected zone:${NC}          ${DEFAULT_ZONE:-Not configured}"
-echo -e "${CYAN}Bucket name:${NC}            ${BUCKET_NAME}"
-echo -e "${CYAN}Zone FQN:${NC}               ${ZONE_FQN}"
-
-if [[ -n "${DEFAULT_REGION}" && "${DEFAULT_REGION}" != "${REGION}" ]]; then
-  warning "Detected default region is ${DEFAULT_REGION}."
-  warning "The script uses ${REGION} because the lab requires it."
-fi
-
-success "Cloud configuration detected."
 
 # ============================================================
 # Enable APIs
 # ============================================================
 section "Enabling required APIs"
 
+# Data Catalog API is deprecated and is not required.
 gcloud services enable \
   dataplex.googleapis.com \
-  datacatalog.googleapis.com \
   storage.googleapis.com \
   cloudresourcemanager.googleapis.com \
   serviceusage.googleapis.com \
-  --project="${PROJECT_ID}" \
+  --project="${ID}" \
   --quiet
 
 success "Required APIs are enabled."
 
-info "Waiting for API activation to propagate..."
-sleep 10
-
 # ============================================================
-# Task 1: Create the lake
+# Task 1: Create lake
 # ============================================================
-section "Task 1: Create lake and regional raw zone"
+section "Task 1: Create lake and raw zone"
 
 if gcloud dataplex lakes describe "${LAKE_ID}" \
-  --project="${PROJECT_ID}" \
-  --location="${REGION}" \
+  --project="${ID}" \
+  --location="${LOCATION}" \
   >/dev/null 2>&1; then
 
   success "Lake ${LAKE_ID} already exists."
 else
-  info "Creating lake: ${LAKE_DISPLAY_NAME}"
+  info "Creating Customer Engagements lake..."
 
-  retry 5 15 \
-    gcloud dataplex lakes create "${LAKE_ID}" \
-      --project="${PROJECT_ID}" \
-      --location="${REGION}" \
-      --display-name="${LAKE_DISPLAY_NAME}" \
-      --description="Customer engagement data lake" \
-      --quiet
+  gcloud dataplex lakes create "${LAKE_ID}" \
+    --project="${ID}" \
+    --location="${LOCATION}" \
+    --display-name="Customer Engagements" \
+    --quiet
 
   success "Lake created."
 fi
 
-LAKE_STATE="$(
-  gcloud dataplex lakes describe "${LAKE_ID}" \
-    --project="${PROJECT_ID}" \
-    --location="${REGION}" \
-    --format="value(state)"
-)"
+# Wait for lake activation.
+for attempt in {1..30}; do
+  LAKE_STATE=$(gcloud dataplex lakes describe "${LAKE_ID}" \
+    --project="${ID}" \
+    --location="${LOCATION}" \
+    --format="value(state)" \
+    2>/dev/null || true)
 
-echo -e "${CYAN}Lake state:${NC} ${LAKE_STATE}"
+  if [[ "${LAKE_STATE}" == "ACTIVE" ]]; then
+    success "Lake state: ACTIVE"
+    break
+  fi
+
+  warning "Lake state: ${LAKE_STATE:-UNKNOWN} (${attempt}/30)"
+  sleep 5
+done
 
 # ============================================================
-# Task 1: Create the raw zone
+# Task 1: Create raw zone
 # ============================================================
 if gcloud dataplex zones describe "${ZONE_ID}" \
-  --project="${PROJECT_ID}" \
-  --location="${REGION}" \
+  --project="${ID}" \
+  --location="${LOCATION}" \
   --lake="${LAKE_ID}" \
   >/dev/null 2>&1; then
 
   success "Zone ${ZONE_ID} already exists."
 else
-  info "Creating regional raw zone: ${ZONE_DISPLAY_NAME}"
+  info "Creating Raw Event Data zone..."
 
-  retry 5 15 \
-    gcloud dataplex zones create "${ZONE_ID}" \
-      --project="${PROJECT_ID}" \
-      --location="${REGION}" \
-      --lake="${LAKE_ID}" \
-      --display-name="${ZONE_DISPLAY_NAME}" \
-      --description="Regional raw event data zone" \
-      --type="RAW" \
-      --resource-location-type="SINGLE_REGION" \
-      --quiet
+  gcloud dataplex zones create "${ZONE_ID}" \
+    --project="${ID}" \
+    --location="${LOCATION}" \
+    --lake="${LAKE_ID}" \
+    --display-name="Raw Event Data" \
+    --type="RAW" \
+    --resource-location-type="SINGLE_REGION" \
+    --discovery-enabled \
+    --quiet
 
-  success "Regional raw zone created."
+  success "Raw zone created."
 fi
 
-ZONE_STATE="$(
-  gcloud dataplex zones describe "${ZONE_ID}" \
-    --project="${PROJECT_ID}" \
-    --location="${REGION}" \
+# Wait for zone activation.
+for attempt in {1..30}; do
+  ZONE_STATE=$(gcloud dataplex zones describe "${ZONE_ID}" \
+    --project="${ID}" \
+    --location="${LOCATION}" \
     --lake="${LAKE_ID}" \
-    --format="value(state)"
-)"
+    --format="value(state)" \
+    2>/dev/null || true)
 
-ZONE_UID="$(
-  gcloud dataplex zones describe "${ZONE_ID}" \
-    --project="${PROJECT_ID}" \
-    --location="${REGION}" \
-    --lake="${LAKE_ID}" \
-    --format="value(uid)"
-)"
+  if [[ "${ZONE_STATE}" == "ACTIVE" ]]; then
+    success "Zone state: ACTIVE"
+    break
+  fi
 
-echo -e "${CYAN}Zone state:${NC} ${ZONE_STATE}"
-echo -e "${CYAN}Zone UID:${NC}   ${ZONE_UID}"
+  warning "Zone state: ${ZONE_STATE:-UNKNOWN} (${attempt}/30)"
+  sleep 5
+done
 
-success "Task 1 resources are ready."
+success "Task 1 completed."
 
 # ============================================================
 # Task 2: Create Cloud Storage bucket
 # ============================================================
 section "Task 2: Create and attach Cloud Storage bucket"
 
-if gcloud storage buckets describe "gs://${BUCKET_NAME}" \
-  --project="${PROJECT_ID}" \
+if gcloud storage buckets describe "gs://${ID}" \
+  --project="${ID}" \
   >/dev/null 2>&1; then
 
-  success "Bucket gs://${BUCKET_NAME} already exists."
+  success "Bucket gs://${ID} already exists."
 else
-  info "Creating bucket gs://${BUCKET_NAME}"
+  info "Creating bucket gs://${ID}..."
 
-  gcloud storage buckets create "gs://${BUCKET_NAME}" \
-    --project="${PROJECT_ID}" \
-    --location="${REGION}" \
+  gcloud storage buckets create "gs://${ID}" \
+    --project="${ID}" \
+    --location="${LOCATION}" \
+    --default-storage-class="STANDARD" \
     --uniform-bucket-level-access \
     --quiet
 
   success "Cloud Storage bucket created."
 fi
 
-BUCKET_LOCATION="$(
-  gcloud storage buckets describe "gs://${BUCKET_NAME}" \
-    --project="${PROJECT_ID}" \
-    --format="value(location)"
-)"
-
-echo -e "${CYAN}Bucket location:${NC} ${BUCKET_LOCATION}"
-
-# ============================================================
-# Authorize Dataplex service agent
-# ============================================================
-info "Authorizing the Dataplex service agent for the bucket..."
+# Authorize the Dataplex service agent.
+info "Authorizing Dataplex to access the bucket..."
 
 if gcloud dataplex lakes authorize \
-  --project="${PROJECT_ID}" \
-  --storage-bucket-resource="${BUCKET_NAME}" \
+  --project="${ID}" \
+  --storage-bucket-resource="${ID}" \
   --quiet; then
 
-  success "Dataplex service agent authorized."
+  success "Dataplex bucket access authorized."
 else
-  warning "Authorization command returned an error."
-  warning "The service agent might already be authorized."
+  warning "Bucket authorization may already be configured."
 fi
 
 # ============================================================
-# Attach bucket as asset
+# Task 2: Attach bucket as asset
 # ============================================================
 if gcloud dataplex assets describe "${ASSET_ID}" \
-  --project="${PROJECT_ID}" \
-  --location="${REGION}" \
+  --project="${ID}" \
+  --location="${LOCATION}" \
   --lake="${LAKE_ID}" \
   --zone="${ZONE_ID}" \
   >/dev/null 2>&1; then
 
   success "Asset ${ASSET_ID} already exists."
 else
-  info "Attaching the bucket as asset: ${ASSET_DISPLAY_NAME}"
+  info "Creating Raw Event Files asset..."
 
-  retry 6 15 \
-    gcloud dataplex assets create "${ASSET_ID}" \
-      --project="${PROJECT_ID}" \
-      --location="${REGION}" \
-      --lake="${LAKE_ID}" \
-      --zone="${ZONE_ID}" \
-      --display-name="${ASSET_DISPLAY_NAME}" \
-      --description="Raw customer event files" \
-      --resource-type="STORAGE_BUCKET" \
-      --resource-name="projects/${PROJECT_NUMBER}/buckets/${BUCKET_NAME}" \
-      --resource-read-access-mode="DIRECT" \
-      --quiet
-
-  success "Cloud Storage bucket attached to the raw zone."
-fi
-
-ASSET_STATE="$(
-  gcloud dataplex assets describe "${ASSET_ID}" \
-    --project="${PROJECT_ID}" \
-    --location="${REGION}" \
+  gcloud dataplex assets create "${ASSET_ID}" \
+    --project="${ID}" \
+    --location="${LOCATION}" \
     --lake="${LAKE_ID}" \
     --zone="${ZONE_ID}" \
-    --format="value(state)"
-)"
+    --display-name="Raw Event Files" \
+    --resource-type="STORAGE_BUCKET" \
+    --resource-name="projects/${ID}/buckets/${ID}" \
+    --resource-read-access-mode="DIRECT" \
+    --discovery-enabled \
+    --quiet
 
-echo -e "${CYAN}Asset state:${NC} ${ASSET_STATE}"
+  success "Raw Event Files asset created."
+fi
 
-success "Task 2 resources are ready."
+# Wait for asset activation.
+for attempt in {1..40}; do
+  ASSET_STATE=$(gcloud dataplex assets describe "${ASSET_ID}" \
+    --project="${ID}" \
+    --location="${LOCATION}" \
+    --lake="${LAKE_ID}" \
+    --zone="${ZONE_ID}" \
+    --format="value(state)" \
+    2>/dev/null || true)
+
+  if [[ "${ASSET_STATE}" == "ACTIVE" ]]; then
+    success "Asset state: ACTIVE"
+    break
+  fi
+
+  warning "Asset state: ${ASSET_STATE:-UNKNOWN} (${attempt}/40)"
+  sleep 5
+done
+
+success "Task 2 completed."
 
 # ============================================================
-# Task 3: Create aspect metadata template
+# Task 3: Create aspect type
 # ============================================================
-section "Task 3: Create and attach the aspect"
+section "Task 3: Create Protected Raw Data Aspect"
 
 cat > "${ASPECT_TEMPLATE_FILE}" <<JSON
 {
@@ -598,7 +416,7 @@ cat > "${ASPECT_TEMPLATE_FILE}" <<JSON
       ],
       "annotations": {
         "displayName": "${ASPECT_FIELD_DISPLAY_NAME}",
-        "description": "Indicates whether raw data is protected",
+        "description": "Indicates whether the raw data is protected",
         "displayOrder": 1
       }
     }
@@ -606,49 +424,36 @@ cat > "${ASPECT_TEMPLATE_FILE}" <<JSON
 }
 JSON
 
-success "Aspect metadata template created."
-
 echo
-echo -e "${GRAY}---------------- Aspect template ----------------${NC}"
+echo "${CYAN}${BOLD}Aspect template:${RESET}"
 jq . "${ASPECT_TEMPLATE_FILE}"
-echo -e "${GRAY}-------------------------------------------------${NC}"
 
-# ============================================================
-# Create aspect type
-# ============================================================
 if gcloud dataplex aspect-types describe "${ASPECT_TYPE_ID}" \
-  --project="${PROJECT_ID}" \
-  --location="${REGION}" \
+  --project="${ID}" \
+  --location="${LOCATION}" \
   >/dev/null 2>&1; then
 
   success "Aspect type ${ASPECT_TYPE_ID} already exists."
 else
-  info "Creating aspect type: ${ASPECT_DISPLAY_NAME}"
+  info "Creating ${ASPECT_DISPLAY_NAME}..."
 
-  retry 5 15 \
-    gcloud dataplex aspect-types create "${ASPECT_TYPE_ID}" \
-      --project="${PROJECT_ID}" \
-      --location="${REGION}" \
-      --display-name="${ASPECT_DISPLAY_NAME}" \
-      --description="Identifies protected raw data" \
-      --metadata-template-file-name="${ASPECT_TEMPLATE_FILE}" \
-      --quiet
+  gcloud dataplex aspect-types create "${ASPECT_TYPE_ID}" \
+    --project="${ID}" \
+    --location="${LOCATION}" \
+    --display-name="${ASPECT_DISPLAY_NAME}" \
+    --description="Marks whether raw data is protected" \
+    --metadata-template-file-name="${ASPECT_TEMPLATE_FILE}" \
+    --quiet
 
   success "Aspect type created."
 fi
 
-ASPECT_TYPE_NAME="$(
-  gcloud dataplex aspect-types describe "${ASPECT_TYPE_ID}" \
-    --project="${PROJECT_ID}" \
-    --location="${REGION}" \
-    --format="value(name)"
-)"
-
-echo -e "${CYAN}Aspect type:${NC} ${ASPECT_TYPE_NAME}"
-
 # ============================================================
-# Create aspect instance data
+# Task 3: Create aspect data
 # ============================================================
+ASPECT_KEY="${ID}.${LOCATION}.${ASPECT_TYPE_ID}"
+BUCKET_FQN="gcs:${ID}"
+
 cat > "${ASPECT_DATA_FILE}" <<JSON
 {
   "${ASPECT_KEY}": {
@@ -659,131 +464,137 @@ cat > "${ASPECT_DATA_FILE}" <<JSON
 }
 JSON
 
-success "Aspect data file created."
-
 echo
-echo -e "${GRAY}------------------ Aspect data ------------------${NC}"
+echo "${CYAN}${BOLD}Aspect data:${RESET}"
 jq . "${ASPECT_DATA_FILE}"
-echo -e "${GRAY}-------------------------------------------------${NC}"
 
 # ============================================================
-# Locate zone entry
+# Task 3: Lookup exact Cloud Storage bucket entry
 # ============================================================
-info "Locating the Knowledge Catalog entry for ${ZONE_DISPLAY_NAME}..."
-echo -e "${CYAN}Exact FQN:${NC} ${ZONE_FQN}"
+section "Locating Raw Event Files entry"
 
-ZONE_ENTRY_NAME=""
+info "Looking up exact Cloud Storage FQN: ${BUCKET_FQN}"
 
-for attempt in {1..30}; do
-  ZONE_ENTRY_NAME="$(find_zone_entry || true)"
+ENTRY_NAME=""
 
-  if [[ -n "${ZONE_ENTRY_NAME}" && "${ZONE_ENTRY_NAME}" != "null" ]]; then
-    echo
-    success "Knowledge Catalog zone entry found."
-    break
+for attempt in {1..36}; do
+  if gcloud dataplex entries lookup "${BUCKET_FQN}" \
+    --project="${ID}" \
+    --location="${LOCATION}" \
+    --view="all" \
+    --format=json \
+    > "${ENTRY_FILE}" 2>/dev/null; then
+
+    FOUND_FQN=$(jq -r '.fullyQualifiedName // empty' "${ENTRY_FILE}")
+    FOUND_ENTRY_NAME=$(jq -r '.name // empty' "${ENTRY_FILE}")
+
+    if [[ "${FOUND_FQN}" == "${BUCKET_FQN}" && -n "${FOUND_ENTRY_NAME}" ]]; then
+      ENTRY_NAME="${FOUND_ENTRY_NAME}"
+      success "Exact Cloud Storage entry found."
+      break
+    fi
   fi
 
-  warning "Zone entry is not available yet (${attempt}/30)."
-  sleep 10
+  warning "Cloud Storage entry is not available yet (${attempt}/36)."
+  sleep 5
 done
 
-if [[ -z "${ZONE_ENTRY_NAME}" || "${ZONE_ENTRY_NAME}" == "null" ]]; then
+if [[ -z "${ENTRY_NAME}" ]]; then
+  error "Unable to locate the entry with FQN ${BUCKET_FQN}."
   echo
-  error "Unable to locate the zone entry after multiple attempts."
-  echo
-  info "Diagnostic search results:"
+  info "Knowledge Catalog search results for the bucket:"
 
-  gcloud dataplex entries search \
-    "displayname:\"${ZONE_DISPLAY_NAME}\"" \
-    --project="${PROJECT_ID}" \
-    --scope="projects/${PROJECT_ID}" \
-    --limit=20 \
+  gcloud dataplex entries search "${ID}" \
+    --project="${ID}" \
+    --scope="projects/${ID}" \
+    --limit=50 \
     --format="table(
-      dataplexEntry.name:label=ENTRY,
+      dataplexEntry.entrySource.system:label=SYSTEM,
       dataplexEntry.displayName:label=DISPLAY_NAME,
-      dataplexEntry.fullyQualifiedName:label=FQN
+      dataplexEntry.fullyQualifiedName:label=FQN,
+      dataplexEntry.name:label=ENTRY
     )" || true
 
   exit 1
 fi
 
-echo -e "${CYAN}Entry resource:${NC}"
-echo "${ZONE_ENTRY_NAME}"
+ENTRY_SYSTEM=$(jq -r '.entrySource.system // "UNKNOWN"' "${ENTRY_FILE}")
+ENTRY_RESOURCE=$(jq -r '.entrySource.resource // "UNKNOWN"' "${ENTRY_FILE}")
+
+echo "${CYAN}${BOLD}Entry name:${RESET}     ${ENTRY_NAME}"
+echo "${CYAN}${BOLD}Entry FQN:${RESET}      ${BUCKET_FQN}"
+echo "${CYAN}${BOLD}Entry system:${RESET}   ${ENTRY_SYSTEM}"
+echo "${CYAN}${BOLD}Entry resource:${RESET} ${ENTRY_RESOURCE}"
+
+if [[ "${ENTRY_SYSTEM}" == "BIGQUERY" ]]; then
+  error "The selected entry is a BigQuery entry, not Raw Event Files."
+  exit 1
+fi
 
 # ============================================================
-# Attach aspect to the zone
+# Task 3: Attach aspect to asset entry
 # ============================================================
-info "Attaching ${ASPECT_DISPLAY_NAME} to ${ZONE_DISPLAY_NAME}..."
+section "Attaching aspect to Raw Event Files"
 
-ASPECT_ATTACHED=false
-
-# Preferred command for first-party/system entries.
-if gcloud dataplex entries modify "${ZONE_ENTRY_NAME}" \
-  --project="${PROJECT_ID}" \
+gcloud dataplex entries update "${ENTRY_NAME}" \
   --update-aspects="${ASPECT_DATA_FILE}" \
-  --quiet; then
+  --quiet
 
-  ASPECT_ATTACHED=true
-  success "Aspect attached with 'entries modify'."
+success "Protected Raw Data Aspect attached to Raw Event Files."
+
+# ============================================================
+# Task 3: Verify aspect
+# ============================================================
+section "Verifying attached aspect"
+
+gcloud dataplex entries lookup "${BUCKET_FQN}" \
+  --project="${ID}" \
+  --location="${LOCATION}" \
+  --view="all" \
+  --format=json \
+  > "${VERIFY_FILE}"
+
+ASPECT_TYPE_RESOURCE_SUFFIX="/locations/${LOCATION}/aspectTypes/${ASPECT_TYPE_ID}"
+
+if jq -e \
+  --arg expected_fqn "${BUCKET_FQN}" \
+  --arg suffix "${ASPECT_TYPE_RESOURCE_SUFFIX}" \
+  --arg field "${ASPECT_FIELD_ID}" '
+    .fullyQualifiedName == $expected_fqn
+    and any(
+      (.aspects // {} | to_entries[]);
+      (.value.aspectType // "" | endswith($suffix))
+      and .value.data[$field] == "Y"
+    )
+  ' "${VERIFY_FILE}" >/dev/null; then
+
+  success "Protected Raw Data Flag is set to Y on Raw Event Files."
 else
-  warning "'entries modify' did not succeed."
-  info "Trying 'entries update-aspects'..."
-
-  if gcloud dataplex entries update-aspects "${ZONE_ENTRY_NAME}" \
-    --project="${PROJECT_ID}" \
-    --aspects="${ASPECT_DATA_FILE}" \
-    --quiet; then
-
-    ASPECT_ATTACHED=true
-    success "Aspect attached with 'entries update-aspects'."
-  fi
-fi
-
-if [[ "${ASPECT_ATTACHED}" != "true" ]]; then
-  error "Unable to attach the aspect to the zone."
+  error "Aspect verification failed."
+  jq . "${VERIFY_FILE}"
   exit 1
 fi
 
-# ============================================================
-# Verify attached aspect
-# ============================================================
-info "Verifying the attached aspect..."
+echo
+echo "${CYAN}${BOLD}Verified aspect:${RESET}"
 
-if gcloud dataplex entries lookup "${ZONE_ENTRY_NAME}" \
-  --project="${PROJECT_ID}" \
-  --view="all" \
-  --format="yaml(
-    name,
-    displayName,
-    fullyQualifiedName,
-    aspects
-  )"; then
-
-  success "Aspect verification completed."
-else
-  warning "Lookup verification failed; trying describe..."
-
-  gcloud dataplex entries describe "${ZONE_ENTRY_NAME}" \
-    --project="${PROJECT_ID}" \
-    --view="all" \
-    --format="yaml(
-      name,
-      displayName,
-      fullyQualifiedName,
-      aspects
-    )" || true
-fi
+jq \
+  --arg suffix "${ASPECT_TYPE_RESOURCE_SUFFIX}" '
+    .aspects
+    | to_entries[]
+    | select(.value.aspectType | endswith($suffix))
+  ' "${VERIFY_FILE}"
 
 # ============================================================
-# Final resource verification
+# Final verification
 # ============================================================
 section "Final resource verification"
 
-echo -e "${CYAN}Lake${NC}"
+echo "${CYAN}${BOLD}Lake${RESET}"
 
 gcloud dataplex lakes describe "${LAKE_ID}" \
-  --project="${PROJECT_ID}" \
-  --location="${REGION}" \
+  --project="${ID}" \
+  --location="${LOCATION}" \
   --format="table(
     displayName:label=DISPLAY_NAME,
     name.basename():label=ID,
@@ -791,11 +602,11 @@ gcloud dataplex lakes describe "${LAKE_ID}" \
   )"
 
 echo
-echo -e "${CYAN}Raw zone${NC}"
+echo "${CYAN}${BOLD}Raw zone${RESET}"
 
 gcloud dataplex zones describe "${ZONE_ID}" \
-  --project="${PROJECT_ID}" \
-  --location="${REGION}" \
+  --project="${ID}" \
+  --location="${LOCATION}" \
   --lake="${LAKE_ID}" \
   --format="table(
     displayName:label=DISPLAY_NAME,
@@ -806,80 +617,50 @@ gcloud dataplex zones describe "${ZONE_ID}" \
   )"
 
 echo
-echo -e "${CYAN}Cloud Storage bucket${NC}"
-
-gcloud storage buckets describe "gs://${BUCKET_NAME}" \
-  --project="${PROJECT_ID}" \
-  --format="table(
-    name:label=BUCKET,
-    location:label=LOCATION,
-    storageClass:label=STORAGE_CLASS
-  )"
-
-echo
-echo -e "${CYAN}Dataplex asset${NC}"
+echo "${CYAN}${BOLD}Raw Event Files asset${RESET}"
 
 gcloud dataplex assets describe "${ASSET_ID}" \
-  --project="${PROJECT_ID}" \
-  --location="${REGION}" \
+  --project="${ID}" \
+  --location="${LOCATION}" \
   --lake="${LAKE_ID}" \
   --zone="${ZONE_ID}" \
   --format="table(
     displayName:label=DISPLAY_NAME,
     name.basename():label=ID,
-    resourceSpec.type:label=TYPE,
     resourceSpec.name:label=RESOURCE,
     state:label=STATE
   )"
 
 echo
-echo -e "${CYAN}Aspect type${NC}"
+echo "${CYAN}${BOLD}Protected Raw Data Aspect${RESET}"
 
 gcloud dataplex aspect-types describe "${ASPECT_TYPE_ID}" \
-  --project="${PROJECT_ID}" \
-  --location="${REGION}" \
+  --project="${ID}" \
+  --location="${LOCATION}" \
   --format="table(
     displayName:label=DISPLAY_NAME,
     name.basename():label=ID,
     uid:label=UID
   )"
 
-echo
-echo -e "${CYAN}Aspect search verification${NC}"
-
-gcloud dataplex entries search \
-  "aspect=${ASPECT_KEY}" \
-  --project="${PROJECT_ID}" \
-  --scope="projects/${PROJECT_ID}" \
-  --limit=20 \
-  --format="table(
-    dataplexEntry.displayName:label=DISPLAY_NAME,
-    dataplexEntry.fullyQualifiedName:label=FQN,
-    dataplexEntry.name:label=ENTRY
-  )" || true
-
 # ============================================================
-# Completion banner
+# Complete
 # ============================================================
 echo
-echo -e "${GREEN}"
+echo "${GREEN}${BOLD}"
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║                  ALL TASKS COMPLETED                      ║"
 echo "╠════════════════════════════════════════════════════════════╣"
-printf "║ %-58s ║\n" "Project: ${PROJECT_ID}"
-printf "║ %-58s ║\n" "Region: ${REGION}"
-printf "║ %-58s ║\n" "Lake: ${LAKE_DISPLAY_NAME}"
-printf "║ %-58s ║\n" "Zone: ${ZONE_DISPLAY_NAME}"
-printf "║ %-58s ║\n" "Asset: ${ASSET_DISPLAY_NAME}"
-printf "║ %-58s ║\n" "Aspect: ${ASPECT_DISPLAY_NAME}"
+printf "║ %-58s ║\n" "Project: ${ID}"
+printf "║ %-58s ║\n" "Region: ${LOCATION}"
+printf "║ %-58s ║\n" "Lake: Customer Engagements"
+printf "║ %-58s ║\n" "Zone: Raw Event Data"
+printf "║ %-58s ║\n" "Asset: Raw Event Files"
+printf "║ %-58s ║\n" "Aspect: Protected Raw Data Aspect"
 printf "║ %-58s ║\n" "Protected Raw Data Flag: Y"
 echo "╠════════════════════════════════════════════════════════════╣"
 echo "║                     © ePlus.DEV                           ║"
 echo "╚════════════════════════════════════════════════════════════╝"
-echo -e "${NC}"
+echo "${RESET}"
 
-echo -e "${GREEN}Click Check my progress for all three tasks.${NC}"
-EOF
-
-chmod +x lab.sh
-./lab.sh
+echo "${RED}${BOLD}Congratulations${RESET} ${WHITE}${BOLD}for${RESET} ${GREEN}${BOLD}Completing the Lab !!! - ePlus.DEV${RESET}"
