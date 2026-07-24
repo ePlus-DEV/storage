@@ -21,8 +21,8 @@ echo "${MAGENTA_TEXT}${BOLD_TEXT}     🚀 ePlus.DEV – GCP Lab      ${RESET_FO
 echo "${CYAN_TEXT}${BOLD_TEXT}==============================================================${RESET_FORMAT}"
 echo
 
-read -p "${YELLOW_TEXT}${BOLD_TEXT}Enter your GCP region: ${RESET_FORMAT}" LOCATION
-export LOCATION
+LOCATION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+
 
 echo
 echo "${BLUE_TEXT}${BOLD_TEXT}Step 1:${RESET_FORMAT} ${WHITE_TEXT}Creating Pub/Sub schema using Avro format...${RESET_FORMAT}"
