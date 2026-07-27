@@ -10,12 +10,10 @@ echo -e "${CYAN}=====================================${NC}"
 echo -e "   ${YELLOW}Copyright (c) 2025 ePlus.DEV${NC}"
 echo -e "${CYAN}=====================================${NC}\n"
 
-echo "Please export the values."
-echo ""
 
 # Prompt user to input values
-read -p "Enter REGION (e.g. us-west1): " REGION
-read -p "Enter ZONE (e.g. us-west1-a): " ZONE
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 
 PROJECT_ID=$(gcloud config get-value project)
 BUCKET_NAME="${PROJECT_ID}-bucket"
