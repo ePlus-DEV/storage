@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 
 # Define color variables
 BLACK=$(tput setaf 0)
@@ -26,90 +26,79 @@ RESET=$(tput sgr0)
 
 #----------------------------------------------------start--------------------------------------------------#
 
+echo
 echo "${YELLOW}${BOLD}Starting${RESET} ${GREEN}${BOLD}Execution - ePlus.DEV${RESET}"
 echo
-
-PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
-
-if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then
-  echo "${RED}${BOLD}ERROR:${RESET} Google Cloud project was not detected."
-  exit 1
-fi
-
-echo "${CYAN}${BOLD}Project ID:${RESET} $PROJECT_ID"
+echo "${WHITE}${BOLD}Enter the required environment variables:${RESET}"
 echo
 
-# Required terminal input
-read -r -p "Enter REQUEST1: " REQUEST1
-read -r -p "Enter RESPONSE1: " RESPONSE1
-read -r -p "Enter REQUEST2: " REQUEST2
-read -r -p "Enter RESPONSE2: " RESPONSE2
+# API key created manually from:
+# APIs & Services > Credentials > Create credentials > API key
+read -r -p "${MAGENTA}${BOLD}export API_KEY=${RESET}" API_KEY
+
+read -r -p "${CYAN}${BOLD}export REQUEST1=${RESET}" REQUEST1
+
+read -r -p "${GREEN}${BOLD}export RESPONSE1=${RESET}" RESPONSE1
+
+read -r -p "${BLUE}${BOLD}export REQUEST2=${RESET}" REQUEST2
+
+read -r -p "${YELLOW}${BOLD}export RESPONSE2=${RESET}" RESPONSE2
+
+echo
+
+# Validate required values
+if [[ -z "$API_KEY" ]]; then
+  echo "${RED}${BOLD}ERROR:${RESET} API_KEY is required."
+  exit 1
+fi
 
 if [[ -z "$REQUEST1" || -z "$RESPONSE1" || -z "$REQUEST2" || -z "$RESPONSE2" ]]; then
   echo "${RED}${BOLD}ERROR:${RESET} All request and response file names are required."
   exit 1
 fi
 
+# Validate filenames required by the lab grader
+if [[ "$REQUEST1" != "request.json" ]]; then
+  echo "${RED}${BOLD}ERROR:${RESET} REQUEST1 must be: request.json"
+  exit 1
+fi
+
+if [[ "$RESPONSE1" != "speech_response_en.json" ]]; then
+  echo "${RED}${BOLD}ERROR:${RESET} RESPONSE1 must be: speech_response_en.json"
+  exit 1
+fi
+
+if [[ "$REQUEST2" != "request_sp.json" ]]; then
+  echo "${RED}${BOLD}ERROR:${RESET} REQUEST2 must be: request_sp.json"
+  exit 1
+fi
+
+if [[ "$RESPONSE2" != "response_speech_sp.json" ]]; then
+  echo "${RED}${BOLD}ERROR:${RESET} RESPONSE2 must be: response_speech_sp.json"
+  exit 1
+fi
+
+# Export variables
+export API_KEY
 export REQUEST1
 export RESPONSE1
 export REQUEST2
 export RESPONSE2
 
+echo "${GREEN}${BOLD}Environment variables configured successfully.${RESET}"
 echo
-echo "${YELLOW}${BOLD}Enabling required APIs...${RESET}"
+echo "${MAGENTA}export API_KEY=********${RESET}"
+echo "${CYAN}export REQUEST1=$REQUEST1${RESET}"
+echo "${GREEN}export RESPONSE1=$RESPONSE1${RESET}"
+echo "${BLUE}export REQUEST2=$REQUEST2${RESET}"
+echo "${YELLOW}export RESPONSE2=$RESPONSE2${RESET}"
 
-gcloud services enable \
-  speech.googleapis.com \
-  apikeys.googleapis.com \
-  --project="$PROJECT_ID" \
-  --quiet
-
-echo
-echo "${YELLOW}${BOLD}Creating API key automatically...${RESET}"
-
-KEY_ID="speech-key-$(date +%s)"
-API_KEY=""
-
-KEY_RESOURCE=$(gcloud services api-keys create \
-  --project="$PROJECT_ID" \
-  --key-id="$KEY_ID" \
-  --display-name="Speech API Key - ePlus.DEV" \
-  --api-target="service=speech.googleapis.com" \
-  --format="value(name)" \
-  --quiet 2>/dev/null || true)
-
-if [[ -n "$KEY_RESOURCE" ]]; then
-  sleep 5
-
-  API_KEY=$(gcloud services api-keys get-key-string "$KEY_RESOURCE" \
-    --project="$PROJECT_ID" \
-    --format="value(keyString)" \
-    --quiet 2>/dev/null || true)
-fi
-
-if [[ -z "$API_KEY" ]]; then
-  echo "${YELLOW}${BOLD}API key could not be created automatically.${RESET}"
-  read -r -p "Enter API_KEY: " API_KEY
-else
-  echo "${GREEN}${BOLD}API key created successfully.${RESET}"
-fi
-
-if [[ -z "$API_KEY" ]]; then
-  echo "${RED}${BOLD}ERROR:${RESET} API_KEY is required."
-  exit 1
-fi
-
-export API_KEY
+#----------------------------------------------------Task 2-------------------------------------------------#
 
 echo
-echo "${CYAN}${BOLD}Environment variables:${RESET}"
-echo "export API_KEY=********"
-echo "export REQUEST1=$REQUEST1"
-echo "export RESPONSE1=$RESPONSE1"
-echo "export REQUEST2=$REQUEST2"
-echo "export RESPONSE2=$RESPONSE2"
+echo "${CYAN}${BOLD}Task 2: Creating English transcription request...${RESET}"
 
-cat > "$REQUEST1" <<EOF_REQUEST1
+cat > "$REQUEST1" <<'EOF_REQUEST1'
 {
   "config": {
     "encoding": "LINEAR16",
@@ -122,17 +111,44 @@ cat > "$REQUEST1" <<EOF_REQUEST1
 }
 EOF_REQUEST1
 
-echo
-echo "${YELLOW}${BOLD}Processing the first audio file...${RESET}"
+echo "${YELLOW}${BOLD}Calling Cloud Speech-to-Text API...${RESET}"
 
-curl -s \
+curl -sS \
   -X POST \
   -H "Content-Type: application/json" \
   --data-binary "@$REQUEST1" \
   "https://speech.googleapis.com/v1/speech:recognize?key=$API_KEY" \
   > "$RESPONSE1"
 
-cat > "$REQUEST2" <<EOF_REQUEST2
+if grep -q '"error"' "$RESPONSE1"; then
+  echo
+  echo "${RED}${BOLD}English transcription failed:${RESET}"
+
+  if command -v jq >/dev/null 2>&1; then
+    jq . "$RESPONSE1"
+  else
+    cat "$RESPONSE1"
+  fi
+
+  exit 1
+fi
+
+echo "${GREEN}${BOLD}English transcription completed successfully.${RESET}"
+echo
+echo "${WHITE}${BOLD}English response:${RESET}"
+
+if command -v jq >/dev/null 2>&1; then
+  jq . "$RESPONSE1"
+else
+  cat "$RESPONSE1"
+fi
+
+#----------------------------------------------------Task 3-------------------------------------------------#
+
+echo
+echo "${BLUE}${BOLD}Task 3: Creating Spanish transcription request...${RESET}"
+
+cat > "$REQUEST2" <<'EOF_REQUEST2'
 {
   "config": {
     "encoding": "FLAC",
@@ -144,26 +160,48 @@ cat > "$REQUEST2" <<EOF_REQUEST2
 }
 EOF_REQUEST2
 
-echo "${YELLOW}${BOLD}Processing the second audio file...${RESET}"
+echo "${YELLOW}${BOLD}Calling Cloud Speech-to-Text API...${RESET}"
 
-curl -s \
+curl -sS \
   -X POST \
   -H "Content-Type: application/json" \
   --data-binary "@$REQUEST2" \
   "https://speech.googleapis.com/v1/speech:recognize?key=$API_KEY" \
   > "$RESPONSE2"
 
+if grep -q '"error"' "$RESPONSE2"; then
+  echo
+  echo "${RED}${BOLD}Spanish transcription failed:${RESET}"
+
+  if command -v jq >/dev/null 2>&1; then
+    jq . "$RESPONSE2"
+  else
+    cat "$RESPONSE2"
+  fi
+
+  exit 1
+fi
+
+echo "${GREEN}${BOLD}Spanish transcription completed successfully.${RESET}"
 echo
-echo "${BLUE}${BOLD}Response 1:${RESET}"
-cat "$RESPONSE1"
+echo "${WHITE}${BOLD}Spanish response:${RESET}"
+
+if command -v jq >/dev/null 2>&1; then
+  jq . "$RESPONSE2"
+else
+  cat "$RESPONSE2"
+fi
+
+#----------------------------------------------------Result-------------------------------------------------#
 
 echo
-echo
-echo "${BLUE}${BOLD}Response 2:${RESET}"
-cat "$RESPONSE2"
+echo "${CYAN}${BOLD}Generated files:${RESET}"
+echo "${CYAN}Request 1 : $REQUEST1${RESET}"
+echo "${GREEN}Response 1: $RESPONSE1${RESET}"
+echo "${BLUE}Request 2 : $REQUEST2${RESET}"
+echo "${YELLOW}Response 2: $RESPONSE2${RESET}"
 
-echo
 echo
 echo "${RED}${BOLD}Congratulations${RESET} ${WHITE}${BOLD}for${RESET} ${GREEN}${BOLD}Completing the Lab !!! - ePlus.DEV${RESET}"
 
-#-----------------------------------------------------end----------------------------------------------------------#
+#-----------------------------------------------------end---------------------------------------------------#
