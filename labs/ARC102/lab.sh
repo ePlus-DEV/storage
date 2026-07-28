@@ -16,7 +16,8 @@ echo "Please export the values."
 read -p "Enter BUCKET_NAME: " BUCKET_NAME
 read -p "Enter TOPIC_NAME: " TOPIC_NAME
 read -p "Enter FUNCTION_NAME: " FUNCTION_NAME
-read -p "Enter REGION (e.g. us-east4): " REGION
+
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
 gcloud config set compute/region "$REGION" >/dev/null
 export PROJECT_ID="$(gcloud config get-value project -q)"
