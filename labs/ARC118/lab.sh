@@ -1,57 +1,86 @@
 #!/bin/bash
-# Define color variables
 
-BLACK=`tput setaf 0`
-RED=`tput setaf 1`
-GREEN=`tput setaf 2`
-YELLOW=`tput setaf 3`
-BLUE=`tput setaf 4`
-MAGENTA=`tput setaf 5`
-CYAN=`tput setaf 6`
-WHITE=`tput setaf 7`
+# Enhanced Color Definitions
+BLACK=$'\033[0;90m'
+RED=$'\033[0;91m'
+GREEN=$'\033[0;92m'
+YELLOW=$'\033[0;93m'
+BLUE=$'\033[0;94m'
+MAGENTA=$'\033[0;95m'
+CYAN=$'\033[0;96m'
+WHITE=$'\033[0;97m'
 
-BG_BLACK=`tput setab 0`
-BG_RED=`tput setab 1`
-BG_GREEN=`tput setab 2`
-BG_YELLOW=`tput setab 3`
-BG_BLUE=`tput setab 4`
-BG_MAGENTA=`tput setab 5`
-BG_CYAN=`tput setab 6`
-BG_WHITE=`tput setab 7`
+NO_COLOR=$'\033[0m'
+RESET=$'\033[0m'
+BOLD=$'\033[1m'
+UNDERLINE=$'\033[4m'
 
-BOLD=`tput bold`
-RESET=`tput sgr0`
-#----------------------------------------------------start--------------------------------------------------#
+# Header Section
+echo "${CYAN}${BOLD}╔════════════════════════════════════════════════════════╗${RESET}"
+echo "${CYAN}${BOLD}         ePlus.DEV         ${RESET}"
+echo "${CYAN}${BOLD}╚════════════════════════════════════════════════════════╝${RESET}"
+echo
+echo
+echo "${BLUE}${BOLD}⚡ Initializing Event-Driven Architecture Setup...${RESET}"
+echo
 
-echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV${RESET}"
+# User Input Section
+echo "${GREEN}${BOLD}▬▬▬▬▬▬▬▬▬ INPUT PARAMETERS ▬▬▬▬▬▬▬▬▬${RESET}"
+read -p "${YELLOW}${BOLD}Enter the location (e.g., us-central1): ${RESET}" LOCATION
+export LOCATION
+echo
+echo "${CYAN}Configuration Parameters:${RESET}"
+echo "${WHITE}Location: ${BOLD}$LOCATION${RESET}"
+echo
 
-gcloud auth list
-
-export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
-
-export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-
+# Service Enablement
+echo "${GREEN}${BOLD}▬▬▬▬▬▬▬▬▬ ENABLING SERVICES ▬▬▬▬▬▬▬▬▬${RESET}"
+echo "${YELLOW}Enabling required Google Cloud services...${RESET}"
 gcloud services enable run.googleapis.com
 gcloud services enable eventarc.googleapis.com
+echo "${GREEN}✅ Services enabled successfully!${RESET}"
+echo
 
-gcloud pubsub topics create $DEVSHELL_PROJECT_ID-topic
+# Pub/Sub Setup
+echo "${GREEN}${BOLD}▬▬▬▬▬▬▬▬▬ PUB/SUB CONFIGURATION ▬▬▬▬▬▬▬▬▬${RESET}"
+echo "${YELLOW}Creating Pub/Sub topic and subscription...${RESET}"
+gcloud pubsub topics create "$DEVSHELL_PROJECT_ID-topic"
+gcloud pubsub subscriptions create --topic "$DEVSHELL_PROJECT_ID-topic" "$DEVSHELL_PROJECT_ID-topic-sub"
+echo "${GREEN}✅ Pub/Sub resources created successfully!${RESET}"
+echo
 
-gcloud  pubsub subscriptions create --topic $DEVSHELL_PROJECT_ID-topic $DEVSHELL_PROJECT_ID-topic-sub
-
+# Cloud Run Deployment
+echo "${GREEN}${BOLD}▬▬▬▬▬▬▬▬▬ CLOUD RUN DEPLOYMENT ▬▬▬▬▬▬▬▬▬${RESET}"
+echo "${YELLOW}Deploying Cloud Run service...${RESET}"
 gcloud run deploy pubsub-events \
   --image=gcr.io/cloudrun/hello \
   --platform=managed \
-  --region=$REGION \
+  --region="$LOCATION" \
   --allow-unauthenticated
+echo "${GREEN}✅ Cloud Run service deployed successfully!${RESET}"
+echo
 
+# Eventarc Trigger Setup
+echo "${GREEN}${BOLD}▬▬▬▬▬▬▬▬▬ EVENTARC CONFIGURATION ▬▬▬▬▬▬▬▬▬${RESET}"
+echo "${YELLOW}Creating Eventarc trigger for Pub/Sub messages...${RESET}"
 gcloud eventarc triggers create pubsub-events-trigger \
-  --location=$REGION \
+  --location="$LOCATION" \
   --destination-run-service=pubsub-events \
-  --destination-run-region=$REGION \
-  --transport-topic=$DEVSHELL_PROJECT_ID-topic \
+  --destination-run-region="$LOCATION" \
+  --transport-topic="$DEVSHELL_PROJECT_ID-topic" \
   --event-filters="type=google.cloud.pubsub.topic.v1.messagePublished"
+echo "${GREEN}✅ Eventarc trigger created successfully!${RESET}"
+echo
 
-gcloud pubsub topics publish $DEVSHELL_PROJECT_ID-topic \
-  --message="Test message"
+# Test Message
+echo "${GREEN}${BOLD}▬▬▬▬▬▬▬▬▬ TESTING THE SETUP ▬▬▬▬▬▬▬▬▬${RESET}"
+echo "${YELLOW}Sending test message to Pub/Sub topic...${RESET}"
+gcloud pubsub topics publish "$DEVSHELL_PROJECT_ID-topic" \
+  --message="Test message from Dr. Abhishek's tutorial"
+echo "${GREEN}✅ Test message sent successfully!${RESET}"
+echo
 
-echo "${RED}${BOLD}Congratulations${RESET}" "${WHITE}${BOLD}for${RESET}" "${GREEN}${BOLD}Completing the Lab !!! - ePlus.DEV${RESET}"
+# Completion Message
+echo "${GREEN}${BOLD}╔════════════════════════════════════════════════════════╗${RESET}"
+echo "${GREEN}${BOLD}          TUTORIAL COMPLETED SUCCESSFULLY!               ${RESET}"
+echo "${GREEN}${BOLD}╚════════════════════════════════════════════════════════╝${RESET}"
