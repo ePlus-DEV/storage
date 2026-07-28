@@ -75,7 +75,7 @@ echo
 echo "${GREEN}${BOLD}▬▬▬▬▬▬▬▬▬ TESTING THE SETUP ▬▬▬▬▬▬▬▬▬${RESET}"
 echo "${YELLOW}Sending test message to Pub/Sub topic...${RESET}"
 gcloud pubsub topics publish "$DEVSHELL_PROJECT_ID-topic" \
-  --message="Test message from Dr. Abhishek's tutorial"
+  --message="Test message from ePlus.DEV"
 echo "${GREEN}✅ Test message sent successfully!${RESET}"
 echo
 
