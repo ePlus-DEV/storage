@@ -1,5 +1,6 @@
 #!/bin/bash
-# Define text formatting variables
+set -Eeuo pipefail
+
 BLACK_TEXT=$'\033[0;90m'
 RED_TEXT=$'\033[0;91m'
 GREEN_TEXT=$'\033[0;92m'
@@ -12,238 +13,283 @@ RESET_FORMAT=$'\033[0m'
 BOLD_TEXT=$'\033[1m'
 UNDERLINE_TEXT=$'\033[4m'
 
+info()    { echo -e "${CYAN_TEXT}${BOLD_TEXT}➜ $*${RESET_FORMAT}"; }
+success() { echo -e "${GREEN_TEXT}${BOLD_TEXT}✓ $*${RESET_FORMAT}"; }
+warn()    { echo -e "${YELLOW_TEXT}${BOLD_TEXT}! $*${RESET_FORMAT}"; }
+fail()    { echo -e "${RED_TEXT}${BOLD_TEXT}✗ $*${RESET_FORMAT}" >&2; exit 1; }
+
 clear
-
-
 echo
-echo "${CYAN_TEXT}${BOLD_TEXT}=========================================${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}🚀   ePlus.DEV - Lab  🚀${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}=========================================${RESET_FORMAT}"
-echo
-echo "${GREEN_TEXT}${BOLD_TEXT}Sponsored by: Google Cloud Platform${RESET_FORMAT}"
+echo -e "${CYAN_TEXT}${BOLD_TEXT}=========================================${RESET_FORMAT}"
+echo -e "${CYAN_TEXT}${BOLD_TEXT}🚀   ePlus.DEV - IAM Challenge Lab   🚀${RESET_FORMAT}"
+echo -e "${CYAN_TEXT}${BOLD_TEXT}=========================================${RESET_FORMAT}"
 echo
 
-# read -p "${YELLOW_TEXT}${BOLD_TEXT}Enter the ZONE: ${RESET_FORMAT}" ZONE
+PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
+REGION="us-central1"
+ZONE="us-central1-a"
 
-echo "${GREEN_TEXT}${BOLD_TEXT}🌍 Setting up the region based on the provided zone...${RESET_FORMAT}"
-REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+[[ -n "$PROJECT_ID" && "$PROJECT_ID" != "(unset)" ]] || fail "No active Google Cloud project was found."
 
-echo "${BLUE_TEXT}${BOLD_TEXT}Region derived: ${REGION}${RESET_FORMAT}"
+info "Project: ${PROJECT_ID}"
+info "Region : ${REGION}"
+info "Zone   : ${ZONE}"
 
-cat > cp_disk.sh <<'EOF_CP'
-echo "${CYAN_TEXT}${BOLD_TEXT}🔑 Authenticating with Google Cloud...${RESET_FORMAT}"
-gcloud auth login --quiet
+# Task 2 requires the default gcloud configuration.
+if ! gcloud config configurations describe default >/dev/null 2>&1; then
+  gcloud config configurations create default --no-activate --quiet
+fi
+gcloud config configurations activate default --quiet
+gcloud config set project "$PROJECT_ID" --quiet
+gcloud config set compute/region "$REGION" --quiet
+gcloud config set compute/zone "$ZONE" --quiet
 
-echo "${YELLOW_TEXT}${BOLD_TEXT}📋 Fetching the current project ID...${RESET_FORMAT}"
-export PROJECT_ID=$(gcloud config get-value project)
+# Required APIs.
+gcloud services enable \
+  compute.googleapis.com \
+  iam.googleapis.com \
+  bigquery.googleapis.com \
+  --project="$PROJECT_ID" \
+  --quiet
 
-echo "${GREEN_TEXT}${BOLD_TEXT}🌐 Retrieving the default compute zone...${RESET_FORMAT}"
-export ZONE=$(gcloud compute project-info describe \
---format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+create_service_account() {
+  local name="$1"
+  local display_name="$2"
+  local email="${name}@${PROJECT_ID}.iam.gserviceaccount.com"
 
-echo "${MAGENTA_TEXT}${BOLD_TEXT}🛠️ Creating a service account named 'devops'...${RESET_FORMAT}"
-gcloud iam service-accounts create devops --display-name devops
+  if gcloud iam service-accounts describe "$email" --project="$PROJECT_ID" >/dev/null 2>&1; then
+    warn "Service account ${name} already exists; reusing it."
+  else
+    gcloud iam service-accounts create "$name" \
+      --display-name="$display_name" \
+      --project="$PROJECT_ID" \
+      --quiet
+    success "Created service account: ${email}"
+  fi
+}
 
-echo "${BLUE_TEXT}${BOLD_TEXT}🔄 Activating the default configuration...${RESET_FORMAT}"
-gcloud config configurations activate default
+grant_project_role() {
+  local service_account="$1"
+  local role="$2"
 
-echo "${CYAN_TEXT}${BOLD_TEXT}🔍 Listing service accounts to verify creation...${RESET_FORMAT}"
-gcloud iam service-accounts list --filter "displayName=devops"
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${service_account}" \
+    --role="$role" \
+    --condition=None \
+    --quiet >/dev/null
 
-SERVICE_ACCOUNT=$(gcloud iam service-accounts list --format="value(email)" --filter "displayName=devops")
+  success "Granted ${role} to ${service_account}"
+}
 
-echo "${GREEN_TEXT}${BOLD_TEXT}Service account email: ${SERVICE_ACCOUNT}${RESET_FORMAT}"
+ensure_vm() {
+  local name="$1"
+  local service_account="$2"
+  local current_sa=""
+  local current_scopes=""
 
-echo "${YELLOW_TEXT}${BOLD_TEXT}🔒 Assigning IAM roles to the service account...${RESET_FORMAT}"
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:$SERVICE_ACCOUNT" \
-  --role="roles/iam.serviceAccountUser"
+  if gcloud compute instances describe "$name" \
+      --project="$PROJECT_ID" \
+      --zone="$ZONE" >/dev/null 2>&1; then
 
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:$SERVICE_ACCOUNT" \
-  --role="roles/compute.instanceAdmin"
+    current_sa="$(gcloud compute instances describe "$name" \
+      --project="$PROJECT_ID" \
+      --zone="$ZONE" \
+      --format='value(serviceAccounts[0].email)')"
 
-echo "${BLUE_TEXT}${BOLD_TEXT}🚀 Creating a VM instance named 'vm-2'...${RESET_FORMAT}"
-gcloud compute instances create vm-2 --project=$PROJECT_ID --zone=$ZONE --service-account=$SERVICE_ACCOUNT --scopes=https://www.googleapis.com/auth/bigquery
+    current_scopes="$(gcloud compute instances describe "$name" \
+      --project="$PROJECT_ID" \
+      --zone="$ZONE" \
+      --format='value(serviceAccounts[0].scopes.flatten())')"
 
-echo "${MAGENTA_TEXT}${BOLD_TEXT}📄 Defining a custom IAM role...${RESET_FORMAT}"
-cat > role-definition.yaml <<EOF
-title: Custom Role
-description: Custom role with cloudsql.instances.connect and cloudsql.instances.get permissions
+    if [[ "$current_sa" == "$service_account" && "$current_scopes" == *"cloud-platform"* ]]; then
+      warn "VM ${name} already exists with the correct service account; reusing it."
+      return
+    fi
+
+    warn "VM ${name} exists with an incorrect service account or OAuth scope; recreating it."
+    gcloud compute instances delete "$name" \
+      --project="$PROJECT_ID" \
+      --zone="$ZONE" \
+      --quiet
+  fi
+
+  gcloud compute instances create "$name" \
+    --project="$PROJECT_ID" \
+    --zone="$ZONE" \
+    --machine-type="e2-micro" \
+    --image-family="debian-12" \
+    --image-project="debian-cloud" \
+    --service-account="$service_account" \
+    --scopes="cloud-platform" \
+    --quiet
+
+  success "Created VM ${name} with ${service_account}"
+}
+
+wait_for_ssh() {
+  local name="$1"
+  for _ in {1..24}; do
+    if gcloud compute ssh "$name" \
+      --project="$PROJECT_ID" \
+      --zone="$ZONE" \
+      --quiet \
+      --command="true" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 5
+  done
+  fail "Unable to connect to ${name} by SSH."
+}
+
+# -----------------------------------------------------------------------------
+# Task 2: Create the devops service account.
+# -----------------------------------------------------------------------------
+info "Task 2: Creating the devops service account"
+create_service_account "devops" "devops"
+DEVOPS_SA="devops@${PROJECT_ID}.iam.gserviceaccount.com"
+
+# -----------------------------------------------------------------------------
+# Task 3: Grant the required IAM roles.
+# -----------------------------------------------------------------------------
+info "Task 3: Granting IAM roles to devops"
+grant_project_role "$DEVOPS_SA" "roles/iam.serviceAccountUser"
+grant_project_role "$DEVOPS_SA" "roles/compute.instanceAdmin.v1"
+
+# -----------------------------------------------------------------------------
+# Task 4: Create vm-2 with the devops service account.
+# cloud-platform is required so the VM can call Compute Engine APIs.
+# -----------------------------------------------------------------------------
+info "Task 4: Creating vm-2"
+ensure_vm "vm-2" "$DEVOPS_SA"
+wait_for_ssh "vm-2"
+
+gcloud compute ssh vm-2 \
+  --project="$PROJECT_ID" \
+  --zone="$ZONE" \
+  --quiet \
+  --command="gcloud compute instances list --project='${PROJECT_ID}' --filter='name=vm-2' --format='table(name,zone.basename(),status)'"
+success "The devops service account can list Compute Engine instances from vm-2."
+
+# -----------------------------------------------------------------------------
+# Task 5: Create/update the project custom role from YAML.
+# -----------------------------------------------------------------------------
+info "Task 5: Creating the custom IAM role"
+cat > role-definition.yaml <<'EOF_ROLE'
+title: "Cloud SQL Instance Connector"
+description: "Custom role with Cloud SQL connect and get permissions"
+stage: "GA"
 includedPermissions:
-- cloudsql.instances.connect
-- cloudsql.instances.get
-EOF
+  - cloudsql.instances.connect
+  - cloudsql.instances.get
+EOF_ROLE
 
-echo "${CYAN_TEXT}${BOLD_TEXT}🔧 Creating the custom IAM role...${RESET_FORMAT}"
-gcloud iam roles create customRole --project=$PROJECT_ID --file=role-definition.yaml
+CUSTOM_ROLE_ID="customRole"
+if gcloud iam roles describe "$CUSTOM_ROLE_ID" --project="$PROJECT_ID" >/dev/null 2>&1; then
+  gcloud iam roles update "$CUSTOM_ROLE_ID" \
+    --project="$PROJECT_ID" \
+    --file="role-definition.yaml" \
+    --quiet
+  success "Updated custom role: ${CUSTOM_ROLE_ID}"
+else
+  gcloud iam roles create "$CUSTOM_ROLE_ID" \
+    --project="$PROJECT_ID" \
+    --file="role-definition.yaml" \
+    --quiet
+  success "Created custom role: ${CUSTOM_ROLE_ID}"
+fi
 
-echo "${YELLOW_TEXT}${BOLD_TEXT}🛠️ Creating a service account named 'bigquery-qwiklab'...${RESET_FORMAT}"
-gcloud iam service-accounts create bigquery-qwiklab --display-name bigquery-qwiklab
+# -----------------------------------------------------------------------------
+# Task 6: BigQuery service account, IAM roles, VM and Python client query.
+# -----------------------------------------------------------------------------
+info "Task 6: Creating the BigQuery service account and VM"
+create_service_account "bigquery-qwiklab" "bigquery-qwiklab"
+BQ_SA="bigquery-qwiklab@${PROJECT_ID}.iam.gserviceaccount.com"
 
-SERVICE_ACCOUNT=$(gcloud iam service-accounts list --format="value(email)" --filter "displayName=bigquery-qwiklab")
+grant_project_role "$BQ_SA" "roles/bigquery.dataViewer"
+grant_project_role "$BQ_SA" "roles/bigquery.user"
 
-echo "${GREEN_TEXT}${BOLD_TEXT}🔒 Assigning BigQuery roles to the service account...${RESET_FORMAT}"
-gcloud projects add-iam-policy-binding $PROJECT_ID --member=serviceAccount:$SERVICE_ACCOUNT --role=roles/bigquery.dataViewer
+# Confirm the exact role that the grader reports when it is missing.
+if ! gcloud projects get-iam-policy "$PROJECT_ID" \
+    --flatten="bindings[].members" \
+    --filter="bindings.role=roles/bigquery.dataViewer AND bindings.members=serviceAccount:${BQ_SA}" \
+    --format="value(bindings.role)" | grep -qx "roles/bigquery.dataViewer"; then
+  fail "BigQuery Data Viewer binding was not found for ${BQ_SA}."
+fi
+success "Verified BigQuery Data Viewer for ${BQ_SA}"
 
-gcloud projects add-iam-policy-binding $PROJECT_ID --member=serviceAccount:$SERVICE_ACCOUNT --role=roles/bigquery.user
+ensure_vm "bigquery-instance" "$BQ_SA"
+wait_for_ssh "bigquery-instance"
 
-echo "${BLUE_TEXT}${BOLD_TEXT}🚀 Creating a VM instance named 'bigquery-instance'...${RESET_FORMAT}"
-gcloud compute instances create bigquery-instance --project=$PROJECT_ID --zone=$ZONE --service-account=$SERVICE_ACCOUNT --scopes=https://www.googleapis.com/auth/bigquery
-EOF_CP
+cat > bq-setup.sh <<EOF_REMOTE
+#!/bin/bash
+set -Eeuo pipefail
 
-echo -n "${YELLOW_TEXT}${BOLD_TEXT}⏳ Waiting a moment... ${RESET_FORMAT}"
-for i in {1..10}; do
-  echo -n "."
-  sleep 1
-done
-echo " ${GREEN_TEXT}Done!${RESET_FORMAT}"
+sudo apt-get update -y
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv
 
-echo "${CYAN_TEXT}${BOLD_TEXT}Zone: ${ZONE}${RESET_FORMAT}"
+python3 -m venv "\$HOME/bq-venv"
+source "\$HOME/bq-venv/bin/activate"
+python -m pip install --upgrade pip
+python -m pip install google-cloud-bigquery pandas pyarrow db-dtypes
 
-export PROJECT_ID=$(gcloud config get-value project)
-
-echo "${YELLOW_TEXT}${BOLD_TEXT}📤 Copying the script to 'lab-vm'...${RESET_FORMAT}"
-gcloud compute scp cp_disk.sh lab-vm:/tmp --project=$PROJECT_ID --zone=$ZONE --quiet
-
-echo "${BLUE_TEXT}${BOLD_TEXT}🔄 Executing the script on 'lab-vm'...${RESET_FORMAT}"
-gcloud compute ssh lab-vm --project=$PROJECT_ID --zone=$ZONE --quiet --command="bash /tmp/cp_disk.sh"
-
-echo "${YELLOW_TEXT}${BOLD_TEXT}⏳ Waiting for resources to provision...${RESET_FORMAT}"
-total_seconds=45
-bar_width=40 # Width of the progress bar
-
-# Print initial empty bar
-echo -ne "${YELLOW_TEXT}${BOLD_TEXT}["
-printf "%${bar_width}s" " " | tr ' ' '-'
-echo -ne "] 0%${RESET_FORMAT}"
-
-for i in $(seq 1 $total_seconds); do
-  # Calculate progress
-  percent=$(( (i * 100) / total_seconds ))
-  filled_width=$(( (i * bar_width) / total_seconds ))
-  empty_width=$(( bar_width - filled_width ))
-
-  # Build the bar string parts
-  filled_part=$(printf "%${filled_width}s" "" | tr ' ' '#')
-  empty_part=$(printf "%${empty_width}s" "" | tr ' ' '-')
-
-  # Move cursor back to the beginning of the line, print the updated bar and percentage
-  echo -ne "\r${YELLOW_TEXT}${BOLD_TEXT}[${GREEN_TEXT}${filled_part}${YELLOW_TEXT}${empty_part}] ${percent}%${RESET_FORMAT}"
-
-  sleep 1
-done
-
-# Print a newline at the end to move off the progress bar line
-echo ""
-echo "${GREEN_TEXT}${BOLD_TEXT}✅ Wait complete!${RESET_FORMAT}"
-
-cat > cp_disk.sh <<'EOF_CP'
-echo "${GREEN_TEXT}${BOLD_TEXT}🔄 Updating the system packages...${RESET_FORMAT}"
-sudo apt-get update
-
-echo "${YELLOW_TEXT}${BOLD_TEXT}📦 Installing Python 3 and required dependencies...${RESET_FORMAT}"
-sudo apt install python3 -y
-
-sudo apt-get install -y git python3-pip
-
-sudo apt install python3.11-venv -y
-
-echo "${BLUE_TEXT}${BOLD_TEXT}🌐 Setting up a Python virtual environment...${RESET_FORMAT}"
-python3 -m venv create myvenv
-
-source myvenv/bin/activate
-
-echo "${CYAN_TEXT}${BOLD_TEXT}📦 Upgrading pip and installing required Python libraries...${RESET_FORMAT}"
-pip3 install --upgrade pip
-
-pip3 install google-cloud-bigquery
-
-pip3 install pyarrow
-
-pip3 install pandas
-
-pip3 install db-dtypes
-
-pip3 install --upgrade google-cloud
-
-export PROJECT_ID=$(gcloud config get-value project)
-export SERVICE_ACCOUNT_EMAIL=$(curl -s "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email" -H "Metadata-Flavor: Google")
-
-echo "${MAGENTA_TEXT}${BOLD_TEXT}📄 Creating a Python script to query BigQuery...${RESET_FORMAT}"
-echo "
+cat > "\$HOME/query.py" <<'EOF_PY'
 from google.auth import compute_engine
 from google.cloud import bigquery
+
 credentials = compute_engine.Credentials(
-service_account_email='$SERVICE_ACCOUNT_EMAIL')
+    service_account_email='${BQ_SA}'
+)
+
 query = '''
-SELECT name, SUM(number) as total_people
-FROM "bigquery-public-data.usa_names.usa_1910_2013"
+SELECT name, SUM(number) AS total_people
+FROM \`bigquery-public-data.usa_names.usa_1910_2013\`
 WHERE state = 'TX'
 GROUP BY name, state
 ORDER BY total_people DESC
 LIMIT 20
 '''
+
 client = bigquery.Client(
-  project='$PROJECT_ID',
-  credentials=credentials)
+    project='${PROJECT_ID}',
+    credentials=credentials,
+)
+
 print(client.query(query).to_dataframe())
-" > query.py
+EOF_PY
 
-sleep 10
-
-echo "${BLUE_TEXT}${BOLD_TEXT}🚀 Executing the BigQuery Python script...${RESET_FORMAT}"
-python3 query.py
-EOF_CP
-
-echo "${YELLOW_TEXT}${BOLD_TEXT}⏳ Waiting a moment... ${RESET_FORMAT}"
-total_seconds=10 # Set duration to 10 seconds
-bar_width=40 # Width of the progress bar
-
-# Print initial empty bar
-echo -ne "${YELLOW_TEXT}${BOLD_TEXT}["
-printf "%${bar_width}s" " " | tr ' ' '-'
-echo -ne "] 0%${RESET_FORMAT}"
-
-for i in $(seq 1 $total_seconds); do
-  # Calculate progress
-  percent=$(( (i * 100) / total_seconds ))
-  filled_width=$(( (i * bar_width) / total_seconds ))
-  empty_width=$(( bar_width - filled_width ))
-
-  # Build the bar string parts
-  filled_part=$(printf "%${filled_width}s" "" | tr ' ' '#')
-  empty_part=$(printf "%${empty_width}s" "" | tr ' ' '-')
-
-  # Move cursor back to the beginning of the line, print the updated bar and percentage
-  echo -ne "\r${YELLOW_TEXT}${BOLD_TEXT}[${GREEN_TEXT}${filled_part}${YELLOW_TEXT}${empty_part}] ${percent}%${RESET_FORMAT}"
-
-  sleep 1
+for attempt in {1..6}; do
+  if python "\$HOME/query.py"; then
+    exit 0
+  fi
+  echo "BigQuery query failed; retrying..."
+  sleep 10
 done
 
-# Print a newline at the end to move off the progress bar line
-echo ""
-echo "${GREEN_TEXT}${BOLD_TEXT}✅ Wait complete!${RESET_FORMAT}"
+exit 1
+EOF_REMOTE
 
-echo "${CYAN_TEXT}${BOLD_TEXT}Zone: ${ZONE}${RESET_FORMAT}"
+chmod +x bq-setup.sh
 
-export PROJECT_ID=$(gcloud config get-value project)
+gcloud compute scp bq-setup.sh bigquery-instance:/tmp/bq-setup.sh \
+  --project="$PROJECT_ID" \
+  --zone="$ZONE" \
+  --quiet
 
-echo "${YELLOW_TEXT}${BOLD_TEXT}📤 Copying the script to 'bigquery-instance'...${RESET_FORMAT}"
-gcloud compute scp cp_disk.sh bigquery-instance:/tmp --project=$PROJECT_ID --zone=$ZONE --quiet
+gcloud compute ssh bigquery-instance \
+  --project="$PROJECT_ID" \
+  --zone="$ZONE" \
+  --quiet \
+  --command="bash /tmp/bq-setup.sh"
 
-echo "${BLUE_TEXT}${BOLD_TEXT}🔄 Executing the script on 'bigquery-instance'...${RESET_FORMAT}"
-gcloud compute ssh bigquery-instance --project=$PROJECT_ID --zone=$ZONE --quiet --command="bash /tmp/cp_disk.sh"
+rm -f bq-setup.sh
 
-# Completion message
 echo
-echo "${GREEN_TEXT}${BOLD_TEXT}=========================================${RESET_FORMAT}"
-echo "${GREEN_TEXT}${BOLD_TEXT}       LAB EXECUTION COMPLETED        ${RESET_FORMAT}"
-echo "${GREEN_TEXT}${BOLD_TEXT}=========================================${RESET_FORMAT}"
+echo -e "${GREEN_TEXT}${BOLD_TEXT}=========================================${RESET_FORMAT}"
+echo -e "${GREEN_TEXT}${BOLD_TEXT}       LAB EXECUTION COMPLETED            ${RESET_FORMAT}"
+echo -e "${GREEN_TEXT}${BOLD_TEXT}=========================================${RESET_FORMAT}"
 echo
-echo "${BLUE_TEXT}${BOLD_TEXT}Thank you for using ePlus.DEV!${RESET_FORMAT}"
+echo -e "${BLUE_TEXT}${BOLD_TEXT}Project: ${PROJECT_ID}${RESET_FORMAT}"
+echo -e "${BLUE_TEXT}${BOLD_TEXT}Region : ${REGION}${RESET_FORMAT}"
+echo -e "${BLUE_TEXT}${BOLD_TEXT}Zone   : ${ZONE}${RESET_FORMAT}"
 echo
-echo "${YELLOW_TEXT}${BOLD_TEXT}For more cloud tutorials and labs, visit:${RESET_FORMAT}"
-echo "${CYAN_TEXT}${UNDERLINE_TEXT}https://eplus.dev${RESET_FORMAT}"
-echo
+echo -e "${YELLOW_TEXT}${BOLD_TEXT}Run Check my progress for Tasks 2-6.${RESET_FORMAT}"
