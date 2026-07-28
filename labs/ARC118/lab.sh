@@ -24,10 +24,9 @@ echo
 echo "${BLUE}${BOLD}⚡ Initializing Event-Driven Architecture Setup...${RESET}"
 echo
 
-# User Input Section
-echo "${GREEN}${BOLD}▬▬▬▬▬▬▬▬▬ INPUT PARAMETERS ▬▬▬▬▬▬▬▬▬${RESET}"
-read -p "${YELLOW}${BOLD}Enter the location (e.g., us-central1): ${RESET}" LOCATION
-export LOCATION
+LOCATION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+
 echo
 echo "${CYAN}Configuration Parameters:${RESET}"
 echo "${WHITE}Location: ${BOLD}$LOCATION${RESET}"
