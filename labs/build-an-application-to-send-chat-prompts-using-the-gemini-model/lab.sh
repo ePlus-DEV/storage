@@ -1,121 +1,243 @@
 #!/bin/bash
+set -euo pipefail
 
-# Define color variables (updated palette)
-BLACK_TEXT=$'\033[0;90m'
-RED_TEXT=$'\033[0;91m'
-GREEN_TEXT=$'\033[0;92m'
-YELLOW_TEXT=$'\033[0;93m'
-BLUE_TEXT=$'\033[0;94m'
-MAGENTA_TEXT=$'\033[0;95m'
-CYAN_TEXT=$'\033[0;96m'
-WHITE_TEXT=$'\033[0;97m'
+# ==================================================
+#        ePlus.DEV - Gemini Chat Lab
+# ==================================================
 
-NO_COLOR=$'\033[0m'
-RESET_FORMAT=$'\033[0m'
-BOLD_TEXT=$'\033[1m'
-UNDERLINE_TEXT=$'\033[4m'
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
 
 clear
 
-# Welcome message
-echo "${MAGENTA_TEXT}${BOLD_TEXT}=======================================${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT}         INITIATING EXECUTION...  ${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT}=======================================${RESET_FORMAT}"
+echo -e "${CYAN}"
+echo "╔════════════════════════════════════════╗"
+echo "║      ePlus.DEV - Gemini Chat Lab       ║"
+echo "╚════════════════════════════════════════╝"
+echo -e "${NC}"
+
+PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
+
+if [[ -z "${PROJECT_ID}" || "${PROJECT_ID}" == "(unset)" ]]; then
+  echo -e "${RED}Error: Unable to detect the Google Cloud project ID.${NC}"
+  exit 1
+fi
+
+echo -e "${GREEN}Project ID : ${PROJECT_ID}${NC}"
+echo -e "${GREEN}Location   : global${NC}"
+echo -e "${GREEN}Model      : gemini-3.5-flash${NC}"
 echo
 
-LAB_MODEL="gemini-2.0-flash-001"
+echo -e "${CYAN}Checking required Python packages...${NC}"
 
-export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+if ! /usr/bin/python3 -c "from google import genai; from google.cloud import logging" >/dev/null 2>&1; then
+  echo -e "${YELLOW}Installing required Google Cloud packages...${NC}"
+  /usr/bin/python3 -m pip install --user --quiet \
+    google-genai \
+    google-cloud-logging
+fi
 
+echo -e "${GREEN}Required packages are available.${NC}"
 echo
-echo "${GREEN_TEXT}${BOLD_TEXT}Region set to:${RESET_FORMAT} ${YELLOW_TEXT}$REGION${RESET_FORMAT}"
 
-ID="$(gcloud projects list --format='value(PROJECT_ID)')"
-echo
-echo "${GREEN_TEXT}${BOLD_TEXT}Project ID:${RESET_FORMAT} ${YELLOW_TEXT}$ID${RESET_FORMAT}"
-echo
-echo "${GREEN_TEXT}${BOLD_TEXT}Using Model:${RESET_FORMAT} ${YELLOW_TEXT}${LAB_MODEL}${RESET_FORMAT}"
-echo
-echo "${CYAN_TEXT}${BOLD_TEXT}Generating SendChatwithoutStream.py...${RESET_FORMAT}"
+# ==================================================
+# Non-streaming chat
+# ==================================================
 
-cat > SendChatwithoutStream.py <<EOF
+cat > /SendChatwithoutStream.py <<PYTHON
+import time
 from google import genai
 from google.genai.types import HttpOptions, ModelContent, Part, UserContent
 
 import logging
 from google.cloud import logging as gcp_logging
+from google.genai.errors import ClientError
 
+# ------ Below cloud logging code is for Qwiklab's internal use, do not edit/remove it. --------
 # Initialize GCP logging
 gcp_logging_client = gcp_logging.Client()
 gcp_logging_client.setup_logging()
 
 client = genai.Client(
-    vertexai=True,
-    project='${ID}',
-    location='${REGION}',
-    http_options=HttpOptions(api_version="v1")
+    enterprise=True,
+    project="${PROJECT_ID}",
+    location="global",
+    http_options=HttpOptions(api_version="v1"),
 )
-chat = client.chats.create(
-    model="${LAB_MODEL}",
-    history=[
-        UserContent(parts=[Part(text="Hello")]),
-        ModelContent(
-            parts=[Part(text="Great to meet you. What would you like to know?")],
-        ),
-    ],
-)
-response = chat.send_message("What are all the colors in a rainbow?")
-logging.info(f'Received response 1: {response.text}') # Added logging
-print(response.text)
 
-response = chat.send_message("Why does it appear when it rains?")
-logging.info(f'Received response 2: {response.text}') # Added logging
-print(response.text)
-EOF
+# Configuration for retry logic
+MAX_RETRIES = 3
+INITIAL_DELAY = 2
 
-echo "${GREEN_TEXT}${BOLD_TEXT}Executing SendChatwithoutStream.py...${RESET_FORMAT}"
-/usr/bin/python3 /home/student/SendChatwithoutStream.py
-sleep 5
+response_received = False
 
-echo
-echo "${CYAN_TEXT}${BOLD_TEXT}Generating SendChatwithStream.py...${RESET_FORMAT}"
+for attempt in range(MAX_RETRIES + 1):
+    try:
+        chat = client.chats.create(
+            model="gemini-3.5-flash",
+            history=[
+                UserContent(parts=[Part(text="Hello")]),
+                ModelContent(
+                    parts=[
+                        Part(
+                            text="Great to meet you. What would you like to know?"
+                        )
+                    ],
+                ),
+            ],
+        )
 
-cat > SendChatwithStream.py <<EOF
+        response = chat.send_message(
+            "What are all the colors in a rainbow?"
+        )
+        print(response.text)
+
+        response = chat.send_message(
+            "Why does it appear when it rains?"
+        )
+        print(response.text)
+
+        response_received = True
+        logging.info(
+            "Successfully received non-streaming Gemini chat responses."
+        )
+        break
+
+    except ClientError as error:
+        error_message = str(error)
+
+        if "429" in error_message or "RESOURCE_EXHAUSTED" in error_message:
+            if attempt < MAX_RETRIES:
+                delay = INITIAL_DELAY * (2 ** attempt)
+                print(
+                    f"Warning: Resource exhausted (429). "
+                    f"Retrying in {delay} seconds... "
+                    f"(Attempt {attempt + 1}/{MAX_RETRIES})"
+                )
+                time.sleep(delay)
+            else:
+                print(
+                    "I am currently experiencing high demand due to quota "
+                    "exhaustion. Please wait for a while and try again."
+                )
+        else:
+            logging.exception("Gemini request failed.")
+            raise
+
+if not response_received:
+    print("Final Status: Process terminated unsuccessfully.")
+    raise SystemExit(1)
+PYTHON
+
+# ==================================================
+# Streaming chat
+# ==================================================
+
+cat > /SendChatwithStream.py <<PYTHON
+import time
 from google import genai
 from google.genai.types import HttpOptions
 
 import logging
 from google.cloud import logging as gcp_logging
+from google.genai.errors import ClientError
 
+# ------ Below cloud logging code is for Qwiklab's internal use, do not edit/remove it. --------
 # Initialize GCP logging
 gcp_logging_client = gcp_logging.Client()
 gcp_logging_client.setup_logging()
 
 client = genai.Client(
-    vertexai=True,
-    project='${ID}',
-    location='${REGION}',
-    http_options=HttpOptions(api_version="v1")
+    enterprise=True,
+    project="${PROJECT_ID}",
+    location="global",
+    http_options=HttpOptions(api_version="v1"),
 )
-chat = client.chats.create(model="${LAB_MODEL}")
-response_text = ""
 
-logging.info("Sending streaming prompt...") # Added logging
-print("Streaming response:") # Added for clarity
-for chunk in chat.send_message_stream("What are all the colors in a rainbow?"):
-    print(chunk.text, end="")
-    response_text += chunk.text
-print() # Add a newline after streaming output
-logging.info(f"Received full streaming response: {response_text}") # Added logging
+chat = client.chats.create(model="gemini-3.5-flash")
 
-EOF
+# Configuration for retry logic
+MAX_RETRIES = 3
+INITIAL_DELAY = 2
 
-echo "${GREEN_TEXT}${BOLD_TEXT}Executing SendChatwithStream.py...${RESET_FORMAT}"
-/usr/bin/python3 /home/student/SendChatwithStream.py
-sleep 5
+response_received = False
 
-# Completion Message
+for attempt in range(MAX_RETRIES + 1):
+    response_text = ""
+
+    try:
+        for chunk in chat.send_message_stream(
+            "What are all the colors in a rainbow?"
+        ):
+            if chunk.text:
+                print(chunk.text, end="", flush=True)
+                response_text += chunk.text
+
+        print()
+
+        if response_text:
+            response_received = True
+            logging.info(
+                "Successfully received a streaming Gemini chat response."
+            )
+            break
+
+    except ClientError as error:
+        error_message = str(error)
+
+        if "429" in error_message or "RESOURCE_EXHAUSTED" in error_message:
+            if attempt < MAX_RETRIES:
+                delay = INITIAL_DELAY * (2 ** attempt)
+                print(
+                    f"Warning: Resource exhausted (429). "
+                    f"Retrying in {delay} seconds... "
+                    f"(Attempt {attempt + 1}/{MAX_RETRIES})"
+                )
+                time.sleep(delay)
+            else:
+                print(
+                    "I am currently experiencing high demand due to quota "
+                    "exhaustion. Please wait for a while and try again."
+                )
+        else:
+            logging.exception("Gemini streaming request failed.")
+            raise
+
+if not response_received:
+    print("Final Status: Process terminated unsuccessfully.")
+    raise SystemExit(1)
+PYTHON
+
+echo -e "${CYAN}Running the non-streaming chat file...${NC}"
 echo
-echo "${GREEN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
-echo "${GREEN_TEXT}${BOLD_TEXT}              LAB COMPLETED SUCCESSFULLY!              ${RESET_FORMAT}"
-echo "${GREEN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
+
+/usr/bin/python3 /SendChatwithoutStream.py
+
+echo
+echo -e "${GREEN}Non-streaming chat completed successfully.${NC}"
+echo
+echo -e "${YELLOW}Waiting for the Cloud Logging entry to be created...${NC}"
+
+sleep 20
+
+echo
+echo -e "${CYAN}Running the streaming chat file...${NC}"
+echo
+
+/usr/bin/python3 /SendChatwithStream.py
+
+echo
+echo -e "${GREEN}Streaming chat completed successfully.${NC}"
+echo
+echo -e "${YELLOW}Waiting for the final Cloud Logging entry...${NC}"
+
+sleep 15
+
+echo
+echo -e "${GREEN}==================================================${NC}"
+echo -e "${GREEN}Lab execution completed successfully.${NC}"
+echo -e "${GREEN}Click \"Check my progress\" in the lab page.${NC}"
+echo -e "${GREEN}==================================================${NC}"
