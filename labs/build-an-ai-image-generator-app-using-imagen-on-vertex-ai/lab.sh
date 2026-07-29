@@ -1,92 +1,149 @@
 #!/bin/bash
+set -euo pipefail
 
-# Bright Foreground Colors
-BLACK_TEXT=$'\033[0;90m'
-RED_TEXT=$'\033[0;91m'
-GREEN_TEXT=$'\033[0;92m'
-YELLOW_TEXT=$'\033[0;93m'
-BLUE_TEXT=$'\033[0;94m'
-MAGENTA_TEXT=$'\033[0;95m'
-CYAN_TEXT=$'\033[0;96m'
-WHITE_TEXT=$'\033[0;97m'
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
 
-NO_COLOR=$'\033[0m'
-RESET_FORMAT=$'\033[0m'
-BOLD_TEXT=$'\033[1m'
-UNDERLINE_TEXT=$'\033[4m'
+echo -e "${CYAN}"
+echo "╔════════════════════════════════════════╗"
+echo "║       ePlus.DEV - GenAI Image Lab     ║"
+echo "╚════════════════════════════════════════╝"
+echo -e "${NC}"
 
-# Displaying start message
-echo
-echo "${CYAN_TEXT}${BOLD_TEXT}╔════════════════════════════════════════════════════════╗${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}                  Starting the process...                   ${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}╚════════════════════════════════════════════════════════╝${RESET_FORMAT}"
-echo
+PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
 
-# Instructions for Region
-export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-
-if [ -z "$REGION" ]; then
-    echo "${RED_TEXT}${BOLD_TEXT}Error:${RESET_FORMAT} ${WHITE_TEXT}${BOLD_TEXT}REGION is not set. Please set the REGION before running the script.${RESET_FORMAT}"
-    exit 1
+if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then
+  echo -e "${RED}Error: Unable to detect the Google Cloud project ID.${NC}"
+  exit 1
 fi
 
-echo "${GREEN_TEXT}${BOLD_TEXT}Region set to: ${RESET_FORMAT}${WHITE_TEXT}${BOLD_TEXT}$REGION${RESET_FORMAT}"
+echo -e "${GREEN}Project ID : ${PROJECT_ID}${NC}"
+echo -e "${GREEN}Location   : global${NC}"
+echo
 
-ID="$(gcloud projects list --format='value(PROJECT_ID)')"
+echo -e "${YELLOW}Checking the required Python packages...${NC}"
 
-echo "${YELLOW_TEXT}${BOLD_TEXT}Project ID:${RESET_FORMAT} ${WHITE_TEXT}${BOLD_TEXT}$ID${RESET_FORMAT}"
+python3 -m pip install --user --quiet \
+  --upgrade \
+  google-genai \
+  google-cloud-logging \
+  pillow
 
-# Prompt for user to input a prompt
-echo "${YELLOW_TEXT}Defining the prompt for the image generation.${RESET_FORMAT}"
+cat > GenerateImage.py <<PYTHON
+import time
 
-cat > GenerateImage.py <<EOF_END
-import argparse
+from google import genai
+from google.cloud import logging as gcp_logging
+from google.genai.errors import ClientError
+from google.genai.types import HttpOptions
 
-import vertexai
-from vertexai.preview.vision_models import ImageGenerationModel
+PROJECT_ID = "${PROJECT_ID}"
+LOCATION = "global"
+MODEL_NAME = "gemini-3.1-flash-image"
 
-def generate_image(
-    project_id: str, location: str, output_file: str, prompt: str
-) -> vertexai.preview.vision_models.ImageGenerationResponse:
-    """Generate an image using a text prompt.
-    Args:
-      project_id: Google Cloud project ID, used to initialize Vertex AI.
-      location: Google Cloud region, used to initialize Vertex AI.
-      output_file: Local path to the output image file.
-      prompt: The text prompt describing what you want to see."""
+# ------------------------------------------------------------------
+# The Cloud Logging code below is required for Qwiklabs verification.
+# Do not edit or remove it.
+# ------------------------------------------------------------------
+gcp_logging_client = gcp_logging.Client(project=PROJECT_ID)
+gcp_logging_client.setup_logging()
 
-    vertexai.init(project=project_id, location=location)
+client = genai.Client(
+    enterprise=True,
+    project=PROJECT_ID,
+    location=LOCATION,
+    http_options=HttpOptions(api_version="v1"),
+)
 
-    model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-002")
+prompt = (
+    "Create an image of a cricket ground in the heart of Los Angeles",
+)
 
-    images = model.generate_images(
-        prompt=prompt,
-        # Optional parameters
-        number_of_images=1,
-        seed=1,
-        add_watermark=False,
-    )
+MAX_RETRIES = 3
+INITIAL_DELAY = 2
+response = None
 
-    images[0].save(location=output_file)
+for attempt in range(MAX_RETRIES + 1):
+    try:
+        print(f"Sending the prompt to {MODEL_NAME}...")
+        print(f"Attempt: {attempt + 1}/{MAX_RETRIES + 1}")
 
-    return images
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[prompt],
+        )
 
-generate_image(
-    project_id='$ID',
-    location='$REGION',
-    output_file='image.jpeg',
-    prompt='Create an image of a cricket ground in the heart of Los Angeles',
-    )
+        image_saved = False
 
-EOF_END
+        for part in response.parts:
+            if part.text is not None:
+                print(part.text)
 
-echo "${MAGENTA_TEXT}${BOLD_TEXT}Running the image generation process...${RESET_FORMAT}"
-/usr/bin/python3 /home/student/GenerateImage.py
+            elif part.inline_data is not None:
+                image = part.as_image()
+                image.save("image.png")
+                image_saved = True
+                print("Status: Image saved as image.png")
+
+        if not image_saved:
+            raise RuntimeError(
+                "The model returned a response, but no image data was found."
+            )
+
+        print(
+            "Success: Content generation and processing completed successfully."
+        )
+        break
+
+    except ClientError as error:
+        error_message = str(error)
+
+        if "429" in error_message or "RESOURCE_EXHAUSTED" in error_message:
+            if attempt < MAX_RETRIES:
+                delay = INITIAL_DELAY * (2 ** attempt)
+                print(
+                    f"Warning: Resource exhausted (429). "
+                    f"Retrying in {delay} seconds... "
+                    f"(Attempt {attempt + 1}/{MAX_RETRIES})"
+                )
+                time.sleep(delay)
+                continue
+
+            print(
+                "The service is currently experiencing high demand due to "
+                "quota exhaustion. Run the script again later."
+            )
+            raise
+
+        print(f"Error: The Gemini request failed.\n{error}")
+        raise
+
+    except Exception as error:
+        print(f"Error: {error}")
+        raise
+
+if response is None:
+    print("Final Status: Process terminated unsuccessfully.")
+    raise SystemExit(1)
+PYTHON
+
+echo -e "${GREEN}GenerateImage.py was created successfully.${NC}"
+echo
+echo -e "${YELLOW}Sending the image generation request...${NC}"
+echo
+
+python3 GenerateImage.py
 
 echo
-echo "${GREEN_TEXT}${BOLD_TEXT}╔════════════════════════════════════════════════════════╗${RESET_FORMAT}"
-echo "${GREEN_TEXT}${BOLD_TEXT}              Lab Completed Successfully!               ${RESET_FORMAT}"
-echo "${GREEN_TEXT}${BOLD_TEXT}╚════════════════════════════════════════════════════════╝${RESET_FORMAT}"
-echo
-echo -e "${RED_TEXT}${BOLD_TEXT}Subscribe to Dr. Abhishek Cloud Tutorials:${RESET_FORMAT} ${BLUE_TEXT}${BOLD_TEXT}https://www.youtube.com/@drabhishek.5460/videos${RESET_FORMAT}"
-echo
+
+if [[ -s "image.png" ]]; then
+  echo -e "${GREEN}Lab task completed successfully.${NC}"
+  echo -e "${GREEN}Output file: $(pwd)/image.png${NC}"
+  ls -lh image.png
+else
+  echo -e "${RED}Error: image.png was not created.${NC}"
+  exit 1
+fi
