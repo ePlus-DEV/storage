@@ -8,24 +8,24 @@ set -Eeuo pipefail
 
 # ----------------------------- Colors -----------------------------
 if [[ -t 1 ]]; then
-  RED='\033[0;31m'
-  GREEN='\033[0;32m'
-  YELLOW='\033[1;33m'
-  BLUE='\033[0;34m'
-  CYAN='\033[0;36m'
-  MAGENTA='\033[0;35m'
-  BOLD='\033[1m'
-  NC='\033[0m'
+  RED=$'\033[0;31m'
+  GREEN=$'\033[0;32m'
+  YELLOW=$'\033[1;33m'
+  BLUE=$'\033[0;34m'
+  CYAN=$'\033[0;36m'
+  MAGENTA=$'\033[0;35m'
+  BOLD=$'\033[1m'
+  NC=$'\033[0m'
 else
   RED=''; GREEN=''; YELLOW=''; BLUE=''; CYAN=''; MAGENTA=''; BOLD=''; NC=''
 fi
 
-info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
-success() { echo -e "${GREEN}[OK]${NC} $*"; }
-warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
-error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
+info()    { printf "%s[INFO]%s %s\n" "$BLUE" "$NC" "$*"; }
+success() { printf "%s[OK]%s %s\n" "$GREEN" "$NC" "$*"; }
+warn()    { printf "%s[WARN]%s %s\n" "$YELLOW" "$NC" "$*"; }
+error()   { printf "%s[ERROR]%s %s\n" "$RED" "$NC" "$*" >&2; exit 1; }
 
-trap 'echo -e "\n${RED}[ERROR]${NC} Script stopped at line ${LINENO}." >&2' ERR
+trap 'printf "\n%s[ERROR]%s Script stopped at line %s.\n" "$RED" "$NC" "$LINENO" >&2' ERR
 
 clear 2>/dev/null || true
 cat <<EOF
@@ -46,7 +46,7 @@ read_required() {
   local value=""
 
   while [[ -z "$value" ]]; do
-    read -r -p "$(echo -e "${MAGENTA}${prompt_text}${NC}: ")" value
+    read -r -p "${MAGENTA}${prompt_text}${NC}: " value
     value="${value//[[:space:]]/}"
     [[ -z "$value" ]] && warn "This field is required. Please enter a value."
   done
@@ -75,7 +75,7 @@ validate_inputs() {
 }
 
 # The four lab values are intentionally mandatory.
-echo -e "${BOLD}Enter the required lab values:${NC}"
+printf "%sEnter the required lab values:%s\n" "$BOLD" "$NC"
 read_required DATASET_NAME "Dataset name (example: sensors_494)"
 read_required TABLE_NAME   "Table name (example: temperature_104)"
 read_required TOPIC_NAME   "Pub/Sub topic name (example: sensors-temp-21555)"
@@ -223,7 +223,7 @@ wait_for_job() {
       error "Dataflow job '${job_name}' entered terminal state: ${state}"
     fi
 
-    echo -e "${YELLOW}[WAIT ${attempt}/${max_attempts}]${NC} Current state: ${state:-Not available yet}"
+    printf "%s[WAIT %s/%s]%s Current state: %s\n" "$YELLOW" "$attempt" "$max_attempts" "$NC" "${state:-Not available yet}"
     sleep "$sleep_seconds"
   done
 
@@ -266,7 +266,7 @@ publish_and_verify() {
       return 0
     fi
 
-    echo -e "${YELLOW}[VERIFY ${attempt}/24]${NC} Waiting for a new BigQuery row..."
+    printf "%s[VERIFY %s/24]%s Waiting for a new BigQuery row...\n" "$YELLOW" "$attempt" "$NC"
     sleep 10
   done
 
