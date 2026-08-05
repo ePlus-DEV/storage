@@ -1,3 +1,3 @@
-# Tag and Discover BigLake Data: Challenge Lab - ARC123
+# Enrich Metadata and Discovery of Lakehouse Data: Challenge Lab - ARC123
 
-<https://eplus.dev/tag-and-discover-biglake-data-challenge-lab-arc123>
+<https://eplus.dev/enrich-metadata-and-discovery-of-lakehouse-data-challenge-lab-arc123>
