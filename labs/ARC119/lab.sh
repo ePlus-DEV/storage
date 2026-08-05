@@ -1,4 +1,3 @@
-```bash
 #!/bin/bash
 
 # ==============================================================
@@ -322,4 +321,3 @@ echo "${GREEN_TEXT}${BOLD_TEXT}=================================================
 echo "${YELLOW_TEXT}${BOLD_TEXT}                    © ePlus.DEV                        ${RESET_FORMAT}"
 echo "${CYAN_TEXT}                  All rights reserved.${RESET_FORMAT}"
 echo
-```
