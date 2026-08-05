@@ -1,6 +1,16 @@
 #!/bin/bash
 
 # ============================================================
+# Travel Thumbnail Challenge Lab
+# © ePlus.DEV
+#
+# IMPORTANT:
+# - No "set -e"
+# - No infinite deployment loop
+# - Required input is entered directly in the terminal
+# ============================================================
+
+# ============================================================
 # Color variables
 # ============================================================
 
@@ -26,7 +36,7 @@ BOLD=$(tput bold 2>/dev/null)
 RESET=$(tput sgr0 2>/dev/null)
 
 # ============================================================
-# Helper functions
+# Display functions
 # ============================================================
 
 print_step() {
@@ -48,6 +58,10 @@ print_error() {
   echo "${RED}${BOLD}✗ $1${RESET}"
 }
 
+# ============================================================
+# Required terminal input
+# ============================================================
+
 prompt_required() {
   local VARIABLE_NAME="$1"
   local LABEL="$2"
@@ -64,7 +78,7 @@ prompt_required() {
       sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
     if [[ -z "$VALUE" ]]; then
-      echo "${RED}${BOLD}${LABEL} cannot be empty.${RESET}"
+      print_error "${LABEL} cannot be empty."
     fi
   done
 
@@ -76,8 +90,7 @@ prompt_required() {
 # Start
 # ============================================================
 
-clear
-
+echo
 echo "${BG_MAGENTA}${WHITE}${BOLD}"
 echo "============================================================"
 echo " Travel Thumbnail Challenge Lab"
@@ -85,13 +98,12 @@ echo " © ePlus.DEV"
 echo "============================================================"
 echo "${RESET}"
 
-# Force input every time the script runs
+# Always require terminal input
 unset BUCKET_NAME
 unset TOPIC_NAME
 unset FUNCTION_NAME
 unset BUCKET_USER
 
-echo
 echo "${CYAN}${BOLD}Please enter the values from the lab instructions.${RESET}"
 echo
 
@@ -101,13 +113,13 @@ prompt_required "FUNCTION_NAME" "FUNCTION_NAME"
 prompt_required "BUCKET_USER" "BUCKET_USER"
 
 echo
-echo "${GREEN}${BOLD}✓ Input completed${RESET}"
+print_success "Input completed"
 echo
+
 echo "${WHITE}${BOLD}BUCKET_NAME   :${RESET} ${CYAN}${BUCKET_NAME}${RESET}"
 echo "${WHITE}${BOLD}TOPIC_NAME    :${RESET} ${CYAN}${TOPIC_NAME}${RESET}"
 echo "${WHITE}${BOLD}FUNCTION_NAME :${RESET} ${CYAN}${FUNCTION_NAME}${RESET}"
 echo "${WHITE}${BOLD}BUCKET_USER   :${RESET} ${CYAN}${BUCKET_USER}${RESET}"
-echo
 
 # ============================================================
 # Project configuration
@@ -115,39 +127,61 @@ echo
 
 PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
 
+if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then
+  print_error "No Google Cloud project is configured."
+  echo "Run: gcloud config set project YOUR_PROJECT_ID"
+  exit 1
+fi
+
 PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" \
   --format="value(projectNumber)" \
   2>/dev/null)
+
+if [[ -z "$PROJECT_NUMBER" ]]; then
+  print_error "Unable to obtain the project number."
+  exit 1
+fi
 
 ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 REGION=$(gcloud compute project-info describe--format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
 RUNTIME_SERVICE_ACCOUNT="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 
-STORAGE_SERVICE_ACCOUNT="service-${PROJECT_NUMBER}@gs-project-accounts.iam.gserviceaccount.com"
+EVENTARC_SERVICE_AGENT="service-${PROJECT_NUMBER}@gcp-sa-eventarc.iam.gserviceaccount.com"
+
+STORAGE_SERVICE_AGENT="service-${PROJECT_NUMBER}@gs-project-accounts.iam.gserviceaccount.com"
+
+PUBSUB_SERVICE_AGENT="service-${PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com"
 
 ALERT_EMAIL=$(gcloud config get-value account 2>/dev/null)
 
 WORK_DIR="$HOME/travel-thumbnail-function"
 
+POLICY_NAME="Active Cloud Run Function Instances"
+
+echo
 echo "${BLUE}${BOLD}Project configuration:${RESET}"
-echo "${WHITE}PROJECT_ID    :${RESET} ${CYAN}${PROJECT_ID}${RESET}"
-echo "${WHITE}PROJECT_NUMBER:${RESET} ${CYAN}${PROJECT_NUMBER}${RESET}"
-echo "${WHITE}REGION        :${RESET} ${CYAN}${REGION}${RESET}"
-echo "${WHITE}ZONE          :${RESET} ${CYAN}${ZONE}${RESET}"
-echo "${WHITE}ALERT_EMAIL   :${RESET} ${CYAN}${ALERT_EMAIL}${RESET}"
+echo "${WHITE}PROJECT_ID              :${RESET} ${CYAN}${PROJECT_ID}${RESET}"
+echo "${WHITE}PROJECT_NUMBER          :${RESET} ${CYAN}${PROJECT_NUMBER}${RESET}"
+echo "${WHITE}REGION                  :${RESET} ${CYAN}${REGION}${RESET}"
+echo "${WHITE}ZONE                    :${RESET} ${CYAN}${ZONE}${RESET}"
+echo "${WHITE}RUNTIME SERVICE ACCOUNT :${RESET} ${CYAN}${RUNTIME_SERVICE_ACCOUNT}${RESET}"
+echo "${WHITE}EVENTARC SERVICE AGENT  :${RESET} ${CYAN}${EVENTARC_SERVICE_AGENT}${RESET}"
+echo "${WHITE}ALERT EMAIL             :${RESET} ${CYAN}${ALERT_EMAIL}${RESET}"
 
 # ============================================================
-# Enable APIs
+# 1. Enable required APIs
 # ============================================================
 
-print_step "[1/8] Enabling required APIs"
+print_step "[1/9] Enabling required APIs"
 
 gcloud services enable \
   artifactregistry.googleapis.com \
   cloudbuild.googleapis.com \
   cloudfunctions.googleapis.com \
+  cloudresourcemanager.googleapis.com \
   eventarc.googleapis.com \
+  iam.googleapis.com \
   logging.googleapis.com \
   monitoring.googleapis.com \
   pubsub.googleapis.com \
@@ -169,10 +203,43 @@ gcloud config set compute/zone "$ZONE" \
   --quiet >/dev/null 2>&1
 
 # ============================================================
-# Task 1 - Create bucket
+# 2. Create service identities
 # ============================================================
 
-print_step "[2/8] Creating Cloud Storage bucket"
+print_step "[2/9] Creating Google-managed service identities"
+
+echo "${YELLOW}Creating Eventarc service identity...${RESET}"
+
+gcloud beta services identity create \
+  --service="eventarc.googleapis.com" \
+  --project="$PROJECT_ID" \
+  --quiet
+
+if [[ $? -eq 0 ]]; then
+  print_success "Eventarc service identity is ready"
+else
+  print_warning "Eventarc service identity may already exist"
+fi
+
+echo
+echo "${YELLOW}Creating Pub/Sub service identity...${RESET}"
+
+gcloud beta services identity create \
+  --service="pubsub.googleapis.com" \
+  --project="$PROJECT_ID" \
+  --quiet
+
+if [[ $? -eq 0 ]]; then
+  print_success "Pub/Sub service identity is ready"
+else
+  print_warning "Pub/Sub service identity may already exist"
+fi
+
+# ============================================================
+# 3. Create bucket
+# ============================================================
+
+print_step "[3/9] Creating Cloud Storage bucket"
 
 if gcloud storage buckets describe \
   "gs://$BUCKET_NAME" \
@@ -199,8 +266,8 @@ else
 fi
 
 echo
-echo "${CYAN}${BOLD}Granting Storage Object Viewer to:${RESET}"
-echo "${YELLOW}${BUCKET_USER}${RESET}"
+echo "${YELLOW}${BOLD}Granting Storage Object Viewer to:${RESET}"
+echo "${CYAN}${BUCKET_USER}${RESET}"
 
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="user:$BUCKET_USER" \
@@ -209,16 +276,16 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --quiet >/dev/null
 
 if [[ $? -eq 0 ]]; then
-  print_success "Storage Object Viewer role granted"
+  print_success "Storage Object Viewer granted"
 else
-  print_warning "Unable to grant project IAM role"
+  print_warning "Unable to grant Storage Object Viewer"
 fi
 
 # ============================================================
-# Task 2 - Create Pub/Sub topic
+# 4. Create Pub/Sub topic
 # ============================================================
 
-print_step "[3/8] Creating Pub/Sub topic"
+print_step "[4/9] Creating Pub/Sub topic"
 
 if gcloud pubsub topics describe \
   "$TOPIC_NAME" \
@@ -243,14 +310,27 @@ else
 fi
 
 # ============================================================
-# Prepare IAM permissions
+# 5. Configure IAM
 # ============================================================
 
-print_step "[4/8] Preparing Cloud Function IAM permissions"
+print_step "[5/9] Configuring Eventarc and Function IAM permissions"
 
-echo "${YELLOW}Runtime service account:${RESET}"
-echo "${CYAN}${RUNTIME_SERVICE_ACCOUNT}${RESET}"
+echo "${YELLOW}Granting Eventarc Service Agent role...${RESET}"
+
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$EVENTARC_SERVICE_AGENT" \
+  --role="roles/eventarc.serviceAgent" \
+  --condition=None \
+  --quiet >/dev/null
+
+if [[ $? -eq 0 ]]; then
+  print_success "Eventarc Service Agent role granted"
+else
+  print_warning "Eventarc Service Agent role may already exist"
+fi
+
 echo
+echo "${YELLOW}Granting Eventarc Event Receiver to runtime account...${RESET}"
 
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$RUNTIME_SERVICE_ACCOUNT" \
@@ -258,11 +338,15 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --condition=None \
   --quiet >/dev/null
 
+echo "${YELLOW}Granting Cloud Run Invoker to runtime account...${RESET}"
+
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$RUNTIME_SERVICE_ACCOUNT" \
   --role="roles/run.invoker" \
   --condition=None \
   --quiet >/dev/null
+
+echo "${YELLOW}Granting Storage Object Admin to runtime account...${RESET}"
 
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$RUNTIME_SERVICE_ACCOUNT" \
@@ -270,11 +354,15 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --condition=None \
   --quiet >/dev/null
 
+echo "${YELLOW}Granting Pub/Sub Publisher to runtime account...${RESET}"
+
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$RUNTIME_SERVICE_ACCOUNT" \
   --role="roles/pubsub.publisher" \
   --condition=None \
   --quiet >/dev/null
+
+echo "${YELLOW}Granting Logging Writer to runtime account...${RESET}"
 
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$RUNTIME_SERVICE_ACCOUNT" \
@@ -282,26 +370,47 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --condition=None \
   --quiet >/dev/null
 
+echo "${YELLOW}Granting Pub/Sub Publisher to Cloud Storage service agent...${RESET}"
+
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$STORAGE_SERVICE_ACCOUNT" \
+  --member="serviceAccount:$STORAGE_SERVICE_AGENT" \
   --role="roles/pubsub.publisher" \
+  --condition=None \
+  --quiet >/dev/null
+
+echo "${YELLOW}Granting Service Account Token Creator to Pub/Sub service agent...${RESET}"
+
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$PUBSUB_SERVICE_AGENT" \
+  --role="roles/iam.serviceAccountTokenCreator" \
   --condition=None \
   --quiet >/dev/null
 
 print_success "IAM permissions configured"
 
-echo "${YELLOW}Waiting for IAM propagation...${RESET}"
-sleep 15
+echo
+echo "${YELLOW}${BOLD}Waiting 90 seconds for Eventarc IAM propagation...${RESET}"
+
+for SECOND in 90 75 60 45 30 15; do
+  echo "${YELLOW}Eventarc IAM propagation: approximately ${SECOND} seconds remaining...${RESET}"
+  sleep 15
+done
+
+print_success "IAM propagation wait completed"
 
 # ============================================================
-# Create function source
+# 6. Create function source
 # ============================================================
 
-print_step "[5/8] Creating Cloud Run Function source"
+print_step "[6/9] Creating Cloud Run Function source"
 
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
-cd "$WORK_DIR"
+
+cd "$WORK_DIR" || {
+  print_error "Unable to open working directory"
+  exit 1
+}
 
 cat > index.js <<EOF_INDEX
 /* globals exports, require */
@@ -337,8 +446,8 @@ exports.thumbnail = async (cloudEvent) => {
     return;
   }
 
-  const fileNameParts = fileName.split(".");
-  const extension = fileNameParts.pop().toLowerCase();
+  const nameParts = fileName.split(".");
+  const extension = nameParts.pop().toLowerCase();
 
   if (
     extension !== "png" &&
@@ -453,10 +562,39 @@ EOF_PACKAGE
 print_success "Function source files created"
 
 # ============================================================
-# Deploy Cloud Run Function Gen2
+# 7. Remove stale triggers and deploy function
 # ============================================================
 
-print_step "[6/8] Deploying Cloud Run Function Gen2"
+print_step "[7/9] Deploying Cloud Run Function Gen2"
+
+echo "${YELLOW}Checking for stale Eventarc triggers...${RESET}"
+
+STALE_TRIGGERS=$(gcloud eventarc triggers list \
+  --project="$PROJECT_ID" \
+  --location="$REGION" \
+  --format="value(name)" \
+  2>/dev/null |
+  grep "^${FUNCTION_NAME}-")
+
+if [[ -n "$STALE_TRIGGERS" ]]; then
+
+  while IFS= read -r TRIGGER_NAME; do
+    if [[ -n "$TRIGGER_NAME" ]]; then
+      echo "${YELLOW}Deleting stale trigger: ${TRIGGER_NAME}${RESET}"
+
+      gcloud eventarc triggers delete "$TRIGGER_NAME" \
+        --project="$PROJECT_ID" \
+        --location="$REGION" \
+        --quiet
+    fi
+  done <<< "$STALE_TRIGGERS"
+
+  echo "${YELLOW}Waiting 20 seconds after removing stale triggers...${RESET}"
+  sleep 20
+
+else
+  print_success "No stale Eventarc trigger found"
+fi
 
 deploy_function() {
   gcloud functions deploy "$FUNCTION_NAME" \
@@ -476,42 +614,80 @@ deploy_function() {
     --quiet
 }
 
-deploy_function
-DEPLOY_STATUS=$?
+DEPLOY_SUCCESS=false
 
-if [[ $DEPLOY_STATUS -ne 0 ]]; then
+for ATTEMPT in 1 2 3; do
   echo
-  print_warning "First deployment failed"
-  echo "${YELLOW}Waiting 20 seconds before retrying once...${RESET}"
-
-  sleep 20
+  echo "${CYAN}${BOLD}Deployment attempt ${ATTEMPT}/3${RESET}"
 
   deploy_function
-  DEPLOY_STATUS=$?
-fi
 
-if [[ $DEPLOY_STATUS -eq 0 ]]; then
+  DEPLOY_STATUS=$?
+
+  if [[ $DEPLOY_STATUS -eq 0 ]]; then
+    DEPLOY_SUCCESS=true
+    break
+  fi
+
+  print_warning "Deployment attempt ${ATTEMPT} failed"
+
+  if [[ $ATTEMPT -lt 3 ]]; then
+    echo "${YELLOW}Refreshing Eventarc service identity and permissions...${RESET}"
+
+    gcloud beta services identity create \
+      --service="eventarc.googleapis.com" \
+      --project="$PROJECT_ID" \
+      --quiet >/dev/null 2>&1
+
+    gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+      --member="serviceAccount:$EVENTARC_SERVICE_AGENT" \
+      --role="roles/eventarc.serviceAgent" \
+      --condition=None \
+      --quiet >/dev/null
+
+    echo "${YELLOW}Waiting 60 seconds before retrying...${RESET}"
+
+    for SECOND in 60 45 30 15; do
+      echo "${YELLOW}Approximately ${SECOND} seconds remaining...${RESET}"
+      sleep 15
+    done
+  fi
+done
+
+if [[ "$DEPLOY_SUCCESS" == "true" ]]; then
   print_success "Cloud Run Function deployed successfully"
 else
-  print_error "Function deployment failed"
-  print_warning "The script will continue without closing the terminal"
+  print_error "Function deployment failed after three attempts"
+  print_warning "The script will continue and will not close the terminal"
 fi
 
 # ============================================================
-# Upload test image
+# 8. Upload test image
 # ============================================================
 
-print_step "[7/8] Uploading test image"
+print_step "[8/9] Uploading test image"
 
-cd "$WORK_DIR"
+cd "$WORK_DIR" || exit 1
+
+rm -f travel.jpg
 
 wget -q \
   "https://storage.googleapis.com/cloud-training/arc101/travel.jpg" \
   -O travel.jpg
 
 if [[ -f travel.jpg && -s travel.jpg ]]; then
-
   print_success "travel.jpg downloaded"
+
+  # Delete the old image before upload so a new finalize event is generated.
+  gcloud storage rm \
+    "gs://$BUCKET_NAME/travel.jpg" \
+    --project="$PROJECT_ID" \
+    --quiet >/dev/null 2>&1
+
+  gcloud storage rm \
+    "gs://$BUCKET_NAME/travel.64x64_thumbnail.jpg" \
+    --project="$PROJECT_ID" \
+    --quiet >/dev/null 2>&1
 
   gcloud storage cp \
     travel.jpg \
@@ -530,60 +706,68 @@ else
 fi
 
 # ============================================================
-# Task 4 - Create notification channel
+# 9. Create alert policy
 # ============================================================
 
-print_step "[8/8] Creating Monitoring alert policy"
+print_step "[9/9] Creating Monitoring alert policy"
 
 echo "${WHITE}Notification email:${RESET} ${CYAN}${ALERT_EMAIL}${RESET}"
 
-NOTIFICATION_CHANNEL=$(gcloud beta monitoring channels list \
-  --project="$PROJECT_ID" \
-  --filter="type=email AND labels.email_address=\"$ALERT_EMAIL\"" \
-  --format="value(name)" \
-  --limit=1 \
-  2>/dev/null)
+NOTIFICATION_CHANNEL=""
 
-if [[ -z "$NOTIFICATION_CHANNEL" ]]; then
+if [[ "$ALERT_EMAIL" == *"@"* ]]; then
 
-  echo "${YELLOW}Creating email notification channel...${RESET}"
-
-  NOTIFICATION_CHANNEL=$(gcloud beta monitoring channels create \
+  NOTIFICATION_CHANNEL=$(gcloud beta monitoring channels list \
     --project="$PROJECT_ID" \
-    --display-name="Cloud Function Alert Email" \
-    --description="Email notification for active Cloud Run Function instances" \
-    --type="email" \
-    --channel-labels="email_address=$ALERT_EMAIL" \
+    --filter="type=email AND labels.email_address=\"$ALERT_EMAIL\"" \
     --format="value(name)" \
-    --quiet \
+    --limit=1 \
     2>/dev/null)
+
+  if [[ -z "$NOTIFICATION_CHANNEL" ]]; then
+    echo "${YELLOW}Creating email notification channel...${RESET}"
+
+    NOTIFICATION_CHANNEL=$(gcloud beta monitoring channels create \
+      --project="$PROJECT_ID" \
+      --display-name="Cloud Function Alert Email" \
+      --description="Email notification for active Cloud Run Function instances" \
+      --type="email" \
+      --channel-labels="email_address=$ALERT_EMAIL" \
+      --format="value(name)" \
+      --quiet \
+      2>/dev/null)
+  fi
 
 fi
 
 if [[ -n "$NOTIFICATION_CHANNEL" ]]; then
-  print_success "Email notification channel created"
+  print_success "Email notification channel is ready"
   CHANNEL_JSON="\"$NOTIFICATION_CHANNEL\""
 else
   print_warning "Email notification channel could not be created"
   CHANNEL_JSON=""
 fi
 
-# Remove existing policy with the same name
-EXISTING_POLICY=$(gcloud monitoring policies list \
+echo "${YELLOW}Checking for an existing alert policy...${RESET}"
+
+EXISTING_POLICIES=$(gcloud monitoring policies list \
   --project="$PROJECT_ID" \
-  --filter='displayName="Active Cloud Run Function Instances"' \
+  --filter="displayName=\"$POLICY_NAME\"" \
   --format="value(name)" \
-  --limit=1 \
   2>/dev/null)
 
-if [[ -n "$EXISTING_POLICY" ]]; then
+if [[ -n "$EXISTING_POLICIES" ]]; then
 
-  print_warning "Existing alert policy found; recreating it"
+  while IFS= read -r EXISTING_POLICY; do
+    if [[ -n "$EXISTING_POLICY" ]]; then
+      echo "${YELLOW}Deleting existing policy: ${EXISTING_POLICY}${RESET}"
 
-  gcloud monitoring policies delete \
-    "$EXISTING_POLICY" \
-    --project="$PROJECT_ID" \
-    --quiet >/dev/null 2>&1
+      gcloud monitoring policies delete \
+        "$EXISTING_POLICY" \
+        --project="$PROJECT_ID" \
+        --quiet >/dev/null 2>&1
+    fi
+  done <<< "$EXISTING_POLICIES"
 
 fi
 
@@ -632,7 +816,7 @@ POLICY_STATUS=$?
 if [[ $POLICY_STATUS -eq 0 ]]; then
   print_success "Alert policy created successfully"
 else
-  print_error "Unable to create alert policy"
+  print_error "Unable to create the alert policy"
 fi
 
 # ============================================================
@@ -652,6 +836,10 @@ echo "${WHITE}${BOLD}Bucket:${RESET}"
 echo "${CYAN}gs://${BUCKET_NAME}${RESET}"
 
 echo
+echo "${WHITE}${BOLD}Bucket user:${RESET}"
+echo "${CYAN}${BUCKET_USER}${RESET}"
+
+echo
 echo "${WHITE}${BOLD}Pub/Sub topic:${RESET}"
 echo "${CYAN}${TOPIC_NAME}${RESET}"
 
@@ -660,8 +848,17 @@ echo "${WHITE}${BOLD}Cloud Run Function:${RESET}"
 echo "${CYAN}${FUNCTION_NAME}${RESET}"
 
 echo
+echo "${WHITE}${BOLD}Function deployment:${RESET}"
+
+if [[ "$DEPLOY_SUCCESS" == "true" ]]; then
+  echo "${GREEN}SUCCESS${RESET}"
+else
+  echo "${RED}FAILED${RESET}"
+fi
+
+echo
 echo "${WHITE}${BOLD}Alert policy:${RESET}"
-echo "${CYAN}Active Cloud Run Function Instances${RESET}"
+echo "${CYAN}${POLICY_NAME}${RESET}"
 
 echo
 echo "${YELLOW}${BOLD}Now click Check my progress for all tasks.${RESET}"
