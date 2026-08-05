@@ -1,177 +1,158 @@
-#!/usr/bin/env bash
-set -Eeuo pipefail
-
+#!/bin/bash
 # ==============================================================
-#        © ePlus.DEV - BigLake Challenge Lab Solution
+#  © ePlus.DEV - BigLake and Sensitive Data Aspect Challenge Lab
 # ==============================================================
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+# Define color variables
+BLACK=$(tput setaf 0)
+RED=$(tput setaf 1)
+GREEN=$(tput setaf 2)
+YELLOW=$(tput setaf 3)
+BLUE=$(tput setaf 4)
+MAGENTA=$(tput setaf 5)
+CYAN=$(tput setaf 6)
+WHITE=$(tput setaf 7)
 
-info()    { echo -e "${CYAN}▶ $1${NC}"; }
-success() { echo -e "${GREEN}✓ $1${NC}"; }
-warning() { echo -e "${YELLOW}⚠ $1${NC}"; }
-fail()    { echo -e "${RED}✗ $1${NC}" >&2; exit 1; }
+BG_BLACK=$(tput setab 0)
+BG_RED=$(tput setab 1)
+BG_GREEN=$(tput setab 2)
+BG_YELLOW=$(tput setab 3)
+BG_BLUE=$(tput setab 4)
+BG_MAGENTA=$(tput setab 5)
+BG_CYAN=$(tput setab 6)
+BG_WHITE=$(tput setab 7)
 
-trap 'echo -e "${RED}✗ Failed at line ${LINENO}: ${BASH_COMMAND}${NC}" >&2' ERR
+BOLD=$(tput bold)
+RESET=$(tput sgr0)
 
-PROJECT_ID="$(gcloud config get-value project 2>/dev/null)"
+# ---------------------------------------------------- start ---------------------------------------------------- #
+
+echo "${BG_MAGENTA}${WHITE}${BOLD}  © ePlus.DEV - Starting Execution  ${RESET}"
+
+PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
 BQ_LOCATION="US"
 DATAPLEX_LOCATION="us"
-DATASET_ID="ecommerce"
+DATASET_NAME="ecommerce"
 CONNECTION_ID="customer_data_connection"
-TABLE_ID="customer_online_sessions"
-BUCKET_NAME="qwiklabs-gcp-04-3793299b45dd-bucket"
-SOURCE_URI="gs://${BUCKET_NAME}/customer-online-sessions.csv"
+TABLE_NAME="customer_online_sessions"
 ASPECT_TYPE_ID="sensitive-data-aspect"
+GCS_URI="gs://qwiklabs-gcp-04-3793299b45dd-bucket/customer-online-sessions.csv"
 
-[[ -n "$PROJECT_ID" && "$PROJECT_ID" != "(unset)" ]] || fail "Google Cloud project is not set."
+if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then
+  echo "${RED}${BOLD}ERROR: Google Cloud project is not configured.${RESET}"
+  exit 1
+fi
 
-clear
-printf "${CYAN}"
-printf '╔══════════════════════════════════════════════════════╗\n'
-printf '║       © ePlus.DEV - BigLake Challenge Lab          ║\n'
-printf '╚══════════════════════════════════════════════════════╝\n'
-printf "${NC}\n"
-printf 'Project ID : %s\n' "$PROJECT_ID"
-printf 'Dataset    : %s\n' "$DATASET_ID"
-printf 'Connection : %s\n' "$CONNECTION_ID"
-printf 'Table      : %s\n\n' "$TABLE_ID"
+echo "${CYAN}${BOLD}Project ID :${RESET} $PROJECT_ID"
+echo "${CYAN}${BOLD}Location   :${RESET} $BQ_LOCATION"
+echo
 
-# --------------------------------------------------------------
-# Task 1: Create the BigQuery dataset
-# --------------------------------------------------------------
-info "Enabling required APIs..."
+# Enable required APIs
+echo "${YELLOW}${BOLD}[1/6] Enabling required APIs...${RESET}"
 gcloud services enable \
   bigquery.googleapis.com \
   bigqueryconnection.googleapis.com \
   dataplex.googleapis.com \
-  storage.googleapis.com \
   --project="$PROJECT_ID" \
-  --quiet
-success "Required APIs are enabled."
+  --quiet || exit 1
 
-info "Creating BigQuery dataset ${DATASET_ID} in US..."
-if bq show --project_id="$PROJECT_ID" "${PROJECT_ID}:${DATASET_ID}" >/dev/null 2>&1; then
-  success "Dataset ${DATASET_ID} already exists."
+# Task 1: Create the BigQuery dataset in the US multi-region
+echo "${YELLOW}${BOLD}[2/6] Creating BigQuery dataset: $DATASET_NAME...${RESET}"
+if bq show "$PROJECT_ID:$DATASET_NAME" >/dev/null 2>&1; then
+  echo "${GREEN}Dataset already exists.${RESET}"
 else
-  bq mk \
-    --project_id="$PROJECT_ID" \
-    --location="$BQ_LOCATION" \
-    --dataset "${PROJECT_ID}:${DATASET_ID}"
-  success "Dataset ${DATASET_ID} created."
+  bq --location="$BQ_LOCATION" mk \
+    --dataset \
+    "$PROJECT_ID:$DATASET_NAME" || exit 1
 fi
 
-# --------------------------------------------------------------
-# Task 2: Create Cloud Resource connection and BigLake table
-# --------------------------------------------------------------
-info "Creating Cloud Resource connection ${CONNECTION_ID}..."
-if bq show \
-  --connection \
-  --project_id="$PROJECT_ID" \
-  --location="$BQ_LOCATION" \
-  "${PROJECT_ID}.${DATAPLEX_LOCATION}.${CONNECTION_ID}" >/dev/null 2>&1; then
-  success "Connection ${CONNECTION_ID} already exists."
+# Task 2: Create the Cloud Resource connection
+echo "${YELLOW}${BOLD}[3/6] Creating Cloud Resource connection: $CONNECTION_ID...${RESET}"
+if bq show --connection "$PROJECT_ID.$BQ_LOCATION.$CONNECTION_ID" >/dev/null 2>&1; then
+  echo "${GREEN}Connection already exists.${RESET}"
 else
   bq mk \
     --connection \
-    --project_id="$PROJECT_ID" \
     --location="$BQ_LOCATION" \
+    --project_id="$PROJECT_ID" \
     --connection_type=CLOUD_RESOURCE \
-    "$CONNECTION_ID"
-  success "Connection ${CONNECTION_ID} created."
+    "$CONNECTION_ID" || exit 1
 fi
 
-info "Getting the connection service account..."
-CONNECTION_SA=""
-for attempt in {1..10}; do
-  CONNECTION_SA="$(
-    bq show \
-      --connection \
-      --project_id="$PROJECT_ID" \
-      --location="$BQ_LOCATION" \
-      --format=json \
-      "${PROJECT_ID}.${DATAPLEX_LOCATION}.${CONNECTION_ID}" 2>/dev/null \
-      | python3 -c 'import json,sys; print(json.load(sys.stdin).get("cloudResource", {}).get("serviceAccountId", ""))' \
-      || true
-  )"
+# Get the connection service account without grep/awk character trimming
+echo "${YELLOW}${BOLD}[4/6] Granting Cloud Storage read permission...${RESET}"
+CONNECTION_SA=$(bq show \
+  --format=prettyjson \
+  --connection "$PROJECT_ID.$BQ_LOCATION.$CONNECTION_ID" \
+  | python3 -c 'import json, sys; print(json.load(sys.stdin)["cloudResource"]["serviceAccountId"])')
 
-  [[ -n "$CONNECTION_SA" ]] && break
-  sleep 3
-done
+if [[ -z "$CONNECTION_SA" ]]; then
+  echo "${RED}${BOLD}ERROR: Could not read the connection service account.${RESET}"
+  exit 1
+fi
 
-[[ -n "$CONNECTION_SA" ]] || fail "Could not get the connection service account."
-printf 'Connection service account: %s\n' "$CONNECTION_SA"
+echo "${CYAN}Connection service account: $CONNECTION_SA${RESET}"
 
-info "Granting Storage Object Viewer to the connection service account..."
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${CONNECTION_SA}" \
+  --member="serviceAccount:$CONNECTION_SA" \
   --role="roles/storage.objectViewer" \
   --condition=None \
-  --quiet >/dev/null
-success "Storage permission granted."
+  --quiet >/dev/null || exit 1
 
-info "Creating BigLake table ${DATASET_ID}.${TABLE_ID}..."
-bq query \
-  --project_id="$PROJECT_ID" \
-  --location="$BQ_LOCATION" \
-  --use_legacy_sql=false \
-  "CREATE OR REPLACE EXTERNAL TABLE \`${PROJECT_ID}.${DATASET_ID}.${TABLE_ID}\`
-   WITH CONNECTION \`${PROJECT_ID}.${DATAPLEX_LOCATION}.${CONNECTION_ID}\`
-   OPTIONS (
-     format = 'CSV',
-     uris = ['${SOURCE_URI}'],
-     skip_leading_rows = 1
-   );"
-success "BigLake table created with schema auto-detection."
+# Allow the IAM binding to become available before schema auto-detection
+sleep 15
 
-# --------------------------------------------------------------
-# Task 3: Create and apply the Sensitive Data Aspect
-# --------------------------------------------------------------
-ASPECT_TEMPLATE="${HOME}/sensitive_data_aspect.json"
-ASPECT_VALUES="${HOME}/sensitive_data_values.yaml"
+# Create a BigLake external table with the connection and schema auto-detection
+echo "${YELLOW}${BOLD}[5/6] Creating BigLake table: $TABLE_NAME...${RESET}"
 
-cat > "$ASPECT_TEMPLATE" <<'JSON'
+bq rm -f -t "$PROJECT_ID:$DATASET_NAME.$TABLE_NAME" >/dev/null 2>&1
+
+bq mkdef \
+  --source_format=CSV \
+  --autodetect=true \
+  --connection_id="$PROJECT_ID.$BQ_LOCATION.$CONNECTION_ID" \
+  "$GCS_URI" > biglake_table_definition.json || exit 1
+
+bq --location="$BQ_LOCATION" mk \
+  --table \
+  --external_table_definition=biglake_table_definition.json \
+  "$PROJECT_ID:$DATASET_NAME.$TABLE_NAME" || exit 1
+
+# Task 3: Create the Sensitive Data Aspect type
+echo "${YELLOW}${BOLD}[6/6] Creating and applying Sensitive Data Aspect...${RESET}"
+
+cat > sensitive_data_aspect_type.json <<'EOF'
 {
-  "name": "sensitive_data_aspect",
+  "name": "SensitiveDataAspect",
   "type": "record",
   "recordFields": [
     {
-      "index": 1,
       "name": "has_sensitive_data",
       "type": "bool",
-      "constraints": {
-        "required": true
-      },
+      "index": 1,
       "annotations": {
         "displayName": "Has Sensitive Data",
         "displayOrder": 1
       }
     },
     {
-      "index": 2,
       "name": "sensitive_data_type",
       "type": "enum",
+      "index": 2,
       "enumValues": [
         {
-          "index": 1,
-          "name": "Location Info"
+          "name": "Location Info",
+          "index": 1
         },
         {
-          "index": 2,
-          "name": "Contact Info"
+          "name": "Contact Info",
+          "index": 2
         },
         {
-          "index": 3,
-          "name": "None"
+          "name": "None",
+          "index": 3
         }
       ],
-      "constraints": {
-        "required": true
-      },
       "annotations": {
         "displayName": "Sensitive Data Type",
         "displayOrder": 2
@@ -179,55 +160,60 @@ cat > "$ASPECT_TEMPLATE" <<'JSON'
     }
   ]
 }
-JSON
+EOF
 
-info "Creating Sensitive Data Aspect..."
 if gcloud dataplex aspect-types describe "$ASPECT_TYPE_ID" \
-  --project="$PROJECT_ID" \
-  --location="$DATAPLEX_LOCATION" >/dev/null 2>&1; then
-  success "Sensitive Data Aspect already exists."
+  --location="$DATAPLEX_LOCATION" \
+  --project="$PROJECT_ID" >/dev/null 2>&1; then
+  echo "${GREEN}Aspect type already exists.${RESET}"
 else
   gcloud dataplex aspect-types create "$ASPECT_TYPE_ID" \
-    --project="$PROJECT_ID" \
     --location="$DATAPLEX_LOCATION" \
+    --project="$PROJECT_ID" \
     --display-name="Sensitive Data Aspect" \
-    --metadata-template-file-name="$ASPECT_TEMPLATE" \
-    --quiet
-  success "Sensitive Data Aspect created."
+    --metadata-template-file-name=sensitive_data_aspect_type.json \
+    --quiet || exit 1
 fi
 
-cat > "$ASPECT_VALUES" <<YAML
-"${PROJECT_ID}.${DATAPLEX_LOCATION}.${ASPECT_TYPE_ID}":
-  data:
-    has_sensitive_data: true
-    sensitive_data_type: "Location Info"
-YAML
+cat > sensitive_data_aspect_values.json <<EOF
+{
+  "$PROJECT_ID.$DATAPLEX_LOCATION.$ASPECT_TYPE_ID": {
+    "data": {
+      "has_sensitive_data": true,
+      "sensitive_data_type": "Location Info"
+    }
+  }
+}
+EOF
 
-ENTRY_ID="bigquery.googleapis.com/projects/${PROJECT_ID}/datasets/${DATASET_ID}/tables/${TABLE_ID}"
+ENTRY_NAME="projects/$PROJECT_ID/locations/$DATAPLEX_LOCATION/entryGroups/@bigquery/entries/bigquery.googleapis.com/projects/$PROJECT_ID/datasets/$DATASET_NAME/tables/$TABLE_NAME"
 
-info "Applying the aspect to ${TABLE_ID}..."
 ASPECT_APPLIED=false
-for attempt in {1..12}; do
-  if gcloud dataplex entries modify "$ENTRY_ID" \
+for ATTEMPT in 1 2 3 4 5 6; do
+  if gcloud dataplex entries modify "$ENTRY_NAME" \
+    --update-aspects=sensitive_data_aspect_values.json \
     --project="$PROJECT_ID" \
-    --location="$DATAPLEX_LOCATION" \
-    --entry-group="@bigquery" \
-    --update-aspects="$ASPECT_VALUES" \
     --quiet; then
     ASPECT_APPLIED=true
     break
   fi
 
-  warning "Knowledge Catalog is still synchronizing. Retrying (${attempt}/12)..."
-  sleep 5
+  echo "${YELLOW}Knowledge Catalog entry is not ready. Retrying ($ATTEMPT/6)...${RESET}"
+  sleep 10
 done
 
-[[ "$ASPECT_APPLIED" == true ]] || fail "Could not apply the aspect after multiple attempts."
-success "Aspect applied: Has Sensitive Data = TRUE, Sensitive Data Type = Location Info."
+if [[ "$ASPECT_APPLIED" != "true" ]]; then
+  echo "${RED}${BOLD}ERROR: Could not apply the aspect to the BigQuery table.${RESET}"
+  exit 1
+fi
 
-printf "\n${GREEN}"
-printf '╔══════════════════════════════════════════════════════╗\n'
-printf '║                 ALL TASKS COMPLETED                  ║\n'
-printf '╚══════════════════════════════════════════════════════╝\n'
-printf "${NC}"
-printf '\nClick Check my progress for Tasks 1, 2, and 3.\n'
+echo
+echo "${GREEN}${BOLD}Dataset   : $PROJECT_ID:$DATASET_NAME${RESET}"
+echo "${GREEN}${BOLD}Connection: $PROJECT_ID.$BQ_LOCATION.$CONNECTION_ID${RESET}"
+echo "${GREEN}${BOLD}Table     : $PROJECT_ID:$DATASET_NAME.$TABLE_NAME${RESET}"
+echo "${GREEN}${BOLD}Aspect    : Sensitive Data Aspect${RESET}"
+echo "${GREEN}${BOLD}Values    : Has Sensitive Data = TRUE; Sensitive Data Type = Location Info${RESET}"
+echo
+echo "${BG_RED}${WHITE}${BOLD}  Congratulations For Completing The Lab !!!  ${RESET}"
+
+# ----------------------------------------------------- end ----------------------------------------------------- #
