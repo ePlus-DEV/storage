@@ -1,499 +1,651 @@
 #!/bin/bash
 
+# ============================================================
+#      © ePlus.DEV - Lakehouse Sensitive Data Challenge
+# ============================================================
+
 clear
 
-# ============================================================
-#               © ePlus.DEV - BigLake Lab
-# ============================================================
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+BOLD='\033[1m'
+NC='\033[0m'
 
-# Define color variables
-BLACK=$(tput setaf 0)
-RED=$(tput setaf 1)
-GREEN=$(tput setaf 2)
-YELLOW=$(tput setaf 3)
-BLUE=$(tput setaf 4)
-MAGENTA=$(tput setaf 5)
-CYAN=$(tput setaf 6)
-WHITE=$(tput setaf 7)
+DATASET_NAME="online_shop"
+TABLE_NAME="user_online_sessions"
+CONNECTION_NAME="user_data_connection"
 
-BG_BLACK=$(tput setab 0)
-BG_RED=$(tput setab 1)
-BG_GREEN=$(tput setab 2)
-BG_YELLOW=$(tput setab 3)
-BG_BLUE=$(tput setab 4)
-BG_MAGENTA=$(tput setab 5)
-BG_CYAN=$(tput setab 6)
-BG_WHITE=$(tput setab 7)
-
-BOLD=$(tput bold)
-RESET=$(tput sgr0)
-
-# Array of color codes excluding black and white
-TEXT_COLORS=(
-  "$RED"
-  "$GREEN"
-  "$YELLOW"
-  "$BLUE"
-  "$MAGENTA"
-  "$CYAN"
-)
-
-BG_COLORS=(
-  "$BG_RED"
-  "$BG_GREEN"
-  "$BG_YELLOW"
-  "$BG_BLUE"
-  "$BG_MAGENTA"
-  "$BG_CYAN"
-)
-
-# Pick random colors
-RANDOM_TEXT_COLOR=${TEXT_COLORS[$((RANDOM % ${#TEXT_COLORS[@]}))]}
-RANDOM_BG_COLOR=${BG_COLORS[$((RANDOM % ${#BG_COLORS[@]}))]}
-
-# ------------------------------------------------------------
-# Project information
-# ------------------------------------------------------------
+ASPECT_TYPE_ID="sensitive-data-aspect"
+ASPECT_LOCATION="us"
 
 PROJECT_ID="${DEVSHELL_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
+BUCKET_NAME="${PROJECT_ID}-bucket"
+SOURCE_URI="gs://${BUCKET_NAME}/user-online-sessions.csv"
+
+TEMPLATE_FILE="/tmp/sensitive-data-template.json"
+ASPECTS_FILE="/tmp/sensitive-data-aspects.json"
+TABLE_DEF_FILE="/tmp/user-online-sessions-tabledef.json"
+ENTRY_FILE="/tmp/user-online-sessions-entry.json"
+
+fail() {
+  echo
+  echo -e "${RED}${BOLD}ERROR: $1${NC}"
+  echo
+  exit 1
+}
+
+success() {
+  echo -e "${GREEN}✓ $1${NC}"
+}
+
+warning() {
+  echo -e "${YELLOW}⚠ $1${NC}"
+}
+
+step() {
+  echo
+  echo -e "${CYAN}${BOLD}============================================================${NC}"
+  echo -e "${CYAN}${BOLD}$1${NC}"
+  echo -e "${CYAN}${BOLD}============================================================${NC}"
+}
+
+echo -e "${BLUE}${BOLD}"
+echo "╔══════════════════════════════════════════════════════════╗"
+echo "║     © ePlus.DEV - Lakehouse Sensitive Data Challenge    ║"
+echo "╚══════════════════════════════════════════════════════════╝"
+echo -e "${NC}"
 
 if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then
-  echo "${RED}${BOLD}Unable to detect the Google Cloud Project ID.${RESET}"
-  exit 1
+  fail "Unable to detect the Google Cloud Project ID."
 fi
 
-export DEVSHELL_PROJECT_ID="$PROJECT_ID"
+gcloud config set project "$PROJECT_ID" >/dev/null 2>&1
 
-# ------------------------------------------------------------
-# Banner
-# ------------------------------------------------------------
-
-echo "${RANDOM_BG_COLOR}${RANDOM_TEXT_COLOR}${BOLD}"
-echo "============================================================"
-echo "            © ePlus.DEV - BigLake Lab"
-echo "============================================================"
-echo "${RESET}"
-
-echo "${BOLD}${CYAN}Project ID: ${PROJECT_ID}${RESET}"
+echo -e "${WHITE}Project ID : ${CYAN}${PROJECT_ID}${NC}"
+echo -e "${WHITE}Dataset    : ${CYAN}${DATASET_NAME}${NC}"
+echo -e "${WHITE}Table      : ${CYAN}${TABLE_NAME}${NC}"
+echo -e "${WHITE}Source     : ${CYAN}${SOURCE_URI}${NC}"
 echo
 
-# ------------------------------------------------------------
+# ============================================================
 # Enter User 2 email
-# ------------------------------------------------------------
+# ============================================================
 
-echo "${BOLD}${YELLOW}Enter the email address of User 2 from the Lab Details panel.${RESET}"
+echo -e "${YELLOW}${BOLD}Enter the User 2 email from the Lab Details panel.${NC}"
+echo -e "${YELLOW}Example for this lab: student-04-e4dc84c46848@qwiklabs.net${NC}"
 echo
 
 while true; do
   read -r -p "User 2 email: " USER_2
 
-  # Remove leading and trailing spaces
-  USER_2=$(echo "$USER_2" | xargs)
+  USER_2="$(echo "$USER_2" | xargs)"
 
   if [[ -z "$USER_2" ]]; then
-    echo "${RED}User 2 email is required. Please enter it again.${RESET}"
-    echo
+    echo -e "${RED}User 2 email is required.${NC}"
     continue
   fi
 
   if [[ ! "$USER_2" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
-    echo "${RED}Invalid email address. Please enter it again.${RESET}"
-    echo
+    echo -e "${RED}Invalid email address. Please enter it again.${NC}"
     continue
   fi
 
   break
 done
 
-export USER_2
-
 echo
-echo "${GREEN}${BOLD}User 2: ${USER_2}${RESET}"
-echo
-echo "${RANDOM_BG_COLOR}${RANDOM_TEXT_COLOR}${BOLD}Starting Execution${RESET}"
-echo
+success "User 2 email: ${USER_2}"
 
-# ------------------------------------------------------------
-# Step 1: Fetch taxonomy and policy tag details
-# ------------------------------------------------------------
+# ============================================================
+# Step 1: Enable APIs
+# ============================================================
 
-echo "${BOLD}${CYAN}[1/10] Fetching taxonomy name, ID, and policy tag...${RESET}"
+step "[1/9] Enabling required Google Cloud APIs"
 
-TAXONOMY_NAME=$(gcloud data-catalog taxonomies list \
-  --location=us \
+gcloud services enable \
+  bigquery.googleapis.com \
+  bigqueryconnection.googleapis.com \
+  dataplex.googleapis.com \
+  datacatalog.googleapis.com \
+  storage.googleapis.com \
+  serviceusage.googleapis.com \
   --project="$PROJECT_ID" \
-  --format="value(displayName)" \
-  --limit=1)
+  --quiet || fail "Unable to enable the required APIs."
 
-if [[ -z "$TAXONOMY_NAME" ]]; then
-  echo "${RED}No taxonomy was found in location us.${RESET}"
-  exit 1
-fi
+success "Required APIs are enabled."
 
-TAXONOMY_RESOURCE=$(gcloud data-catalog taxonomies list \
-  --location=us \
-  --project="$PROJECT_ID" \
-  --filter="displayName=${TAXONOMY_NAME}" \
-  --format="value(name)" \
-  --limit=1)
-
-TAXONOMY_ID=$(echo "$TAXONOMY_RESOURCE" | awk -F'/' '{print $6}')
-
-if [[ -z "$TAXONOMY_ID" ]]; then
-  echo "${RED}Unable to detect the taxonomy ID.${RESET}"
-  exit 1
-fi
-
-POLICY_TAG=$(gcloud data-catalog taxonomies policy-tags list \
-  --location=us \
-  --taxonomy="$TAXONOMY_ID" \
-  --project="$PROJECT_ID" \
-  --format="value(name)" \
-  --limit=1)
-
-if [[ -z "$POLICY_TAG" ]]; then
-  echo "${RED}No policy tag was found in taxonomy ${TAXONOMY_NAME}.${RESET}"
-  exit 1
-fi
-
-export TAXONOMY_NAME
-export TAXONOMY_ID
-export POLICY_TAG
-
-echo "${GREEN}Taxonomy name: ${TAXONOMY_NAME}${RESET}"
-echo "${GREEN}Taxonomy ID  : ${TAXONOMY_ID}${RESET}"
-echo "${GREEN}Policy tag   : ${POLICY_TAG}${RESET}"
-echo
-
-# ------------------------------------------------------------
+# ============================================================
 # Step 2: Create BigQuery dataset
-# ------------------------------------------------------------
+# ============================================================
 
-echo "${BOLD}${CYAN}[2/10] Creating the BigQuery dataset...${RESET}"
+step "[2/9] Creating the US multi-region BigQuery dataset"
 
-if bq show --dataset "${PROJECT_ID}:online_shop" >/dev/null 2>&1; then
-  echo "${YELLOW}Dataset online_shop already exists. Skipping creation.${RESET}"
+if bq show --dataset "${PROJECT_ID}:${DATASET_NAME}" >/dev/null 2>&1; then
+  warning "Dataset ${DATASET_NAME} already exists."
 else
-  bq mk \
+  bq --location=US mk \
     --dataset \
-    --location=US \
-    "${PROJECT_ID}:online_shop"
+    "${PROJECT_ID}:${DATASET_NAME}" \
+    || fail "Unable to create the BigQuery dataset."
 fi
 
-echo
+DATASET_LOCATION="$(
+  bq show \
+    --format=json \
+    "${PROJECT_ID}:${DATASET_NAME}" 2>/dev/null |
+    jq -r '.location // empty'
+)"
 
-# ------------------------------------------------------------
-# Step 3: Create BigQuery connection
-# ------------------------------------------------------------
+if [[ "${DATASET_LOCATION^^}" != "US" ]]; then
+  fail "Dataset location is ${DATASET_LOCATION:-unknown}, but the lab requires US."
+fi
 
-echo "${BOLD}${CYAN}[3/10] Creating the BigQuery connection...${RESET}"
+success "Dataset ${DATASET_NAME} exists in US."
+
+# ============================================================
+# Step 3: Create Cloud Resource connection
+# ============================================================
+
+step "[3/9] Creating the Cloud Resource connection"
 
 if bq show \
   --connection \
-  --location=US \
-  "${PROJECT_ID}.US.user_data_connection" >/dev/null 2>&1; then
+  --format=json \
+  "${PROJECT_ID}.US.${CONNECTION_NAME}" >/dev/null 2>&1; then
 
-  echo "${YELLOW}Connection user_data_connection already exists. Skipping creation.${RESET}"
+  warning "Connection ${CONNECTION_NAME} already exists."
 else
   bq mk \
     --connection \
     --location=US \
     --project_id="$PROJECT_ID" \
     --connection_type=CLOUD_RESOURCE \
-    user_data_connection
+    "$CONNECTION_NAME" \
+    || fail "Unable to create the BigQuery Cloud Resource connection."
 fi
 
-echo
+CONNECTION_INFO="$(
+  bq show \
+    --connection \
+    --format=json \
+    "${PROJECT_ID}.US.${CONNECTION_NAME}" 2>/dev/null
+)"
 
-# ------------------------------------------------------------
-# Step 4: Grant Storage Object Viewer to connection SA
-# ------------------------------------------------------------
+CONNECTION_SERVICE_ACCOUNT="$(
+  echo "$CONNECTION_INFO" |
+    jq -r '.cloudResource.serviceAccountId // empty'
+)"
 
-echo "${BOLD}${CYAN}[4/10] Granting the connection service account permission to read Cloud Storage...${RESET}"
-
-SERVICE_ACCOUNT=$(bq show \
-  --format=json \
-  --connection \
-  "${PROJECT_ID}.US.user_data_connection" |
-  jq -r '.cloudResource.serviceAccountId')
-
-if [[ -z "$SERVICE_ACCOUNT" || "$SERVICE_ACCOUNT" == "null" ]]; then
-  echo "${RED}Unable to detect the BigQuery connection service account.${RESET}"
-  exit 1
+if [[ -z "$CONNECTION_SERVICE_ACCOUNT" ]]; then
+  fail "Unable to detect the connection service account."
 fi
 
-export SERVICE_ACCOUNT
+echo -e "${WHITE}Connection service account:${NC}"
+echo -e "${CYAN}${CONNECTION_SERVICE_ACCOUNT}${NC}"
 
-echo "${GREEN}Connection service account: ${SERVICE_ACCOUNT}${RESET}"
+success "Cloud Resource connection is ready."
+
+# ============================================================
+# Step 4: Grant Storage access to connection service account
+# ============================================================
+
+step "[4/9] Granting Cloud Storage access to the connection"
 
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${SERVICE_ACCOUNT}" \
+  --member="serviceAccount:${CONNECTION_SERVICE_ACCOUNT}" \
   --role="roles/storage.objectViewer" \
-  --quiet
+  --condition=None \
+  --quiet >/dev/null \
+  || fail "Unable to grant Storage Object Viewer to the connection service account."
 
-echo
+success "The connection service account can read Cloud Storage objects."
 
-# ------------------------------------------------------------
-# Step 5: Create external table definition
-# ------------------------------------------------------------
+# ============================================================
+# Step 5: Create BigLake/Lakehouse table
+# ============================================================
 
-echo "${BOLD}${CYAN}[5/10] Creating the BigQuery table definition...${RESET}"
+step "[5/9] Creating the BigLake Lakehouse table"
+
+if ! gcloud storage objects describe "$SOURCE_URI" \
+  --project="$PROJECT_ID" >/dev/null 2>&1; then
+  fail "Source file was not found: ${SOURCE_URI}"
+fi
+
+success "Source CSV file exists."
+
+rm -f "$TABLE_DEF_FILE"
 
 bq mkdef \
   --autodetect \
-  --connection_id="${PROJECT_ID}.US.user_data_connection" \
+  --connection_id="${PROJECT_ID}.US.${CONNECTION_NAME}" \
   --source_format=CSV \
-  "gs://${PROJECT_ID}-bucket/user-online-sessions.csv" \
-  > /tmp/tabledef.json
+  "$SOURCE_URI" \
+  > "$TABLE_DEF_FILE" \
+  || fail "Unable to create the external table definition."
 
-if [[ ! -s /tmp/tabledef.json ]]; then
-  echo "${RED}The table definition file could not be created.${RESET}"
-  exit 1
+if [[ ! -s "$TABLE_DEF_FILE" ]]; then
+  fail "The external table definition is empty."
 fi
 
-echo "${GREEN}Table definition created at /tmp/tabledef.json${RESET}"
-echo
-
-# ------------------------------------------------------------
-# Step 6: Create BigLake table
-# ------------------------------------------------------------
-
-echo "${BOLD}${CYAN}[6/10] Creating the BigLake table...${RESET}"
-
+# Remove an incomplete table from a previous attempt.
 if bq show \
-  "${PROJECT_ID}:online_shop.user_online_sessions" >/dev/null 2>&1; then
+  "${PROJECT_ID}:${DATASET_NAME}.${TABLE_NAME}" >/dev/null 2>&1; then
 
-  echo "${YELLOW}Table user_online_sessions already exists. Recreating it.${RESET}"
+  warning "Table ${TABLE_NAME} already exists. It will be recreated."
 
   bq rm \
     --force \
     --table \
-    "${PROJECT_ID}:online_shop.user_online_sessions"
+    "${PROJECT_ID}:${DATASET_NAME}.${TABLE_NAME}" \
+    || fail "Unable to remove the existing table."
 fi
 
-bq mk \
-  --external_table_definition=/tmp/tabledef.json \
-  --project_id="$PROJECT_ID" \
-  online_shop.user_online_sessions
+TABLE_CREATED=false
 
-echo
+for attempt in $(seq 1 18); do
+  if bq mk \
+    --table \
+    --external_table_definition="$TABLE_DEF_FILE" \
+    "${PROJECT_ID}:${DATASET_NAME}.${TABLE_NAME}"; then
 
-# ------------------------------------------------------------
-# Step 7: Create schema file
-# ------------------------------------------------------------
+    TABLE_CREATED=true
+    break
+  fi
 
-echo "${BOLD}${CYAN}[7/10] Creating the schema for the BigLake table...${RESET}"
+  warning "Table creation is waiting for IAM/API propagation. Retrying..."
+  sleep 10
+done
 
-cat > /tmp/schema.json <<EOF
-[
-  {
-    "mode": "NULLABLE",
-    "name": "ad_event_id",
-    "type": "INTEGER"
-  },
-  {
-    "mode": "NULLABLE",
-    "name": "user_id",
-    "type": "INTEGER"
-  },
-  {
-    "mode": "NULLABLE",
-    "name": "uri",
-    "type": "STRING"
-  },
-  {
-    "mode": "NULLABLE",
-    "name": "traffic_source",
-    "type": "STRING"
-  },
-  {
-    "mode": "NULLABLE",
-    "name": "zip",
-    "policyTags": {
-      "names": [
-        "${POLICY_TAG}"
-      ]
-    },
-    "type": "STRING"
-  },
-  {
-    "mode": "NULLABLE",
-    "name": "event_type",
-    "type": "STRING"
-  },
-  {
-    "mode": "NULLABLE",
-    "name": "state",
-    "type": "STRING"
-  },
-  {
-    "mode": "NULLABLE",
-    "name": "country",
-    "type": "STRING"
-  },
-  {
-    "mode": "NULLABLE",
-    "name": "city",
-    "type": "STRING"
-  },
-  {
-    "mode": "NULLABLE",
-    "name": "latitude",
-    "policyTags": {
-      "names": [
-        "${POLICY_TAG}"
-      ]
-    },
-    "type": "FLOAT"
-  },
-  {
-    "mode": "NULLABLE",
-    "name": "created_at",
-    "type": "TIMESTAMP"
-  },
-  {
-    "mode": "NULLABLE",
-    "name": "ip_address",
-    "policyTags": {
-      "names": [
-        "${POLICY_TAG}"
-      ]
-    },
-    "type": "STRING"
-  },
-  {
-    "mode": "NULLABLE",
-    "name": "session_id",
-    "type": "STRING"
-  },
-  {
-    "mode": "NULLABLE",
-    "name": "longitude",
-    "policyTags": {
-      "names": [
-        "${POLICY_TAG}"
-      ]
-    },
-    "type": "FLOAT"
-  },
-  {
-    "mode": "NULLABLE",
-    "name": "id",
-    "type": "INTEGER"
-  }
-]
-EOF
+if [[ "$TABLE_CREATED" != "true" ]]; then
+  fail "Unable to create the BigLake table."
+fi
 
-echo "${GREEN}Schema created at /tmp/schema.json${RESET}"
-echo
+TABLE_INFO="$(
+  bq show \
+    --format=json \
+    "${PROJECT_ID}:${DATASET_NAME}.${TABLE_NAME}" 2>/dev/null
+)"
 
-# ------------------------------------------------------------
-# Step 8: Update BigLake table schema
-# ------------------------------------------------------------
+TABLE_TYPE="$(echo "$TABLE_INFO" | jq -r '.type // empty')"
 
-echo "${BOLD}${CYAN}[8/10] Updating the schema for user_online_sessions...${RESET}"
+TABLE_CONNECTION="$(
+  echo "$TABLE_INFO" |
+    jq -r '.externalDataConfiguration.connectionId // empty'
+)"
 
-bq update \
-  --schema=/tmp/schema.json \
-  "${PROJECT_ID}:online_shop.user_online_sessions"
+TABLE_SOURCE="$(
+  echo "$TABLE_INFO" |
+    jq -r '.externalDataConfiguration.sourceUris[0] // empty'
+)"
 
-echo
+if [[ "$TABLE_TYPE" != "EXTERNAL" ]]; then
+  fail "The created table is not an external BigLake table."
+fi
 
-# ------------------------------------------------------------
-# Step 9: Query non-sensitive columns
-# ------------------------------------------------------------
+if [[ "$TABLE_CONNECTION" != *"/connections/${CONNECTION_NAME}" ]]; then
+  fail "The BigLake table is not using ${CONNECTION_NAME}."
+fi
 
-echo "${BOLD}${CYAN}[9/10] Running a query that excludes sensitive columns...${RESET}"
+if [[ "$TABLE_SOURCE" != "$SOURCE_URI" ]]; then
+  fail "The BigLake table is not using the expected source file."
+fi
 
-bq query \
-  --project_id="$PROJECT_ID" \
-  --use_legacy_sql=false \
-  --format=pretty \
-  "
-  SELECT
-    * EXCEPT(zip, latitude, ip_address, longitude)
-  FROM
-    \`${PROJECT_ID}.online_shop.user_online_sessions\`
-  LIMIT 10
-  "
+success "BigLake table ${DATASET_NAME}.${TABLE_NAME} was created."
+echo -e "${WHITE}Connection: ${CYAN}${TABLE_CONNECTION}${NC}"
 
-echo
+# ============================================================
+# Step 6: Create Sensitive Data Aspect type
+# ============================================================
 
-# ------------------------------------------------------------
-# Step 10: Remove User 2 Storage Object Viewer permission
-# ------------------------------------------------------------
+step "[6/9] Creating the Sensitive Data Aspect type"
 
-echo "${BOLD}${CYAN}[10/10] Removing Storage Object Viewer from User 2...${RESET}"
-echo "${YELLOW}User 2: ${USER_2}${RESET}"
+cat > "$TEMPLATE_FILE" <<'JSON'
+{
+  "name": "Sensitive Data Aspect",
+  "type": "record",
+  "recordFields": [
+    {
+      "index": 1,
+      "name": "has-sensitive-data",
+      "type": "bool",
+      "constraints": {
+        "required": false
+      },
+      "annotations": {
+        "displayName": "Has Sensitive Data",
+        "description": "Indicates whether this column contains sensitive data.",
+        "displayOrder": 1
+      }
+    }
+  ]
+}
+JSON
 
-if gcloud projects get-iam-policy "$PROJECT_ID" \
-  --flatten="bindings[].members" \
-  --filter="bindings.role:roles/storage.objectViewer AND bindings.members:user:${USER_2}" \
-  --format="value(bindings.members)" |
-  grep -Fxq "user:${USER_2}"; then
+if gcloud dataplex aspect-types describe "$ASPECT_TYPE_ID" \
+  --location="$ASPECT_LOCATION" \
+  --project="$PROJECT_ID" >/dev/null 2>&1; then
 
-  gcloud projects remove-iam-policy-binding "$PROJECT_ID" \
-    --member="user:${USER_2}" \
-    --role="roles/storage.objectViewer" \
-    --quiet
+  warning "Aspect type ${ASPECT_TYPE_ID} already exists."
 
-  echo "${GREEN}Storage Object Viewer was removed from ${USER_2}.${RESET}"
+  gcloud dataplex aspect-types update "$ASPECT_TYPE_ID" \
+    --location="$ASPECT_LOCATION" \
+    --project="$PROJECT_ID" \
+    --display-name="Sensitive Data Aspect" \
+    --description="Identifies columns that contain sensitive data." \
+    --metadata-template-file-name="$TEMPLATE_FILE" \
+    --quiet >/dev/null 2>&1 || true
 else
-  echo "${YELLOW}${USER_2} does not currently have roles/storage.objectViewer.${RESET}"
+  gcloud dataplex aspect-types create "$ASPECT_TYPE_ID" \
+    --location="$ASPECT_LOCATION" \
+    --project="$PROJECT_ID" \
+    --display-name="Sensitive Data Aspect" \
+    --description="Identifies columns that contain sensitive data." \
+    --metadata-template-file-name="$TEMPLATE_FILE" \
+    --quiet \
+    || fail "Unable to create the Sensitive Data Aspect type."
 fi
 
-echo
+ASPECT_INFO="$(
+  gcloud dataplex aspect-types describe "$ASPECT_TYPE_ID" \
+    --location="$ASPECT_LOCATION" \
+    --project="$PROJECT_ID" \
+    --format=json 2>/dev/null
+)"
 
-# ------------------------------------------------------------
-# Completion message
-# ------------------------------------------------------------
-
-random_congrats() {
-  MESSAGES=(
-    "${GREEN}Congratulations! The lab configuration has been completed.${RESET}"
-    "${CYAN}Well done! All requested resources were configured successfully.${RESET}"
-    "${YELLOW}Amazing job! You have successfully completed the lab.${RESET}"
-    "${BLUE}Outstanding! The BigLake configuration is complete.${RESET}"
-    "${MAGENTA}Great work! Your Google Cloud resources are ready.${RESET}"
-    "${GREEN}Mission accomplished! Keep up the great work.${RESET}"
+if ! echo "$ASPECT_INFO" | jq -e '
+  .displayName == "Sensitive Data Aspect"
+  and
+  (
+    .metadataTemplate.recordFields
+    | any(
+        .name == "has-sensitive-data"
+        and .type == "bool"
+        and .annotations.displayName == "Has Sensitive Data"
+    )
   )
+' >/dev/null; then
+  fail "The Sensitive Data Aspect type or Boolean field is not configured correctly."
+fi
 
-  RANDOM_INDEX=$((RANDOM % ${#MESSAGES[@]}))
-  echo "${BOLD}${MESSAGES[$RANDOM_INDEX]}"
+success "Sensitive Data Aspect was created in the US multi-region."
+success "Boolean field Has Sensitive Data was created."
+
+# ============================================================
+# Step 7: Find the Knowledge Catalog entry
+# ============================================================
+
+step "[7/9] Finding the Knowledge Catalog entry for the table"
+
+ENTRY_LOCATION="us"
+ENTRY_GROUP="@bigquery"
+
+ENTRY_ID="bigquery.googleapis.com/projects/${PROJECT_ID}/datasets/${DATASET_NAME}/tables/${TABLE_NAME}"
+
+FQN="bigquery:${PROJECT_ID}.${DATASET_NAME}.${TABLE_NAME}"
+
+ENTRY_FOUND=false
+
+for attempt in $(seq 1 30); do
+  if gcloud dataplex entries lookup "$ENTRY_ID" \
+    --entry-group="$ENTRY_GROUP" \
+    --location="$ENTRY_LOCATION" \
+    --project="$PROJECT_ID" \
+    --view=full \
+    --format=json \
+    > "$ENTRY_FILE" 2>/dev/null; then
+
+    ENTRY_FOUND=true
+    break
+  fi
+
+  # Fallback: search by exact fully qualified name.
+  SEARCH_RESULTS="$(
+    gcloud dataplex entries search \
+      "fully_qualified_name=${FQN}" \
+      --project="$PROJECT_ID" \
+      --scope="projects/${PROJECT_ID}" \
+      --limit=10 \
+      --format=json 2>/dev/null
+  )"
+
+  ENTRY_NAME="$(
+    echo "$SEARCH_RESULTS" |
+      jq -r --arg fqn "$FQN" '
+        .[]?
+        | (.dataplexEntry // .entry // .) as $entry
+        | select($entry.fullyQualifiedName == $fqn)
+        | $entry.name
+      ' |
+      head -n 1
+  )"
+
+  if [[ -n "$ENTRY_NAME" && "$ENTRY_NAME" != "null" ]]; then
+    ENTRY_LOCATION="$(
+      echo "$ENTRY_NAME" |
+        sed -E 's#^projects/[^/]+/locations/([^/]+)/.*#\1#'
+    )"
+
+    ENTRY_GROUP="$(
+      echo "$ENTRY_NAME" |
+        sed -E 's#^.*/entryGroups/([^/]+)/entries/.*#\1#'
+    )"
+
+    ENTRY_ID="$(
+      echo "$ENTRY_NAME" |
+        sed -E 's#^.*/entries/##'
+    )"
+
+    ENTRY_FOUND=true
+    break
+  fi
+
+  warning "Knowledge Catalog is indexing the BigQuery table. Retrying..."
+  sleep 5
+done
+
+if [[ "$ENTRY_FOUND" != "true" ]]; then
+  fail "Unable to find the Knowledge Catalog entry for ${FQN}."
+fi
+
+echo -e "${WHITE}Entry location : ${CYAN}${ENTRY_LOCATION}${NC}"
+echo -e "${WHITE}Entry group    : ${CYAN}${ENTRY_GROUP}${NC}"
+echo -e "${WHITE}Entry ID       : ${CYAN}${ENTRY_ID}${NC}"
+
+success "Knowledge Catalog entry was found."
+
+# ============================================================
+# Step 8: Apply aspect to sensitive columns
+# ============================================================
+
+step "[8/9] Applying the aspect to sensitive columns"
+
+ASPECT_REFERENCE="${PROJECT_ID}.${ASPECT_LOCATION}.${ASPECT_TYPE_ID}"
+
+cat > "$ASPECTS_FILE" <<JSON
+{
+  "${ASPECT_REFERENCE}@Schema.zip": {
+    "data": {
+      "has-sensitive-data": true
+    }
+  },
+  "${ASPECT_REFERENCE}@Schema.latitude": {
+    "data": {
+      "has-sensitive-data": true
+    }
+  },
+  "${ASPECT_REFERENCE}@Schema.ip_address": {
+    "data": {
+      "has-sensitive-data": true
+    }
+  },
+  "${ASPECT_REFERENCE}@Schema.longitude": {
+    "data": {
+      "has-sensitive-data": true
+    }
+  }
 }
+JSON
 
-random_congrats
+ASPECT_APPLIED=false
+
+for attempt in $(seq 1 12); do
+  if gcloud dataplex entries modify "$ENTRY_ID" \
+    --entry-group="$ENTRY_GROUP" \
+    --location="$ENTRY_LOCATION" \
+    --project="$PROJECT_ID" \
+    --update-aspects="$ASPECTS_FILE" \
+    --quiet; then
+
+    ASPECT_APPLIED=true
+    break
+  fi
+
+  warning "Aspect attachment is waiting for catalog propagation. Retrying..."
+  sleep 10
+done
+
+if [[ "$ASPECT_APPLIED" != "true" ]]; then
+  fail "Unable to apply the aspect to the sensitive columns."
+fi
+
+gcloud dataplex entries lookup "$ENTRY_ID" \
+  --entry-group="$ENTRY_GROUP" \
+  --location="$ENTRY_LOCATION" \
+  --project="$PROJECT_ID" \
+  --view=all \
+  --format=json \
+  > "$ENTRY_FILE" \
+  || fail "Unable to verify the attached aspects."
+
+VERIFY_FAILED=false
+
+for COLUMN_NAME in zip latitude ip_address longitude; do
+  ASPECT_SUFFIX=".${ASPECT_LOCATION}.${ASPECT_TYPE_ID}@Schema.${COLUMN_NAME}"
+
+  if jq -e --arg suffix "$ASPECT_SUFFIX" '
+    [
+      (.aspects // {})
+      | to_entries[]
+      | select(
+          (.key | endswith($suffix))
+          and
+          (.value.data["has-sensitive-data"] == true)
+        )
+    ]
+    | length > 0
+  ' "$ENTRY_FILE" >/dev/null; then
+
+    success "Aspect verified on column: ${COLUMN_NAME}"
+  else
+    echo -e "${RED}✗ Aspect was not found on column: ${COLUMN_NAME}${NC}"
+    VERIFY_FAILED=true
+  fi
+done
+
+if [[ "$VERIFY_FAILED" == "true" ]]; then
+  fail "One or more sensitive columns do not have the required aspect."
+fi
+
+# ============================================================
+# Step 9: Remove User 2 direct Cloud Storage roles
+# ============================================================
+
+step "[9/9] Removing direct Cloud Storage IAM roles from User 2"
+
+USER_ROLES="$(
+  gcloud projects get-iam-policy "$PROJECT_ID" \
+    --flatten="bindings[].members" \
+    --filter="bindings.members:user:${USER_2}" \
+    --format="value(bindings.role)" 2>/dev/null
+)"
+
+STORAGE_ROLES="$(
+  echo "$USER_ROLES" |
+    grep '^roles/storage\.' |
+    sort -u
+)"
+
+if [[ -z "$STORAGE_ROLES" ]]; then
+  warning "No direct Cloud Storage project role was found for ${USER_2}."
+else
+  while IFS= read -r STORAGE_ROLE; do
+    [[ -z "$STORAGE_ROLE" ]] && continue
+
+    echo -e "${YELLOW}Removing ${STORAGE_ROLE} from ${USER_2}...${NC}"
+
+    gcloud projects remove-iam-policy-binding "$PROJECT_ID" \
+      --member="user:${USER_2}" \
+      --role="$STORAGE_ROLE" \
+      --condition=None \
+      --quiet >/dev/null \
+      || fail "Unable to remove ${STORAGE_ROLE} from ${USER_2}."
+
+    success "Removed ${STORAGE_ROLE}"
+  done <<< "$STORAGE_ROLES"
+fi
+
+REMAINING_STORAGE_ROLES="$(
+  gcloud projects get-iam-policy "$PROJECT_ID" \
+    --flatten="bindings[].members" \
+    --filter="bindings.members:user:${USER_2}" \
+    --format="value(bindings.role)" 2>/dev/null |
+    grep '^roles/storage\.' || true
+)"
+
+if [[ -n "$REMAINING_STORAGE_ROLES" ]]; then
+  echo "$REMAINING_STORAGE_ROLES"
+  fail "User 2 still has a direct Cloud Storage project role."
+fi
+
+if echo "$(
+  gcloud projects get-iam-policy "$PROJECT_ID" \
+    --flatten="bindings[].members" \
+    --filter="bindings.members:user:${USER_2}" \
+    --format="value(bindings.role)" 2>/dev/null
+)" | grep -Fxq "roles/viewer"; then
+  success "Project Viewer role remains assigned to User 2."
+else
+  warning "No direct roles/viewer binding was detected. The script did not remove or modify Viewer access."
+fi
+
+# ============================================================
+# Final verification
+# ============================================================
 
 echo
-echo "${BOLD}${CYAN}Summary${RESET}"
-echo "Project ID              : ${PROJECT_ID}"
-echo "Dataset                 : online_shop"
-echo "BigLake table           : user_online_sessions"
-echo "Connection              : user_data_connection"
-echo "User 2                  : ${USER_2}"
-echo "Removed role            : roles/storage.objectViewer"
+echo -e "${GREEN}${BOLD}"
+echo "╔══════════════════════════════════════════════════════════╗"
+echo "║                 LAB CONFIGURATION COMPLETE               ║"
+echo "╚══════════════════════════════════════════════════════════╝"
+echo -e "${NC}"
+
+echo -e "${WHITE}Project ID:${NC}       ${CYAN}${PROJECT_ID}${NC}"
+echo -e "${WHITE}Dataset:${NC}          ${CYAN}${DATASET_NAME}${NC}"
+echo -e "${WHITE}BigLake table:${NC}     ${CYAN}${TABLE_NAME}${NC}"
+echo -e "${WHITE}Connection:${NC}       ${CYAN}${CONNECTION_NAME}${NC}"
+echo -e "${WHITE}Aspect type:${NC}      ${CYAN}Sensitive Data Aspect${NC}"
+echo -e "${WHITE}Aspect location:${NC}  ${CYAN}${ASPECT_LOCATION}${NC}"
+echo -e "${WHITE}User 2:${NC}           ${CYAN}${USER_2}${NC}"
+
 echo
-echo "${BOLD}${GREEN}© ePlus.DEV${RESET}"
+echo -e "${GREEN}${BOLD}Sensitive columns:${NC}"
+echo "  ✓ zip"
+echo "  ✓ latitude"
+echo "  ✓ ip_address"
+echo "  ✓ longitude"
+
+echo
+echo -e "${YELLOW}${BOLD}Return to the lab page and click Check my progress for all three tasks.${NC}"
+echo -e "${MAGENTA}${BOLD}© ePlus.DEV${NC}"
 echo
 
-# ------------------------------------------------------------
-# Cleanup temporary files
-# ------------------------------------------------------------
-
-rm -f /tmp/tabledef.json
-rm -f /tmp/schema.json
-
-cd "$HOME" || exit 0
-
-remove_files() {
-  for file in *; do
-    if [[ "$file" == gsp* || "$file" == arc* || "$file" == shell* ]]; then
-      if [[ -f "$file" ]]; then
-        rm -f "$file"
-        echo "File removed: $file"
-      fi
-    fi
-  done
-}
-
-remove_files
+rm -f \
+  "$TEMPLATE_FILE" \
+  "$ASPECTS_FILE" \
+  "$TABLE_DEF_FILE" \
+  "$ENTRY_FILE"
