@@ -27,7 +27,7 @@ clear
 
 echo "${CYAN_TEXT}${BOLD_TEXT}==================================================================${RESET_FORMAT}"
 echo "${CYAN_TEXT}${BOLD_TEXT}             GOOGLE CLOUD DATAPLEX LAB AUTOMATION                 ${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}                         © ePlus.DEV                              ${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}                         © ePlus.DEV                               ${RESET_FORMAT}"
 echo "${CYAN_TEXT}${BOLD_TEXT}==================================================================${RESET_FORMAT}"
 echo
 
@@ -52,17 +52,57 @@ case "$FORM_NUMBER" in
         ;;
 esac
 
-ZONE=$(gcloud compute project-info describe \
-  --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
-REGION=$(gcloud compute project-info describe \
-  --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+echo
+echo "${YELLOW_TEXT}${BOLD_TEXT}Detecting Google Cloud project, zone and region...${RESET_FORMAT}"
+
+export PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+
+if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then
+    export PROJECT_ID="$DEVSHELL_PROJECT_ID"
+fi
+
+export ZONE=$(gcloud compute project-info describe \
+    --format="value(commonInstanceMetadata.items[google-compute-default-zone])" 2>/dev/null)
+
+export REGION=$(gcloud compute project-info describe \
+    --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null)
+
+# Use the zone to determine the region when default region is unavailable
+if [[ -z "$REGION" && -n "$ZONE" ]]; then
+    export REGION="${ZONE%-*}"
+fi
+
+if [[ -z "$PROJECT_ID" ]]; then
+    echo
+    echo "${RED_TEXT}${BOLD_TEXT}Unable to detect the Google Cloud Project ID.${RESET_FORMAT}"
+    exit 1
+fi
+
+if [[ -z "$ZONE" ]]; then
+    echo
+    echo "${RED_TEXT}${BOLD_TEXT}Unable to detect the default compute zone.${RESET_FORMAT}"
+    echo "${YELLOW_TEXT}Please make sure the lab provides google-compute-default-zone metadata.${RESET_FORMAT}"
+    exit 1
+fi
+
+if [[ -z "$REGION" ]]; then
+    echo
+    echo "${RED_TEXT}${BOLD_TEXT}Unable to detect the default compute region.${RESET_FORMAT}"
+    exit 1
+fi
+
+export DEVSHELL_PROJECT_ID="$PROJECT_ID"
 export KEY_1=domain_type
 export VALUE_1=source_data
 
+gcloud config set project "$PROJECT_ID" >/dev/null
+gcloud config set compute/zone "$ZONE" >/dev/null
+gcloud config set compute/region "$REGION" >/dev/null
+
 echo
-echo "${GREEN_TEXT}${BOLD_TEXT}✓ Configuration received successfully.${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}✓ Configuration detected successfully.${RESET_FORMAT}"
 echo "${WHITE_TEXT}${BOLD_TEXT}Form:${RESET_FORMAT} ${CYAN_TEXT}$FORM_NUMBER${RESET_FORMAT}"
-echo "${WHITE_TEXT}${BOLD_TEXT}Project ID:${RESET_FORMAT} ${CYAN_TEXT}$DEVSHELL_PROJECT_ID${RESET_FORMAT}"
+echo "${WHITE_TEXT}${BOLD_TEXT}Project ID:${RESET_FORMAT} ${CYAN_TEXT}$PROJECT_ID${RESET_FORMAT}"
 echo "${WHITE_TEXT}${BOLD_TEXT}Zone:${RESET_FORMAT} ${CYAN_TEXT}$ZONE${RESET_FORMAT}"
 echo "${WHITE_TEXT}${BOLD_TEXT}Region:${RESET_FORMAT} ${CYAN_TEXT}$REGION${RESET_FORMAT}"
 echo "${WHITE_TEXT}${BOLD_TEXT}Labels:${RESET_FORMAT} ${CYAN_TEXT}$KEY_1=$VALUE_1${RESET_FORMAT}"
@@ -260,7 +300,6 @@ run_form_4() {
         --display-name="Customer Reference Data"
 }
 
-# Execute selected form
 case "$FORM_NUMBER" in
     1)
         run_form_1
@@ -280,7 +319,7 @@ echo
 echo "${GREEN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
 echo "${GREEN_TEXT}${BOLD_TEXT}              LAB EXECUTION COMPLETED                  ${RESET_FORMAT}"
 echo "${GREEN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
-echo "${YELLOW_TEXT}${BOLD_TEXT}                © ePlus.DEV                            ${RESET_FORMAT}"
-echo "${CYAN_TEXT}              All rights reserved.${RESET_FORMAT}"
+echo "${YELLOW_TEXT}${BOLD_TEXT}                    © ePlus.DEV                        ${RESET_FORMAT}"
+echo "${CYAN_TEXT}                  All rights reserved.${RESET_FORMAT}"
 echo
 ```
