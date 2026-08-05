@@ -107,25 +107,17 @@ echo
 echo -n "${BOLD}${GREEN}Please enter the death threshold: ${RESET}"
 read death_threshold
 
-bq query --use_legacy_sql=false \
-"SELECT date
- FROM \`bigquery-public-data.covid19_open_data.covid19_open_data\`
- WHERE country_name='Italy' AND cumulative_deceased > ${death_threshold}
- ORDER BY date ASC
- LIMIT 1"
-
-bq query --use_legacy_sql=false \
+ bq query --use_legacy_sql=false \
 "SELECT
-  DATE(date) AS date
+  date
 FROM (
   SELECT
     date,
     SUM(cumulative_deceased) AS total_deaths
   FROM
-    `bigquery-public-data.covid19_open_data.covid19_open_data`
+    \`bigquery-public-data.covid19_open_data.covid19_open_data\`
   WHERE
     country_name = 'Italy'
-    AND date >= '2020-01-01'
   GROUP BY
     date
 )
