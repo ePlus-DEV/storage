@@ -1,203 +1,245 @@
 #!/bin/bash
-set -e
+# Define color variables
+BLACK=`tput setaf 0`
+RED=`tput setaf 1`
+GREEN=`tput setaf 2`
+YELLOW=`tput setaf 3`
+BLUE=`tput setaf 4`
+MAGENTA=`tput setaf 5`
+CYAN=`tput setaf 6`
+WHITE=`tput setaf 7`
 
-# ==========================================
-# Color setup
-# ==========================================
-RED=$(tput setaf 1)
-GREEN=$(tput setaf 2)
-YELLOW=$(tput setaf 3)
-CYAN=$(tput setaf 6)
-RESET=$(tput sgr0)
+BG_BLACK=`tput setab 0`
+BG_RED=`tput setab 1`
+BG_GREEN=`tput setab 2`
+BG_YELLOW=`tput setab 3`
+BG_BLUE=`tput setab 4`
+BG_MAGENTA=`tput setab 5`
+BG_CYAN=`tput setab 6`
+BG_WHITE=`tput setab 7`
 
-step () {
-  echo ""
-  echo "${CYAN}========== [TASK $1] $2 ==========${RESET}"
-}
+BOLD=`tput bold`
+RESET=`tput sgr0`
 
-success () {
-  echo "${GREEN}✅ $1${RESET}"
-}
+clear
 
-warn () {
-  echo "${YELLOW}⚠ $1${RESET}"
-}
 
-# ==========================================
-# Config
-# ==========================================
-ZONE=$(gcloud compute project-info describe \
-  --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
-REGION=$(gcloud compute project-info describe \
-  --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-PROJECT_ID=$(gcloud config get-value project)
+echo "${BLUE}${BOLD}====================================================================${RESET}"
+echo "${BLUE}${BOLD}                  ePlus.DEV                     ${RESET}"
+echo "${BLUE}${BOLD}====================================================================${RESET}"
 
-# Require engineer email
-read -p "👉 Enter the additional engineer email (e.g. student-04-xxxx@qwiklabs.net): " ENGINEER_EMAIL
-if [[ -z "$ENGINEER_EMAIL" ]]; then
-  echo "${RED}❌ You did not enter an email. Exiting.${RESET}"
-  exit 1
-fi
+gcloud auth list
 
-echo "Using project: $PROJECT_ID, region: $REGION, zone: $ZONE"
-echo "Engineer email: $ENGINEER_EMAIL"
+gcloud config set compute/zone $ZONE
 
-# ==========================================
-# Task 1 - Development VPC
-# ==========================================
-step 1 "Create Development VPC + Subnets"
-gcloud compute networks create griffin-dev-vpc --subnet-mode=custom
+export PROJECT_ID=$(gcloud config get-value project)
 
-gcloud compute networks subnets create griffin-dev-wp \
-  --network=griffin-dev-vpc --region=$REGION --range=192.168.16.0/20
+export PROJECT_ID=$DEVSHELL_PROJECT_ID
 
-gcloud compute networks subnets create griffin-dev-mgmt \
-  --network=griffin-dev-vpc --region=$REGION --range=192.168.32.0/20
-success "Development VPC created"
+export REGION=${ZONE%-*}
+gcloud config set compute/region $REGION
 
-# ==========================================
-# Task 2 - Production VPC
-# ==========================================
-step 2 "Create Production VPC + Subnets"
-gcloud compute networks create griffin-prod-vpc --subnet-mode=custom
 
-gcloud compute networks subnets create griffin-prod-wp \
-  --network=griffin-prod-vpc --region=$REGION --range=192.168.48.0/20
+gcloud compute networks create griffin-dev-vpc --project=$DEVSHELL_PROJECT_ID --subnet-mode custom
 
-gcloud compute networks subnets create griffin-prod-mgmt \
-  --network=griffin-prod-vpc --region=$REGION --range=192.168.64.0/20
-success "Production VPC created"
+gcloud compute networks subnets create griffin-dev-wp --project=$DEVSHELL_PROJECT_ID --region $REGION --network=griffin-dev-vpc --range=192.168.16.0/20 && gcloud compute networks subnets create griffin-dev-mgmt --project=$DEVSHELL_PROJECT_ID --region $REGION --network=griffin-dev-vpc --range=192.168.32.0/20
 
-# ==========================================
-# Task 3 - Bastion host + Firewall rules
-# ==========================================
-step 3 "Create Firewall rules + Bastion host"
-# Dev firewall rule
-gcloud compute firewall-rules create griffin-dev-allow-ssh \
-  --network=griffin-dev-vpc \
-  --allow=tcp:22 \
-  --direction=INGRESS \
-  --priority=1000 \
-  --source-ranges=0.0.0.0/0 \
-  --target-tags=bastion || true
 
-# Prod firewall rule
-gcloud compute firewall-rules create griffin-prod-allow-ssh \
-  --network=griffin-prod-vpc \
-  --allow=tcp:22 \
-  --direction=INGRESS \
-  --priority=1000 \
-  --source-ranges=0.0.0.0/0 \
-  --target-tags=bastion || true
+gcloud compute networks create griffin-prod-vpc --project=$DEVSHELL_PROJECT_ID --subnet-mode custom
 
-# Bastion host
-gcloud compute instances create griffin-bastion \
-  --zone=$ZONE \
-  --machine-type=e2-medium \
-  --network-interface=subnet=griffin-dev-mgmt \
-  --network-interface=subnet=griffin-prod-mgmt \
-  --tags=bastion
-success "Bastion host created (with SSH firewall rules for dev + prod)"
+gcloud compute networks subnets create griffin-prod-wp --project=$DEVSHELL_PROJECT_ID --region $REGION --network=griffin-prod-vpc --range=192.168.48.0/20 && gcloud compute networks subnets create griffin-prod-mgmt --project=$DEVSHELL_PROJECT_ID --region $REGION --network=griffin-prod-vpc --range=192.168.64.0/20
 
-# ==========================================
-# Task 4 - Cloud SQL Instance
-# ==========================================
-step 4 "Create Cloud SQL Instance + WordPress DB"
-gcloud sql instances create griffin-dev-db \
-  --database-version=MYSQL_8_0 \
-  --tier=db-n1-standard-1 \
-  --region=$REGION
+
+gcloud compute instances create bastion --project=$DEVSHELL_PROJECT_ID --zone=$ZONE --network-interface=network=griffin-dev-vpc,subnet=griffin-dev-mgmt --network-interface=network=griffin-prod-vpc,subnet=griffin-prod-mgmt --tags=ssh
+
+gcloud compute firewall-rules create fw-ssh-dev --project=$DEVSHELL_PROJECT_ID --source-ranges=0.0.0.0/0 --target-tags=ssh --allow=tcp:22 --network=griffin-dev-vpc && gcloud compute firewall-rules create fw-ssh-prod --project=$DEVSHELL_PROJECT_ID --source-ranges=0.0.0.0/0 --target-tags=ssh --allow=tcp:22 --network=griffin-prod-vpc
+
+
+gcloud sql instances create griffin-dev-db --project=$DEVSHELL_PROJECT_ID --region=$REGION --database-version=MYSQL_5_7 --root-password='awesome'
 
 gcloud sql databases create wordpress --instance=griffin-dev-db
-gcloud sql users create wp_user --host=% --instance=griffin-dev-db \
-  --password=stormwind_rules
-success "Cloud SQL and WordPress DB ready"
 
-# ==========================================
-# Task 5 - Kubernetes cluster
-# ==========================================
-step 5 "Create Kubernetes Cluster"
-gcloud container clusters create griffin-dev \
-  --zone $ZONE \
-  --num-nodes=2 \
-  --machine-type=e2-standard-4 \
-  --network=griffin-dev-vpc \
-  --subnetwork=griffin-dev-wp
+gcloud sql users create wp_user --instance=griffin-dev-db --password=stormwind_rules
+
+gcloud sql users set-password wp_user --instance=griffin-dev-db --password=stormwind_rules
+
+gcloud sql users list --instance=griffin-dev-db --format="value(name)" --filter="host='%'"
+
+
+gcloud container clusters create griffin-dev --zone $ZONE --machine-type e2-standard-4 --network griffin-dev-vpc --subnetwork griffin-dev-wp --num-nodes 2
 
 gcloud container clusters get-credentials griffin-dev --zone $ZONE
-success "Kubernetes cluster ready"
 
-# ==========================================
-# Task 6 - Prepare cluster
-# ==========================================
-step 6 "Prepare cluster (secrets, Cloud SQL proxy key, PVC)"
-gsutil cp -r gs://spls/gsp321/wp-k8s .
+cd ~/
+gsutil cp -r gs://cloud-training/gsp321/wp-k8s .
+
+cat > wp-k8s/wp-env.yaml <<'EOF_CP'
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: wordpress-volumeclaim
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 200Gi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: database
+type: Opaque
+stringData:
+  username: wp_user
+  password: stormwind_rules
+EOF_CP
+
 cd wp-k8s
+kubectl create -f wp-env.yaml
 
-kubectl delete secret wp-db-secret --ignore-not-found
-kubectl create secret generic wp-db-secret \
-  --from-literal=username=wp_user \
-  --from-literal=password=stormwind_rules
+gcloud iam service-accounts keys create key.json --iam-account=cloud-sql-proxy@$GOOGLE_CLOUD_PROJECT.iam.gserviceaccount.com
 
-if gcloud iam service-accounts list | grep -q "cloud-sql-proxy"; then
-  gcloud iam service-accounts keys create key.json \
-    --iam-account=cloud-sql-proxy@$PROJECT_ID.iam.gserviceaccount.com
-  kubectl delete secret cloudsql-instance-credentials --ignore-not-found
-  kubectl create secret generic cloudsql-instance-credentials \
-    --from-file=key.json
+kubectl create secret generic cloudsql-instance-credentials --from-file=key.json
+
+
+
+# Get the connection name of the SQL instance
+INSTANCE_ID=$(gcloud sql instances describe griffin-dev-db --format='value(connectionName)')
+
+# Create the wp-deployment.yaml file
+cat > wp-deployment.yaml <<EOF_CP
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress
+  labels:
+    app: wordpress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wordpress
+  template:
+    metadata:
+      labels:
+        app: wordpress
+    spec:
+      containers:
+        - image: wordpress
+          name: wordpress
+          env:
+          - name: WORDPRESS_DB_HOST
+            value: 127.0.0.1:3306
+          - name: WORDPRESS_DB_USER
+            valueFrom:
+              secretKeyRef:
+                name: database
+                key: username
+          - name: WORDPRESS_DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: database
+                key: password
+          ports:
+            - containerPort: 80
+              name: wordpress
+          volumeMounts:
+            - name: wordpress-persistent-storage
+              mountPath: /var/www/html
+        - name: cloudsql-proxy
+          image: gcr.io/cloudsql-docker/gce-proxy:1.33.2
+          command: ["/cloud_sql_proxy",
+                    "-instances=${INSTANCE_ID}=tcp:3306",
+                    "-credential_file=/secrets/cloudsql/key.json"]
+          securityContext:
+            runAsUser: 2  # non-root user
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: cloudsql-instance-credentials
+              mountPath: /secrets/cloudsql
+              readOnly: true
+      volumes:
+        - name: wordpress-persistent-storage
+          persistentVolumeClaim:
+            claimName: wordpress-volumeclaim
+        - name: cloudsql-instance-credentials
+          secret:
+            secretName: cloudsql-instance-credentials
+
+EOF_CP
+
+# Apply the deployment and service configurations
+kubectl create -f wp-deployment.yaml
+kubectl create -f wp-service.yaml
+
+
+
+
+IAM_POLICY_JSON=$(gcloud projects get-iam-policy $DEVSHELL_PROJECT_ID --format=json)
+USERS=$(echo $IAM_POLICY_JSON | jq -r '.bindings[] | select(.role == "roles/viewer").members[]')
+
+
+for USER in $USERS; do
+  if [[ $USER == *"user:"* ]]; then
+    USER_EMAIL=$(echo $USER | cut -d':' -f2)
+    gcloud projects add-iam-policy-binding $DEVSHELL_PROJECT_ID --member=user:$USER_EMAIL --role=roles/editor
+  fi
+done
+
+sleep 45
+
+get_external_ip=$(kubectl get service wordpress  -o=jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+echo "http://${get_external_ip}"
+
+
+#!/bin/bash
+
+get_external_ip() {
+    kubectl get service wordpress  -o=jsonpath='{.status.loadBalancer.ingress[0].ip}'
+}
+
+echo "http://${get_external_ip}"
+
+# Wait for external IP address to become available
+wait_for_external_ip() {
+    echo "Waiting for External IP address.."
+    local external_ip
+    for _ in {1..10}; do
+        external_ip=$(get_external_ip)
+        if [ -n "$external_ip" ]; then
+            echo "External IP address found: $external_ip"
+            WORDPRESS_EXTERNAL_IP="$external_ip"
+            return 0
+        fi
+        sleep 20
+    done
+    echo "Timeout: External IP address not found."
+    return 1
+}
+
+
+if wait_for_external_ip; then
+    echo "Executing next command..."
+    echo "Do something with $WORDPRESS_EXTERNAL_IP"
 else
-  echo "⚠️ Service account cloud-sql-proxy not found, lab may provide secret already."
+    echo "Exiting script."
+    exit 1
 fi
 
-kubectl apply -f wp-env.yaml
-success "Secrets and PVC applied"
 
-# ==========================================
-# Task 7 - WordPress Deployment
-# ==========================================
-step 7 "Deploy WordPress"
-SQL_CONN=$(gcloud sql instances describe griffin-dev-db --format="value(connectionName)")
-echo "SQL connection name: $SQL_CONN"
+gcloud monitoring uptime create techcps --resource-type=uptime-url --resource-labels=host=$WORDPRESS_EXTERNAL_IP
 
-sed -i "s/YOUR_SQL_INSTANCE/$SQL_CONN/g" wp-deployment.yaml
+echo "http://${get_external_ip}"
 
-kubectl apply -f wp-deployment.yaml
-kubectl apply -f wp-service.yaml
 
-warn "Waiting for LoadBalancer external IP..."
-sleep 30
-WP_IP=$(kubectl get svc wordpress -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-echo "WordPress External IP: $WP_IP"
-success "WordPress deployment completed"
-
-# ==========================================
-# Task 8 - Enable Monitoring (Uptime Check)
-# ==========================================
-step 8 "Enable Monitoring Uptime Check"
-if [ -z "$WP_IP" ]; then
-  WP_IP=$(kubectl get svc wordpress -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-fi
-
-gcloud monitoring uptime create wordpress-uptime \
-  --path="/" \
-  --port=80 \
-  --regions=usa-oregon,usa-iowa,usa-virginia \
-  --request-method=get \
-  --protocol=http \
-  --resource-type=uptime-url \
-  --resource-labels host=$WP_IP
-
-success "Uptime check created for WordPress at $WP_IP"
-
-# ==========================================
-# Task 9 - Provide access for additional engineer
-# ==========================================
-step 9 "Provide Editor access for engineer"
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="user:$ENGINEER_EMAIL" \
-  --role="roles/editor"
-success "Editor role granted to $ENGINEER_EMAIL"
-
-echo "=========================================="
-echo "${GREEN}🎉 All tasks (1 → 9) completed successfully!${RESET}"
-echo "=========================================="
+# Completion Message
+echo "${BLUE}${BOLD}====================================================================${RESET}"
+echo "${BLUE}${BOLD}               LAB COMPLETED SUCCESSFULLY                          ${RESET}"
+echo "${BLUE}${BOLD}====================================================================${RESET}"
+echo
+echo
+echo "${YELLOW}For more cloud tutorials and labs, visit:${RESET}"
+echo "${CYAN}https://eplus.dev${RESET}"
+echo
