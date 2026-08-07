@@ -166,6 +166,45 @@ DATASET_LOCATION="$(jq -r '.location // empty' dataset.json)"
 ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
 REGION=$(gcloud compute project-info describe--format="value(commonInstanceMetadata.items[google-compute-default-region])")
 
+if [[ -z "${REGION}" ]]; then
+  REGION="$(
+    gcloud compute project-info describe \
+      --project="${PROJECT_ID}" \
+      --format="value(commonInstanceMetadata.items[google-compute-default-region])" \
+      2>/dev/null || true
+  )"
+fi
+
+if [[ -z "${REGION}" || "${REGION}" == "(unset)" ]]; then
+  REGION="$(
+    gcloud config get-value compute/region 2>/dev/null || true
+  )"
+fi
+
+if [[ -z "${REGION}" || "${REGION}" == "(unset)" ]]; then
+  DEFAULT_ZONE="$(
+    gcloud compute project-info describe \
+      --project="${PROJECT_ID}" \
+      --format="value(commonInstanceMetadata.items[google-compute-default-zone])" \
+      2>/dev/null || true
+  )"
+
+  if [[ -n "${DEFAULT_ZONE}" ]]; then
+    REGION="${DEFAULT_ZONE%-*}"
+  fi
+fi
+
+if [[ -z "${REGION}" || "${REGION}" == "(unset)" ]]; then
+  case "${DATASET_LOCATION}" in
+    US|EU|"")
+      REGION="us-east4"
+      ;;
+    *)
+      REGION="${DATASET_LOCATION}"
+      ;;
+  esac
+fi
+
 echo_success "Lab environment detected"
 echo_info "Account: ${ACTIVE_ACCOUNT}"
 echo_info "Project ID: ${PROJECT_ID}"
