@@ -5,11 +5,9 @@ set -uo pipefail
 # ============================================================
 #  Create and Add Aspects to Knowledge Catalog Assets - GSP1145
 #  Copyright © ePlus.DEV
-#  https://eplus.dev
 # ============================================================
 
-# ================= COLORS & FORMATTING =================
-
+# Define color variables
 BLACK_TEXT=$'\033[0;90m'
 RED_TEXT=$'\033[0;91m'
 GREEN_TEXT=$'\033[0;92m'
@@ -19,7 +17,9 @@ MAGENTA_TEXT=$'\033[0;95m'
 CYAN_TEXT=$'\033[0;96m'
 WHITE_TEXT=$'\033[0;97m'
 
+NO_COLOR=$'\033[0m'
 RESET_FORMAT=$'\033[0m'
+
 BOLD_TEXT=$'\033[1m'
 UNDERLINE_TEXT=$'\033[4m'
 
@@ -31,18 +31,9 @@ NC='\033[0m'
 
 clear
 
-# ============================================================
-# ePlus.DEV Banner
-# ============================================================
-
-echo "${CYAN_TEXT}${BOLD_TEXT}╔════════════════════════════════════════════════════════════╗${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}║                                                            ║${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}║             ${MAGENTA_TEXT}ePlus.DEV${CYAN_TEXT} - INITIATING EXECUTION             ║${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}║                                                            ║${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}╚════════════════════════════════════════════════════════════╝${RESET_FORMAT}"
-echo
-echo "${YELLOW_TEXT}${BOLD_TEXT}                 Copyright © ePlus.DEV${RESET_FORMAT}"
-echo "${BLUE_TEXT}${UNDERLINE_TEXT}                    https://eplus.dev${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}       ePlus.DEV - INITIATING EXECUTION...            ${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
 echo
 
 echo_info() {
@@ -138,19 +129,6 @@ SEARCH_RESULT_FILE="catalog_search.json"
 ENTRY_RESULT_FILE="catalog_entry.json"
 
 # ============================================================
-# LAB REGION
-#
-# Lab requirement:
-#   Task 1 Lake Region     : us-west1
-#   Task 2 Aspect Location : us-west1
-#
-# DO NOT AUTO-DETECT REGION.
-# ============================================================
-
-ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
-REGION=$(gcloud compute project-info describe--format="value(commonInstanceMetadata.items[google-compute-default-region])")
-
-# ============================================================
 # Check BigQuery dataset and table
 # ============================================================
 
@@ -174,12 +152,63 @@ fi
 
 DATASET_LOCATION="$(jq -r '.location // empty' dataset.json)"
 
+# ============================================================
+# Detect region
+# Priority:
+# 1. Existing REGION variable
+# 2. Lab default region
+# 3. Configured compute region
+# 4. Default zone converted to region
+# 5. Dataset region
+# 6. Lab instruction fallback: us-east4
+# ============================================================
+
+REGION="${REGION:-}"
+
+if [[ -z "${REGION}" ]]; then
+  REGION="$(
+    gcloud compute project-info describe \
+      --project="${PROJECT_ID}" \
+      --format="value(commonInstanceMetadata.items[google-compute-default-region])" \
+      2>/dev/null || true
+  )"
+fi
+
+if [[ -z "${REGION}" || "${REGION}" == "(unset)" ]]; then
+  REGION="$(
+    gcloud config get-value compute/region 2>/dev/null || true
+  )"
+fi
+
+if [[ -z "${REGION}" || "${REGION}" == "(unset)" ]]; then
+  DEFAULT_ZONE="$(
+    gcloud compute project-info describe \
+      --project="${PROJECT_ID}" \
+      --format="value(commonInstanceMetadata.items[google-compute-default-zone])" \
+      2>/dev/null || true
+  )"
+
+  if [[ -n "${DEFAULT_ZONE}" ]]; then
+    REGION="${DEFAULT_ZONE%-*}"
+  fi
+fi
+
+if [[ -z "${REGION}" || "${REGION}" == "(unset)" ]]; then
+  case "${DATASET_LOCATION}" in
+    US|EU|"")
+      REGION="us-east4"
+      ;;
+    *)
+      REGION="${DATASET_LOCATION}"
+      ;;
+  esac
+fi
+
 echo_success "Lab environment detected"
 echo_info "Account: ${ACTIVE_ACCOUNT}"
 echo_info "Project ID: ${PROJECT_ID}"
 echo_info "Project Number: ${PROJECT_NUMBER}"
 echo_info "Region: ${REGION}"
-echo_info "Dataset: ${PROJECT_ID}.${DATASET_ID}"
 echo_info "Dataset Location: ${DATASET_LOCATION}"
 echo
 
@@ -267,17 +296,9 @@ wait_for_resource() {
 
 # ============================================================
 # Task 1.1: Create lake
-#
-# Display Name : Orders Lake
-# Region       : us-west1
 # ============================================================
 
-echo
-echo "${MAGENTA_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT} TASK 1.1 - CREATE ORDERS LAKE${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
-
-echo_info "Creating Dataplex lake in ${REGION}..."
+echo_info "Creating Dataplex lake..."
 
 if gcloud dataplex lakes describe "${LAKE_NAME}" \
   --project="${PROJECT_ID}" \
@@ -316,16 +337,7 @@ wait_for_resource lake ||
 
 # ============================================================
 # Task 1.2: Create curated zone
-#
-# Display Name   : Customer Curated Zone
-# Type           : Curated
-# Data locations : Regional
 # ============================================================
-
-echo
-echo "${MAGENTA_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT} TASK 1.2 - CREATE CUSTOMER CURATED ZONE${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
 
 echo_info "Creating curated zone..."
 
@@ -356,17 +368,7 @@ wait_for_resource zone ||
 
 # ============================================================
 # Task 1.3: Attach BigQuery dataset
-#
-# Type         : BigQuery dataset
-# Display Name : Customer Details Dataset
-# Dataset      : PROJECT_ID.customers
-# Discovery    : Inherit
 # ============================================================
-
-echo
-echo "${MAGENTA_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT} TASK 1.3 - ATTACH CUSTOMER DETAILS DATASET${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
 
 echo_info "Attaching the BigQuery dataset..."
 
@@ -398,22 +400,9 @@ fi
 wait_for_resource asset ||
   die "Asset creation failed."
 
-echo
-echo_success "Task 1 resources are ACTIVE."
-echo_info "Lake: ${LAKE_DISPLAY_NAME}"
-echo_info "Region: ${REGION}"
-echo_info "Zone: ${ZONE_DISPLAY_NAME}"
-echo_info "Asset: ${ASSET_DISPLAY_NAME}"
-echo_info "Dataset: ${PROJECT_ID}.${DATASET_ID}"
-
 # ============================================================
 # Task 2: Create aspect type JSON
 # ============================================================
-
-echo
-echo "${MAGENTA_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT} TASK 2 - CREATE PROTECTED DATA ASPECT${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
 
 echo_info "Generating aspect type JSON..."
 
@@ -453,7 +442,7 @@ echo_success "Aspect type JSON generated."
 # Task 2: Create aspect type
 # ============================================================
 
-echo_info "Creating aspect type in ${REGION}..."
+echo_info "Creating aspect type..."
 
 if gcloud dataplex aspect-types describe "${ASPECT_TYPE_ID}" \
   --project="${PROJECT_ID}" \
@@ -479,11 +468,6 @@ echo_success "Aspect type is ready."
 # ============================================================
 # Task 3: Find customer_details entry
 # ============================================================
-
-echo
-echo "${MAGENTA_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT} TASK 3 - ADD PROTECTED DATA ASPECT${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
 
 TABLE_FQN="bigquery:${PROJECT_ID}.${DATASET_ID}.${TABLE_ID}"
 ENTRY_NAME=""
@@ -657,11 +641,6 @@ fi
 # Task 4: Search using the aspect
 # ============================================================
 
-echo
-echo "${MAGENTA_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT} TASK 4 - SEARCH USING PROTECTED DATA ASPECT${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
-
 echo_info "Searching assets using Protected Data Aspect..."
 
 gcloud dataplex entries search \
@@ -689,18 +668,14 @@ rm -f \
 # ============================================================
 
 echo
-echo "${GREEN_TEXT}${BOLD_TEXT}╔════════════════════════════════════════════════════════════╗${RESET_FORMAT}"
-echo "${GREEN_TEXT}${BOLD_TEXT}║                                                            ║${RESET_FORMAT}"
-echo "${GREEN_TEXT}${BOLD_TEXT}║                LAB COMPLETED SUCCESSFULLY!                 ║${RESET_FORMAT}"
-echo "${GREEN_TEXT}${BOLD_TEXT}║                                                            ║${RESET_FORMAT}"
-echo "${GREEN_TEXT}${BOLD_TEXT}╚════════════════════════════════════════════════════════════╝${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}              LAB COMPLETED SUCCESSFULLY!              ${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
 echo
 
-echo_success "Region: ${REGION}"
 echo_success "Lake: ${LAKE_DISPLAY_NAME}"
 echo_success "Zone: ${ZONE_DISPLAY_NAME}"
 echo_success "Asset: ${ASSET_DISPLAY_NAME}"
-echo_success "Dataset: ${PROJECT_ID}.${DATASET_ID}"
 echo_success "Aspect Type: ${ASPECT_TYPE_DISPLAY_NAME}"
 echo_success "Attached Aspects: ${ASPECT_COUNT}/10"
 
@@ -708,10 +683,4 @@ echo
 echo_info "On the lab page, click Check my progress for every task."
 echo_info "For Task 4, open Knowledge Catalog > Search > Aspect Types."
 echo_info "Select Protected Data Aspect and open customer_details."
-
-echo
-echo "${MAGENTA_TEXT}${BOLD_TEXT}────────────────────────────────────────────────────────────${RESET_FORMAT}"
-echo "${YELLOW_TEXT}${BOLD_TEXT}                  Copyright © ePlus.DEV${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}${UNDERLINE_TEXT}                     https://eplus.dev${RESET_FORMAT}"
-echo "${MAGENTA_TEXT}${BOLD_TEXT}────────────────────────────────────────────────────────────${RESET_FORMAT}"
 echo
