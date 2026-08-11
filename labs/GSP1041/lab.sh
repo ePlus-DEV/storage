@@ -2,8 +2,7 @@
 
 # ============================================================
 # BigQuery Authorized Views Challenge Lab
-# CHECK PROGRESS TASKS ONLY
-# SOURCE SAFE
+# ONE TERMINAL - ONE SOURCE - TASK 1 → TASK 4
 #
 # © ePlus.DEV
 # ============================================================
@@ -38,7 +37,7 @@ else
 fi
 
 # ============================================================
-# CONSTANTS
+# LAB CONSTANTS
 #
 # NO QWIKLABS PROJECT ID IS HARD-CODED
 # ============================================================
@@ -63,27 +62,16 @@ CUSTOMER_INFO_TABLE="customer_info"
 CUSTOMER_A_USER=""
 CUSTOMER_B_USER=""
 
-CURRENT_PROJECT=""
-CURRENT_ACCOUNT=""
-PROJECT_ROLE=""
-
+PARTNER_ACCOUNT=""
 PARTNER_PROJECT=""
 
+CUSTOMER_A_PROJECT=""
+CUSTOMER_B_PROJECT=""
+
+ORIGINAL_ACCOUNT=""
+ORIGINAL_PROJECT=""
+
 TMP_FILES=()
-
-# ============================================================
-# CLEANUP
-# ============================================================
-
-cleanup() {
-    if [[ ${#TMP_FILES[@]} -gt 0 ]]; then
-        rm -f "${TMP_FILES[@]}" 2>/dev/null || true
-    fi
-
-    printf "%s" "$RESET" 2>/dev/null || true
-}
-
-trap cleanup EXIT
 
 # ============================================================
 # UI
@@ -95,7 +83,7 @@ banner() {
     echo "${CYAN}${BOLD}║                                                              ║${RESET}"
     echo "${CYAN}${BOLD}║          BIGQUERY AUTHORIZED VIEWS CHALLENGE LAB             ║${RESET}"
     echo "${CYAN}${BOLD}║                                                              ║${RESET}"
-    echo "${CYAN}${BOLD}║                  CHECK PROGRESS ONLY                         ║${RESET}"
+    echo "${CYAN}${BOLD}║                ONE TERMINAL • TASK 1 → 4                     ║${RESET}"
     echo "${CYAN}${BOLD}║                                                              ║${RESET}"
     echo "${CYAN}${BOLD}║                      © ePlus.DEV                             ║${RESET}"
     echo "${CYAN}${BOLD}║                                                              ║${RESET}"
@@ -164,15 +152,56 @@ valid_project() {
 }
 
 # ============================================================
-# ASK USER A + B IMMEDIATELY
+# REQUIRED COMMAND
+# ============================================================
+
+require_cmd() {
+    command -v "$1" >/dev/null 2>&1 || \
+        fail "Required command not found: $1"
+}
+
+# ============================================================
+# CLEANUP / RESTORE PARTNER ENVIRONMENT
+# ============================================================
+
+cleanup() {
+    if [[ ${#TMP_FILES[@]} -gt 0 ]]; then
+        rm -f "${TMP_FILES[@]}" 2>/dev/null || true
+    fi
+
+    # Restore original active account.
+    if [[ -n "$ORIGINAL_ACCOUNT" ]]; then
+        gcloud config set account \
+            "$ORIGINAL_ACCOUNT" \
+            --quiet \
+            >/dev/null 2>&1 || true
+    fi
+
+    # Restore original project.
+    if [[ -n "$ORIGINAL_PROJECT" && "$ORIGINAL_PROJECT" != "(unset)" ]]; then
+        gcloud config set project \
+            "$ORIGINAL_PROJECT" \
+            --quiet \
+            >/dev/null 2>&1 || true
+    fi
+
+    printf "%s" "$RESET" 2>/dev/null || true
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
+# ============================================================
+# ASK CUSTOMER USERS
 #
-# NO GCLOUD / BQ NETWORK CALL BEFORE THIS.
+# THIS HAPPENS IMMEDIATELY.
+# NO GOOGLE CLOUD NETWORK COMMAND BEFORE THESE INPUTS.
 # ============================================================
 
 ask_users() {
     step "ENTER CUSTOMER ACCOUNTS"
 
-    echo "${WHITE}Copy Customer A and Customer B users from the lab panel.${RESET}"
+    echo "${WHITE}Enter Customer A and Customer B users from the lab panel.${RESET}"
     echo
     echo "${WHITE}Example:${RESET}"
     echo "${CYAN}student-02-xxxxxxxxxxxx@qwiklabs.net${RESET}"
@@ -183,7 +212,11 @@ ask_users() {
     # --------------------------------------------------------
 
     while true; do
-        colored_read CUSTOMER_A_USER "Customer A user"
+
+        colored_read \
+            CUSTOMER_A_USER \
+            "Customer A user"
+
         echo
 
         if valid_email "$CUSTOMER_A_USER"; then
@@ -201,7 +234,11 @@ ask_users() {
     # --------------------------------------------------------
 
     while true; do
-        colored_read CUSTOMER_B_USER "Customer B user"
+
+        colored_read \
+            CUSTOMER_B_USER \
+            "Customer B user"
+
         echo
 
         if valid_email "$CUSTOMER_B_USER"; then
@@ -222,225 +259,55 @@ ask_users() {
 }
 
 # ============================================================
-# REQUIRED COMMAND
+# CURRENT ACTIVE ACCOUNT
 # ============================================================
 
-require_cmd() {
-    command -v "$1" >/dev/null 2>&1 || \
-        fail "Required command not found: $1"
+current_account() {
+    gcloud auth list \
+        --filter=status:ACTIVE \
+        --format='value(account)' \
+        2>/dev/null |
+    head -n1
 }
 
 # ============================================================
-# DETECT CURRENT PROJECT
+# CURRENT PROJECT
 # ============================================================
 
-detect_current_project() {
-    step "DETECT GOOGLE CLOUD ENVIRONMENT"
+current_project() {
+    local project=""
 
-    info "Detecting current project..."
+    project="${DEVSHELL_PROJECT_ID:-}"
 
-    CURRENT_PROJECT="${DEVSHELL_PROJECT_ID:-}"
-
-    if [[ -z "$CURRENT_PROJECT" ]]; then
-        CURRENT_PROJECT="$(
-            timeout 10s \
+    if [[ -z "$project" ]]; then
+        project="$(
             gcloud config get-value project \
-            2>/dev/null || true
+                2>/dev/null || true
         )"
     fi
 
-    if [[ -z "$CURRENT_PROJECT" || "$CURRENT_PROJECT" == "(unset)" ]]; then
-        warn "Unable to detect current Project ID automatically."
-        echo
-
-        while true; do
-            colored_read CURRENT_PROJECT "Current Project ID"
-            echo
-
-            if valid_project "$CURRENT_PROJECT"; then
-                break
-            fi
-
-            warn "Invalid Google Cloud Project ID."
-            echo
-        done
+    if [[ "$project" == "(unset)" ]]; then
+        project=""
     fi
 
-    ok "Current project: ${CURRENT_PROJECT}"
+    printf "%s" "$project"
 }
 
 # ============================================================
-# DETECT ACCOUNT
+# DATASET EXISTS
 # ============================================================
 
-detect_current_account() {
-    CURRENT_ACCOUNT="$(
-        timeout 10s \
-        gcloud auth list \
-            --filter=status:ACTIVE \
-            --format='value(account)' \
-        2>/dev/null |
-        head -n1 || true
-    )"
+dataset_exists() {
+    local project="$1"
+    local dataset="$2"
 
-    [[ -n "$CURRENT_ACCOUNT" ]] || CURRENT_ACCOUNT="unknown"
-}
-
-# ============================================================
-# DETECT CURRENT ROLE
-#
-# demo_dataset       -> Partner
-# customer_a_dataset -> Customer A
-# customer_b_dataset -> Customer B
-# ============================================================
-
-detect_project_role() {
-    step "DETECT LAB ROLE"
-
-    info "Reading datasets in current project..."
-
-    local datasets=""
-
-    if ! datasets="$(
-        timeout 25s \
-        bq \
-            --project_id="$CURRENT_PROJECT" \
-            --quiet \
-            ls \
-            --format=prettyjson \
-        2>/dev/null
-    )"; then
-        PROJECT_ROLE="UNKNOWN"
-
-        warn "Unable to detect lab role automatically."
-        return
-    fi
-
-    # --------------------------------------------------------
-    # PARTNER
-    # --------------------------------------------------------
-
-    if jq -e \
-        --arg dataset "$PARTNER_DATASET" \
-        'any(.[]?; .datasetReference.datasetId == $dataset)' \
-        <<< "$datasets" \
-        >/dev/null 2>&1; then
-
-        PROJECT_ROLE="PARTNER"
-        PARTNER_PROJECT="$CURRENT_PROJECT"
-
-        ok "Detected Data Sharing Partner."
-        return
-    fi
-
-    # --------------------------------------------------------
-    # CUSTOMER A
-    # --------------------------------------------------------
-
-    if jq -e \
-        --arg dataset "$CUSTOMER_A_DATASET" \
-        'any(.[]?; .datasetReference.datasetId == $dataset)' \
-        <<< "$datasets" \
-        >/dev/null 2>&1; then
-
-        PROJECT_ROLE="CUSTOMER_A"
-
-        ok "Detected Customer A."
-        return
-    fi
-
-    # --------------------------------------------------------
-    # CUSTOMER B
-    # --------------------------------------------------------
-
-    if jq -e \
-        --arg dataset "$CUSTOMER_B_DATASET" \
-        'any(.[]?; .datasetReference.datasetId == $dataset)' \
-        <<< "$datasets" \
-        >/dev/null 2>&1; then
-
-        PROJECT_ROLE="CUSTOMER_B"
-
-        ok "Detected Customer B."
-        return
-    fi
-
-    PROJECT_ROLE="UNKNOWN"
-
-    warn "Unable to detect lab role automatically."
-}
-
-# ============================================================
-# MANUAL ROLE FALLBACK
-# ============================================================
-
-ask_project_role() {
-    step "SELECT CURRENT PROJECT TYPE"
-
-    echo "${WHITE}Which console are you currently using?${RESET}"
-    echo
-    echo "  ${CYAN}${BOLD}1${RESET}) Data Sharing Partner"
-    echo "  ${CYAN}${BOLD}2${RESET}) Customer A"
-    echo "  ${CYAN}${BOLD}3${RESET}) Customer B"
-    echo
-
-    local choice=""
-
-    while true; do
-        colored_read choice "Select"
-        echo
-
-        case "$choice" in
-
-            1)
-                PROJECT_ROLE="PARTNER"
-                PARTNER_PROJECT="$CURRENT_PROJECT"
-                break
-                ;;
-
-            2)
-                PROJECT_ROLE="CUSTOMER_A"
-                break
-                ;;
-
-            3)
-                PROJECT_ROLE="CUSTOMER_B"
-                break
-                ;;
-
-            *)
-                warn "Please enter 1, 2 or 3."
-                echo
-                ;;
-        esac
-    done
-}
-
-# ============================================================
-# ASK PARTNER PROJECT
-#
-# Needed from Customer A / Customer B console.
-# ============================================================
-
-ask_partner_project() {
-    step "ENTER DATA SHARING PARTNER PROJECT"
-
-    echo "${WHITE}Copy the Data Sharing Partner Project ID from the lab panel.${RESET}"
-    echo
-
-    while true; do
-        colored_read PARTNER_PROJECT "Partner Project ID"
-        echo
-
-        if valid_project "$PARTNER_PROJECT"; then
-            break
-        fi
-
-        warn "Invalid Partner Project ID."
-        echo
-    done
-
-    ok "Partner project: ${PARTNER_PROJECT}"
+    timeout 20s \
+    bq \
+        --quiet \
+        --project_id="$project" \
+        show \
+        "$project:$dataset" \
+        >/dev/null 2>&1
 }
 
 # ============================================================
@@ -456,13 +323,14 @@ get_location() {
     location="$(
         timeout 20s \
         bq \
-            --project_id="$project" \
             --quiet \
+            --project_id="$project" \
             show \
             --format=prettyjson \
             "$project:$dataset" \
-        2>/dev/null |
-        jq -r '.location // empty' || true
+            2>/dev/null |
+        jq -r '.location // empty' \
+        || true
     )"
 
     if [[ -z "$location" ]]; then
@@ -473,42 +341,304 @@ get_location() {
 }
 
 # ============================================================
+# SWITCH ACTIVE ACCOUNT + PROJECT
+# ============================================================
+
+switch_context() {
+    local account="$1"
+    local project="$2"
+
+    info "Switching active account to ${account}..."
+
+    gcloud config set account \
+        "$account" \
+        --quiet \
+        >/dev/null
+
+    info "Switching project to ${project}..."
+
+    gcloud config set project \
+        "$project" \
+        --quiet \
+        >/dev/null
+
+    local active=""
+
+    active="$(current_account)"
+
+    if [[ "$active" != "$account" ]]; then
+        fail "Failed to activate account ${account}."
+    fi
+
+    ok "Active account : ${account}"
+    ok "Active project : ${project}"
+}
+
+# ============================================================
+# LOGIN CUSTOMER ACCOUNT
+#
+# If valid credentials already exist → reuse.
+# Otherwise → OAuth browser login.
+# ============================================================
+
+ensure_user_login() {
+    local account="$1"
+    local label="$2"
+
+    step "LOGIN - ${label}"
+
+    # --------------------------------------------------------
+    # Reuse existing credential when possible
+    # --------------------------------------------------------
+
+    if \
+        gcloud auth list \
+            --format='value(account)' \
+            2>/dev/null |
+        grep -Fxq "$account" \
+        &&
+        gcloud auth print-access-token \
+            --account="$account" \
+            >/dev/null 2>&1
+    then
+
+        ok "Stored credential is already valid."
+        ok "$account"
+
+    else
+
+        echo "${WHITE}Google Cloud CLI needs authorization for:${RESET}"
+        echo
+        echo "${CYAN}${BOLD}${account}${RESET}"
+        echo
+        echo "${YELLOW}${BOLD}A Google login URL will appear below.${RESET}"
+        echo
+        echo "${WHITE}1. Open the URL in an Incognito/private window.${RESET}"
+        echo "${WHITE}2. Login using ${CYAN}${account}${RESET}"
+        echo "${WHITE}3. Use the temporary password from the lab panel.${RESET}"
+        echo "${WHITE}4. Copy the authorization code.${RESET}"
+        echo "${WHITE}5. Paste the code back into this terminal.${RESET}"
+        echo
+
+        # Do NOT put a timeout here.
+        # User needs enough time to complete browser login.
+        gcloud auth login \
+        "$account" \
+        --no-launch-browser \
+        --force \
+        --quiet
+
+    fi
+
+    # --------------------------------------------------------
+    # Activate
+    # --------------------------------------------------------
+
+    gcloud config set account \
+        "$account" \
+        --quiet \
+        >/dev/null
+
+    local active=""
+
+    active="$(current_account)"
+
+    if [[ "$active" != "$account" ]]; then
+        fail "Active account is ${active}; expected ${account}."
+    fi
+
+    echo
+    ok "${label} login successful."
+    ok "Active account: ${account}"
+}
+
+# ============================================================
+# AUTO FIND PROJECT CONTAINING SPECIFIC DATASET
+#
+# If auto detection fails → ask user.
+# ============================================================
+
+find_project_with_dataset() {
+    local account="$1"
+    local dataset="$2"
+    local result_variable="$3"
+    local label="$4"
+
+    local projects=""
+    local project=""
+    local found=""
+
+    step "AUTO-DETECT ${label} PROJECT"
+
+    info "Listing projects available to ${account}..."
+
+    projects="$(
+        timeout 30s \
+        gcloud projects list \
+            --account="$account" \
+            --format='value(projectId)' \
+            2>/dev/null \
+        || true
+    )"
+
+    # --------------------------------------------------------
+    # Search accessible projects
+    # --------------------------------------------------------
+
+    if [[ -n "$projects" ]]; then
+
+        while IFS= read -r project; do
+
+            [[ -n "$project" ]] || continue
+
+            info "Checking ${project} for ${dataset}..."
+
+            if dataset_exists "$project" "$dataset"; then
+
+                found="$project"
+
+                break
+            fi
+
+        done <<< "$projects"
+
+    fi
+
+    # --------------------------------------------------------
+    # Manual fallback
+    # --------------------------------------------------------
+
+    if [[ -z "$found" ]]; then
+
+        warn "Could not auto-detect ${label} project."
+
+        echo
+        echo "${WHITE}Enter the Project ID from the lab panel.${RESET}"
+        echo
+
+        while true; do
+
+            colored_read \
+                found \
+                "${label} Project ID"
+
+            echo
+
+            if ! valid_project "$found"; then
+
+                warn "Invalid Google Cloud Project ID."
+                echo
+
+                continue
+            fi
+
+            if dataset_exists "$found" "$dataset"; then
+                break
+            fi
+
+            warn "Dataset ${dataset} was not found in ${found}."
+            echo
+
+        done
+
+    fi
+
+    printf -v "$result_variable" '%s' "$found"
+
+    ok "${label} project: ${found}"
+}
+
+# ============================================================
+# ACCESS DENIED CHECK
+#
+# Only permission errors count as expected.
+# Other failures are treated as actual errors.
+# ============================================================
+
+expect_access_denied() {
+    local project="$1"
+    local location="$2"
+    local sql="$3"
+    local description="$4"
+
+    local log=""
+
+    log="$(mktemp)"
+    TMP_FILES+=("$log")
+
+    if timeout 60s \
+        bq \
+            --quiet \
+            --project_id="$project" \
+            query \
+            --location="$location" \
+            --use_legacy_sql=false \
+            "$sql" \
+            >"$log" 2>&1
+    then
+
+        fail "${description}: query unexpectedly succeeded."
+
+    fi
+
+    if grep -Eqi \
+        'Access Denied|Permission denied|does not have permission|PERMISSION_DENIED' \
+        "$log"
+    then
+
+        ok "Access Denied received as expected."
+
+        return 0
+    fi
+
+    echo
+    warn "Query failed, but it was not an Access Denied error."
+    echo
+
+    cat "$log"
+
+    echo
+
+    fail "${description}: unexpected query failure."
+}
+
+# ============================================================
 # TASK 1
-# CREATE AUTHORIZED VIEWS
+# CREATE AUTHORIZED VIEW A + B
 # ============================================================
 
 task1() {
     step "[1/4] TASK 1 - CREATE AUTHORIZED VIEWS"
 
-    local location
+    local location=""
 
     location="$(
         get_location \
-            "$CURRENT_PROJECT" \
+            "$PARTNER_PROJECT" \
             "$PARTNER_DATASET"
     )"
 
-    echo "${WHITE}Project  : ${CYAN}${BOLD}${CURRENT_PROJECT}${RESET}"
-    echo "${WHITE}Dataset  : ${CYAN}${PARTNER_DATASET}${RESET}"
-    echo "${WHITE}Location : ${CYAN}${location}${RESET}"
+    echo "${WHITE}Partner Project : ${CYAN}${BOLD}${PARTNER_PROJECT}${RESET}"
+    echo "${WHITE}Dataset         : ${CYAN}${PARTNER_DATASET}${RESET}"
+    echo "${WHITE}Location        : ${CYAN}${location}${RESET}"
 
     # ========================================================
-    # AUTHORIZED VIEW A - TEXAS
+    # VIEW A - TEXAS
     # ========================================================
 
     echo
-    info "Creating ${VIEW_A} for Texas..."
+    info "Creating ${VIEW_A} - Texas..."
 
     timeout 120s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$PARTNER_PROJECT" \
         query \
         --location="$location" \
         --use_legacy_sql=false \
         "
         CREATE OR REPLACE VIEW
-        \`${CURRENT_PROJECT}.${PARTNER_DATASET}.${VIEW_A}\`
+        \`${PARTNER_PROJECT}.${PARTNER_DATASET}.${VIEW_A}\`
         AS
 
         SELECT *
@@ -520,22 +650,22 @@ task1() {
     ok "${VIEW_A} created."
 
     # ========================================================
-    # AUTHORIZED VIEW B - CALIFORNIA
+    # VIEW B - CALIFORNIA
     # ========================================================
 
     echo
-    info "Creating ${VIEW_B} for California..."
+    info "Creating ${VIEW_B} - California..."
 
     timeout 120s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$PARTNER_PROJECT" \
         query \
         --location="$location" \
         --use_legacy_sql=false \
         "
         CREATE OR REPLACE VIEW
-        \`${CURRENT_PROJECT}.${PARTNER_DATASET}.${VIEW_B}\`
+        \`${PARTNER_PROJECT}.${PARTNER_DATASET}.${VIEW_B}\`
         AS
 
         SELECT *
@@ -558,100 +688,108 @@ task1() {
 task2() {
     step "[2/4] TASK 2 - AUTHORIZE BOTH VIEWS"
 
-    local source_json
-    local update_json
+    local source_json=""
+    local update_json=""
 
     source_json="$(mktemp)"
     update_json="$(mktemp)"
 
-    TMP_FILES+=("$source_json" "$update_json")
+    TMP_FILES+=(
+        "$source_json"
+        "$update_json"
+    )
 
     # --------------------------------------------------------
-    # READ CURRENT DATASET ACCESS
+    # Read dataset metadata
     # --------------------------------------------------------
 
     info "Reading ${PARTNER_DATASET} access list..."
 
     timeout 30s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$PARTNER_PROJECT" \
         show \
         --format=prettyjson \
-        "$CURRENT_PROJECT:$PARTNER_DATASET" \
+        "$PARTNER_PROJECT:$PARTNER_DATASET" \
         > "$source_json"
 
     # --------------------------------------------------------
-    # PRESERVE CURRENT ACL
-    # REMOVE DUPLICATE AUTHORIZED VIEW ENTRIES
-    # ADD VIEW A + VIEW B
+    # Preserve existing ACL
+    # Remove duplicate View A / View B
+    # Add correct Authorized View entries
     # --------------------------------------------------------
 
-    info "Authorizing ${VIEW_A} and ${VIEW_B}..."
+    info "Adding ${VIEW_A} and ${VIEW_B} to Authorized Views..."
 
     jq \
-        --arg project "$CURRENT_PROJECT" \
+        --arg project "$PARTNER_PROJECT" \
         --arg dataset "$PARTNER_DATASET" \
         --arg view_a "$VIEW_A" \
         --arg view_b "$VIEW_B" \
         '
-        {
-            "access":
-            (
-                [
-                    (.access // [])[]
-                    |
-                    select(
-                        (.view == null)
-                        or
-                        (.view.projectId != $project)
-                        or
-                        (.view.datasetId != $dataset)
-                        or
-                        (
-                            .view.tableId != $view_a
-                            and
-                            .view.tableId != $view_b
-                        )
+        .access = (
+            [
+                (.access // [])[]
+
+                |
+
+                select(
+                    (.view == null)
+
+                    or
+
+                    (.view.projectId != $project)
+
+                    or
+
+                    (.view.datasetId != $dataset)
+
+                    or
+
+                    (
+                        (.view.tableId != $view_a)
+                        and
+                        (.view.tableId != $view_b)
                     )
-                ]
+                )
+            ]
 
-                +
+            +
 
-                [
-                    {
-                        "view": {
-                            "projectId": $project,
-                            "datasetId": $dataset,
-                            "tableId": $view_a
-                        }
-                    },
-
-                    {
-                        "view": {
-                            "projectId": $project,
-                            "datasetId": $dataset,
-                            "tableId": $view_b
-                        }
+            [
+                {
+                    "view": {
+                        "projectId": $project,
+                        "datasetId": $dataset,
+                        "tableId": $view_a
                     }
-                ]
-            )
-        }
+                },
+
+                {
+                    "view": {
+                        "projectId": $project,
+                        "datasetId": $dataset,
+                        "tableId": $view_b
+                    }
+                }
+            ]
+        )
         ' \
         "$source_json" \
         > "$update_json"
 
     # --------------------------------------------------------
-    # UPDATE DATASET ACCESS
+    # Update
     # --------------------------------------------------------
 
     timeout 60s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$PARTNER_PROJECT" \
         update \
         --source="$update_json" \
-        "$CURRENT_PROJECT:$PARTNER_DATASET" \
+        "$PARTNER_PROJECT:$PARTNER_DATASET" \
         >/dev/null
 
     ok "${VIEW_A} authorized."
@@ -669,28 +807,28 @@ task2() {
 # ============================================================
 
 task3() {
-    step "[3/4] TASK 3 - GRANT USERS ACCESS TO VIEWS"
+    step "[3/4] TASK 3 - GRANT VIEW PERMISSIONS"
 
     # ========================================================
     # CUSTOMER A
     # ========================================================
 
     echo "${WHITE}${BOLD}Customer A${RESET}"
-    echo "${WHITE}User : ${CYAN}${BOLD}${CUSTOMER_A_USER}${RESET}"
+    echo "${WHITE}User : ${CYAN}${CUSTOMER_A_USER}${RESET}"
     echo "${WHITE}View : ${GREEN}${VIEW_A}${RESET}"
 
     echo
-    info "Granting BigQuery Data Viewer to Customer A..."
+    info "Granting BigQuery Data Viewer..."
 
     timeout 60s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$PARTNER_PROJECT" \
         add-iam-policy-binding \
         --table=true \
         --member="user:${CUSTOMER_A_USER}" \
         --role="roles/bigquery.dataViewer" \
-        "${CURRENT_PROJECT}:${PARTNER_DATASET}.${VIEW_A}" \
+        "${PARTNER_PROJECT}:${PARTNER_DATASET}.${VIEW_A}" \
         >/dev/null
 
     ok "Customer A → ${VIEW_A}"
@@ -701,21 +839,21 @@ task3() {
 
     echo
     echo "${WHITE}${BOLD}Customer B${RESET}"
-    echo "${WHITE}User : ${MAGENTA}${BOLD}${CUSTOMER_B_USER}${RESET}"
+    echo "${WHITE}User : ${MAGENTA}${CUSTOMER_B_USER}${RESET}"
     echo "${WHITE}View : ${GREEN}${VIEW_B}${RESET}"
 
     echo
-    info "Granting BigQuery Data Viewer to Customer B..."
+    info "Granting BigQuery Data Viewer..."
 
     timeout 60s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$PARTNER_PROJECT" \
         add-iam-policy-binding \
         --table=true \
         --member="user:${CUSTOMER_B_USER}" \
         --role="roles/bigquery.dataViewer" \
-        "${CURRENT_PROJECT}:${PARTNER_DATASET}.${VIEW_B}" \
+        "${PARTNER_PROJECT}:${PARTNER_DATASET}.${VIEW_B}" \
         >/dev/null
 
     ok "Customer B → ${VIEW_B}"
@@ -725,69 +863,71 @@ task3() {
 }
 
 # ============================================================
-# VERIFY TASKS 1 - 3
+# VERIFY TASK 1 - 3
 # ============================================================
 
 verify_partner() {
     step "VERIFY TASKS 1 - 3"
 
     # --------------------------------------------------------
-    # VIEW A
+    # View A exists
     # --------------------------------------------------------
 
     info "Checking ${VIEW_A}..."
 
     timeout 20s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$PARTNER_PROJECT" \
         show \
-        "${CURRENT_PROJECT}:${PARTNER_DATASET}.${VIEW_A}" \
+        "${PARTNER_PROJECT}:${PARTNER_DATASET}.${VIEW_A}" \
         >/dev/null
 
     ok "${VIEW_A} exists."
 
     # --------------------------------------------------------
-    # VIEW B
+    # View B exists
     # --------------------------------------------------------
 
     info "Checking ${VIEW_B}..."
 
     timeout 20s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$PARTNER_PROJECT" \
         show \
-        "${CURRENT_PROJECT}:${PARTNER_DATASET}.${VIEW_B}" \
+        "${PARTNER_PROJECT}:${PARTNER_DATASET}.${VIEW_B}" \
         >/dev/null
 
     ok "${VIEW_B} exists."
 
     # --------------------------------------------------------
-    # AUTHORIZED VIEW ACL
+    # Authorized View ACL
     # --------------------------------------------------------
 
     info "Checking Authorized View ACL..."
 
-    local count
+    local count=""
 
     count="$(
         timeout 20s \
         bq \
-            --project_id="$CURRENT_PROJECT" \
             --quiet \
+            --project_id="$PARTNER_PROJECT" \
             show \
             --format=prettyjson \
-            "$CURRENT_PROJECT:$PARTNER_DATASET" |
+            "$PARTNER_PROJECT:$PARTNER_DATASET" |
         jq \
-            --arg project "$CURRENT_PROJECT" \
+            --arg project "$PARTNER_PROJECT" \
             --arg dataset "$PARTNER_DATASET" \
             --arg view_a "$VIEW_A" \
             --arg view_b "$VIEW_B" \
             '
             [
                 .access[]?
+
                 |
+
                 select(
                     .view.projectId == $project
                     and
@@ -809,217 +949,47 @@ verify_partner() {
         fail "Authorized View ACL is incomplete."
     fi
 
-    ok "Both Authorized Views verified."
-
-    # --------------------------------------------------------
-    # VERIFY CUSTOMER A IAM
-    # --------------------------------------------------------
-
-    info "Checking Customer A permission on ${VIEW_A}..."
-
-    local policy_a
-
-    policy_a="$(
-        timeout 20s \
-        bq \
-            --project_id="$CURRENT_PROJECT" \
-            --quiet \
-            get-iam-policy \
-            --table=true \
-            "${CURRENT_PROJECT}:${PARTNER_DATASET}.${VIEW_A}"
-    )"
-
-    if ! jq -e \
-        --arg member "user:${CUSTOMER_A_USER}" \
-        '
-        any(
-            .bindings[]?;
-            .role == "roles/bigquery.dataViewer"
-            and
-            any(.members[]?; . == $member)
-        )
-        ' \
-        <<< "$policy_a" \
-        >/dev/null 2>&1; then
-
-        fail "Customer A IAM binding was not found."
-    fi
-
-    ok "Customer A permission verified."
-
-    # --------------------------------------------------------
-    # VERIFY CUSTOMER B IAM
-    # --------------------------------------------------------
-
-    info "Checking Customer B permission on ${VIEW_B}..."
-
-    local policy_b
-
-    policy_b="$(
-        timeout 20s \
-        bq \
-            --project_id="$CURRENT_PROJECT" \
-            --quiet \
-            get-iam-policy \
-            --table=true \
-            "${CURRENT_PROJECT}:${PARTNER_DATASET}.${VIEW_B}"
-    )"
-
-    if ! jq -e \
-        --arg member "user:${CUSTOMER_B_USER}" \
-        '
-        any(
-            .bindings[]?;
-            .role == "roles/bigquery.dataViewer"
-            and
-            any(.members[]?; . == $member)
-        )
-        ' \
-        <<< "$policy_b" \
-        >/dev/null 2>&1; then
-
-        fail "Customer B IAM binding was not found."
-    fi
-
-    ok "Customer B permission verified."
-
-    # --------------------------------------------------------
-    # PARTNER COMPLETE - TASK 4 STILL PENDING
-    # --------------------------------------------------------
+    ok "Authorized View A verified."
+    ok "Authorized View B verified."
 
     echo
-    echo "${GREEN}${BOLD}╔══════════════════════════════════════════════════════════════╗${RESET}"
-    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
-    echo "${GREEN}${BOLD}║                PARTNER SECTION COMPLETE                      ║${RESET}"
-    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
-    echo "${GREEN}${BOLD}║                       TASK 1 ✓                               ║${RESET}"
-    echo "${GREEN}${BOLD}║                       TASK 2 ✓                               ║${RESET}"
-    echo "${GREEN}${BOLD}║                       TASK 3 ✓                               ║${RESET}"
-    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
-    echo "${YELLOW}${BOLD}║                   TASK 4 - PENDING                          ║${RESET}"
-    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
-    echo "${GREEN}${BOLD}╚══════════════════════════════════════════════════════════════╝${RESET}"
-
+    echo "${GREEN}${BOLD}✓ TASK 1 COMPLETE${RESET}"
+    echo "${GREEN}${BOLD}✓ TASK 2 COMPLETE${RESET}"
+    echo "${GREEN}${BOLD}✓ TASK 3 COMPLETE${RESET}"
     echo
-    echo "${YELLOW}${BOLD}→ Check my progress: Task 1${RESET}"
-    echo "${YELLOW}${BOLD}→ Check my progress: Task 2${RESET}"
-    echo "${YELLOW}${BOLD}→ Check my progress: Task 3${RESET}"
-
-    echo
-    echo "${BLUE}${BOLD}==============================================================${RESET}"
-    echo "${YELLOW}${BOLD}NEXT REQUIRED STEP - TASK 4${RESET}"
-    echo "${BLUE}${BOLD}==============================================================${RESET}"
-
-    echo
-    echo "${WHITE}1. Open ${CYAN}${BOLD}Customer Project A Console${RESET}"
-    echo "${WHITE}2. Run ${GREEN}${BOLD}source lab.sh${RESET}"
-    echo "${WHITE}3. Complete Customer A section"
-    echo "${WHITE}4. Open ${MAGENTA}${BOLD}Customer Project B Console${RESET}"
-    echo "${WHITE}5. Run ${GREEN}${BOLD}source lab.sh${RESET}"
-    echo "${WHITE}6. Then click Check my progress for Task 4${RESET}"
-
-    echo
-    echo "${BLUE}${BOLD}==============================================================${RESET}"
-    echo "${WHITE}${BOLD}PARTNER PROJECT ID - COPY THIS:${RESET}"
-    echo
-    echo "${CYAN}${BOLD}${CURRENT_PROJECT}${RESET}"
-    echo
-    echo "${BLUE}${BOLD}==============================================================${RESET}"
-}
-
-# ============================================================
-# RUN PARTNER
-# ============================================================
-
-run_partner() {
-    echo
-    echo "${GREEN}${BOLD}MODE: DATA SHARING PARTNER${RESET}"
-
-    task1
-    task2
-    task3
-    verify_partner
-}
-
-# ============================================================
-# EXPECT ACCESS DENIED
-#
-# Do not treat every error as success.
-# Only permission/access errors are accepted.
-# ============================================================
-
-expect_access_denied() {
-    local project="$1"
-    local location="$2"
-    local sql="$3"
-    local description="$4"
-
-    local error_log
-
-    error_log="$(mktemp)"
-    TMP_FILES+=("$error_log")
-
-    if timeout 60s \
-        bq \
-            --project_id="$project" \
-            --quiet \
-            query \
-            --location="$location" \
-            --use_legacy_sql=false \
-            "$sql" \
-            >"$error_log" 2>&1
-    then
-        fail "${description}: query unexpectedly succeeded."
-    fi
-
-    if grep -Eqi \
-        'Access Denied|Permission denied|does not have permission|PERMISSION_DENIED' \
-        "$error_log"; then
-
-        ok "Access Denied received as expected."
-        return 0
-    fi
-
-    echo
-    warn "Query failed, but NOT because of Access Denied."
-    echo
-    cat "$error_log"
-    echo
-
-    fail "${description}: unexpected error."
+    echo "${YELLOW}${BOLD}→ Continuing automatically to Task 4...${RESET}"
 }
 
 # ============================================================
 # TASK 4 - CUSTOMER A
 #
-# EXACT LAB FLOW:
+# EXACT FLOW:
 #
-# 1. Query authorized_view_a
-# 2. Save as customer_a_table
-# 3. JOIN customer_info + authorized_view_a
-# 4. Query authorized_view_b -> Access Denied
+# A-1 SELECT authorized_view_a
+# A-2 Save View → customer_a_table
+# A-3 JOIN customer_info + authorized_view_a
+# A-4 authorized_view_b → Access Denied
 # ============================================================
 
 run_customer_a() {
     step "[4/4] TASK 4 - CUSTOMER A"
 
-    local location
+    local location=""
 
     location="$(
         get_location \
-            "$CURRENT_PROJECT" \
+            "$CUSTOMER_A_PROJECT" \
             "$CUSTOMER_A_DATASET"
     )"
 
-    echo "${WHITE}Customer Project : ${CYAN}${BOLD}${CURRENT_PROJECT}${RESET}"
-    echo "${WHITE}Partner Project  : ${MAGENTA}${BOLD}${PARTNER_PROJECT}${RESET}"
+    echo "${WHITE}Account          : ${CYAN}${BOLD}${CUSTOMER_A_USER}${RESET}"
+    echo "${WHITE}Customer Project : ${CYAN}${CUSTOMER_A_PROJECT}${RESET}"
+    echo "${WHITE}Partner Project  : ${MAGENTA}${PARTNER_PROJECT}${RESET}"
     echo "${WHITE}Dataset          : ${CYAN}${CUSTOMER_A_DATASET}${RESET}"
-    echo "${WHITE}Save View As     : ${GREEN}${CUSTOMER_A_TABLE}${RESET}"
 
     # ========================================================
-    # CUSTOMER A - STEP 3
-    #
-    # SELECT * FROM Partner.demo_dataset.authorized_view_a
+    # A-1
+    # SELECT authorized_view_a
     # ========================================================
 
     echo
@@ -1027,8 +997,8 @@ run_customer_a() {
 
     timeout 120s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$CUSTOMER_A_PROJECT" \
         query \
         --location="$location" \
         --use_legacy_sql=false \
@@ -1041,60 +1011,51 @@ run_customer_a() {
     ok "Customer A can query ${VIEW_A}."
 
     # ========================================================
-    # CUSTOMER A - STEPS 4-7
-    #
-    # SAVE > SAVE VIEW
-    #
-    # Dataset = customer_a_dataset
-    # Table   = customer_a_table
+    # A-2
+    # SAVE VIEW → customer_a_table
     # ========================================================
 
     echo
-    info "[A-2/4] Saving view as ${CUSTOMER_A_DATASET}.${CUSTOMER_A_TABLE}..."
+    info "[A-2/4] Save View → ${CUSTOMER_A_DATASET}.${CUSTOMER_A_TABLE}..."
 
     timeout 120s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$CUSTOMER_A_PROJECT" \
         query \
         --location="$location" \
         --use_legacy_sql=false \
         "
         CREATE OR REPLACE VIEW
-        \`${CURRENT_PROJECT}.${CUSTOMER_A_DATASET}.${CUSTOMER_A_TABLE}\`
+        \`${CUSTOMER_A_PROJECT}.${CUSTOMER_A_DATASET}.${CUSTOMER_A_TABLE}\`
         AS
 
         SELECT *
         FROM \`${PARTNER_PROJECT}.${PARTNER_DATASET}.${VIEW_A}\`
         "
 
-    ok "${CUSTOMER_A_DATASET}.${CUSTOMER_A_TABLE} created."
-
-    info "Verifying ${CUSTOMER_A_TABLE}..."
-
     timeout 30s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$CUSTOMER_A_PROJECT" \
         show \
-        "${CURRENT_PROJECT}:${CUSTOMER_A_DATASET}.${CUSTOMER_A_TABLE}" \
+        "${CUSTOMER_A_PROJECT}:${CUSTOMER_A_DATASET}.${CUSTOMER_A_TABLE}" \
         >/dev/null
 
-    ok "${CUSTOMER_A_TABLE} verified."
+    ok "${CUSTOMER_A_TABLE} created and verified."
 
     # ========================================================
-    # CUSTOMER A - STEP 8
-    #
-    # EXACT JOIN FROM LAB
+    # A-3
+    # JOIN EXACTLY AS LAB
     # ========================================================
 
     echo
-    info "[A-3/4] Running Customer A JOIN query..."
+    info "[A-3/4] JOIN customer_info + authorized_view_a..."
 
     timeout 120s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$CUSTOMER_A_PROJECT" \
         query \
         --location="$location" \
         --use_legacy_sql=false \
@@ -1106,92 +1067,68 @@ run_customer_a() {
             cust.last_name,
             cust.first_name
         FROM
-            \`${CURRENT_PROJECT}.${CUSTOMER_A_DATASET}.${CUSTOMER_INFO_TABLE}\` AS cust
+            \`${CUSTOMER_A_PROJECT}.${CUSTOMER_A_DATASET}.${CUSTOMER_INFO_TABLE}\` AS cust
         JOIN
             \`${PARTNER_PROJECT}.${PARTNER_DATASET}.${VIEW_A}\` AS geos
         ON
             geos.zip_code = cust.postal_code;
         "
 
-    ok "Customer A JOIN query completed."
+    ok "Customer A JOIN completed."
 
     # ========================================================
-    # CUSTOMER A - STEP 9
-    #
-    # authorized_view_b MUST FAIL WITH ACCESS DENIED
+    # A-4
+    # authorized_view_b MUST BE DENIED
     # ========================================================
 
     echo
-    info "[A-4/4] Confirming Customer A cannot access ${VIEW_B}..."
+    info "[A-4/4] Verify authorized_view_b is NOT accessible..."
 
     expect_access_denied \
-        "$CURRENT_PROJECT" \
+        "$CUSTOMER_A_PROJECT" \
         "$location" \
         "
         SELECT *
         FROM \`${PARTNER_PROJECT}.${PARTNER_DATASET}.${VIEW_B}\`
         " \
-        "Customer A access check"
+        "Customer A permission check"
 
-    ok "Customer A can access only ${VIEW_A}."
-
-    # ========================================================
-    # CUSTOMER A COMPLETE
-    # TASK 4 IS NOT COMPLETE UNTIL CUSTOMER B IS ALSO DONE
-    # ========================================================
+    ok "Customer A can only access ${VIEW_A}."
 
     echo
-    echo "${GREEN}${BOLD}╔══════════════════════════════════════════════════════════════╗${RESET}"
-    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
-    echo "${GREEN}${BOLD}║                  CUSTOMER A COMPLETE ✓                       ║${RESET}"
-    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
-    echo "${YELLOW}${BOLD}║                    TASK 4 STILL PENDING                      ║${RESET}"
-    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
-    echo "${GREEN}${BOLD}╚══════════════════════════════════════════════════════════════╝${RESET}"
-
-    echo
-    echo "${YELLOW}${BOLD}NEXT REQUIRED STEP:${RESET}"
-    echo
-    echo "${WHITE}1. Close Customer A Console.${RESET}"
-    echo "${WHITE}2. Open ${MAGENTA}${BOLD}Customer Project B Console${RESET}"
-    echo "${WHITE}3. Run:${RESET}"
-    echo
-    echo "   ${GREEN}${BOLD}source lab.sh${RESET}"
-    echo
-    echo "${WHITE}Do NOT click Task 4 complete yet.${RESET}"
+    echo "${GREEN}${BOLD}✓ CUSTOMER A SECTION OF TASK 4 COMPLETE${RESET}"
 }
 
 # ============================================================
 # TASK 4 - CUSTOMER B
 #
-# EXACT LAB FLOW:
+# EXACT FLOW:
 #
-# 1. Query authorized_view_b
-# 2. Save as customer_b_table
-# 3. JOIN customer_info + authorized_view_b
-# 4. Query authorized_view_a -> Access Denied
+# B-1 SELECT authorized_view_b
+# B-2 Save View → customer_b_table
+# B-3 JOIN customer_info + authorized_view_b
+# B-4 authorized_view_a → Access Denied
 # ============================================================
 
 run_customer_b() {
     step "[4/4] TASK 4 - CUSTOMER B"
 
-    local location
+    local location=""
 
     location="$(
         get_location \
-            "$CURRENT_PROJECT" \
+            "$CUSTOMER_B_PROJECT" \
             "$CUSTOMER_B_DATASET"
     )"
 
-    echo "${WHITE}Customer Project : ${CYAN}${BOLD}${CURRENT_PROJECT}${RESET}"
-    echo "${WHITE}Partner Project  : ${MAGENTA}${BOLD}${PARTNER_PROJECT}${RESET}"
+    echo "${WHITE}Account          : ${MAGENTA}${BOLD}${CUSTOMER_B_USER}${RESET}"
+    echo "${WHITE}Customer Project : ${CYAN}${CUSTOMER_B_PROJECT}${RESET}"
+    echo "${WHITE}Partner Project  : ${MAGENTA}${PARTNER_PROJECT}${RESET}"
     echo "${WHITE}Dataset          : ${CYAN}${CUSTOMER_B_DATASET}${RESET}"
-    echo "${WHITE}Save View As     : ${GREEN}${CUSTOMER_B_TABLE}${RESET}"
 
     # ========================================================
-    # CUSTOMER B - STEP 3
-    #
-    # SELECT * FROM Partner.demo_dataset.authorized_view_b
+    # B-1
+    # SELECT authorized_view_b
     # ========================================================
 
     echo
@@ -1199,8 +1136,8 @@ run_customer_b() {
 
     timeout 120s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$CUSTOMER_B_PROJECT" \
         query \
         --location="$location" \
         --use_legacy_sql=false \
@@ -1213,60 +1150,51 @@ run_customer_b() {
     ok "Customer B can query ${VIEW_B}."
 
     # ========================================================
-    # CUSTOMER B - STEPS 4-7
-    #
-    # SAVE > SAVE VIEW
-    #
-    # Dataset = customer_b_dataset
-    # Table   = customer_b_table
+    # B-2
+    # SAVE VIEW → customer_b_table
     # ========================================================
 
     echo
-    info "[B-2/4] Saving view as ${CUSTOMER_B_DATASET}.${CUSTOMER_B_TABLE}..."
+    info "[B-2/4] Save View → ${CUSTOMER_B_DATASET}.${CUSTOMER_B_TABLE}..."
 
     timeout 120s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$CUSTOMER_B_PROJECT" \
         query \
         --location="$location" \
         --use_legacy_sql=false \
         "
         CREATE OR REPLACE VIEW
-        \`${CURRENT_PROJECT}.${CUSTOMER_B_DATASET}.${CUSTOMER_B_TABLE}\`
+        \`${CUSTOMER_B_PROJECT}.${CUSTOMER_B_DATASET}.${CUSTOMER_B_TABLE}\`
         AS
 
         SELECT *
         FROM \`${PARTNER_PROJECT}.${PARTNER_DATASET}.${VIEW_B}\`
         "
 
-    ok "${CUSTOMER_B_DATASET}.${CUSTOMER_B_TABLE} created."
-
-    info "Verifying ${CUSTOMER_B_TABLE}..."
-
     timeout 30s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$CUSTOMER_B_PROJECT" \
         show \
-        "${CURRENT_PROJECT}:${CUSTOMER_B_DATASET}.${CUSTOMER_B_TABLE}" \
+        "${CUSTOMER_B_PROJECT}:${CUSTOMER_B_DATASET}.${CUSTOMER_B_TABLE}" \
         >/dev/null
 
-    ok "${CUSTOMER_B_TABLE} verified."
+    ok "${CUSTOMER_B_TABLE} created and verified."
 
     # ========================================================
-    # CUSTOMER B - STEP 8
-    #
-    # EXACT JOIN FROM LAB
+    # B-3
+    # JOIN EXACTLY AS LAB
     # ========================================================
 
     echo
-    info "[B-3/4] Running Customer B JOIN query..."
+    info "[B-3/4] JOIN customer_info + authorized_view_b..."
 
     timeout 120s \
     bq \
-        --project_id="$CURRENT_PROJECT" \
         --quiet \
+        --project_id="$CUSTOMER_B_PROJECT" \
         query \
         --location="$location" \
         --use_legacy_sql=false \
@@ -1278,52 +1206,37 @@ run_customer_b() {
             cust.last_name,
             cust.first_name
         FROM
-            \`${CURRENT_PROJECT}.${CUSTOMER_B_DATASET}.${CUSTOMER_INFO_TABLE}\` AS cust
+            \`${CUSTOMER_B_PROJECT}.${CUSTOMER_B_DATASET}.${CUSTOMER_INFO_TABLE}\` AS cust
         JOIN
             \`${PARTNER_PROJECT}.${PARTNER_DATASET}.${VIEW_B}\` AS geos
         ON
             geos.zip_code = cust.postal_code;
         "
 
-    ok "Customer B JOIN query completed."
+    ok "Customer B JOIN completed."
 
     # ========================================================
-    # CUSTOMER B - STEP 9
-    #
-    # authorized_view_a MUST FAIL WITH ACCESS DENIED
+    # B-4
+    # authorized_view_a MUST BE DENIED
     # ========================================================
 
     echo
-    info "[B-4/4] Confirming Customer B cannot access ${VIEW_A}..."
+    info "[B-4/4] Verify authorized_view_a is NOT accessible..."
 
     expect_access_denied \
-        "$CURRENT_PROJECT" \
+        "$CUSTOMER_B_PROJECT" \
         "$location" \
         "
         SELECT *
         FROM \`${PARTNER_PROJECT}.${PARTNER_DATASET}.${VIEW_A}\`
         " \
-        "Customer B access check"
+        "Customer B permission check"
 
-    ok "Customer B can access only ${VIEW_B}."
-
-    # ========================================================
-    # TASK 4 COMPLETE
-    # ========================================================
+    ok "Customer B can only access ${VIEW_B}."
 
     echo
-    echo "${GREEN}${BOLD}╔══════════════════════════════════════════════════════════════╗${RESET}"
-    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
-    echo "${GREEN}${BOLD}║                  CUSTOMER B COMPLETE ✓                       ║${RESET}"
-    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
-    echo "${GREEN}${BOLD}║                       TASK 4 ✓                               ║${RESET}"
-    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
-    echo "${GREEN}${BOLD}║                    LAB COMPLETE                              ║${RESET}"
-    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
-    echo "${GREEN}${BOLD}╚══════════════════════════════════════════════════════════════╝${RESET}"
-
-    echo
-    echo "${YELLOW}${BOLD}→ Click Check my progress: Task 4${RESET}"
+    echo "${GREEN}${BOLD}✓ CUSTOMER B SECTION OF TASK 4 COMPLETE${RESET}"
+    echo "${GREEN}${BOLD}✓ TASK 4 COMPLETE${RESET}"
 }
 
 # ============================================================
@@ -1340,7 +1253,7 @@ main() {
     ask_users
 
     # ========================================================
-    # LOCAL COMMAND CHECK
+    # LOCAL TOOLS
     # ========================================================
 
     require_cmd gcloud
@@ -1350,73 +1263,148 @@ main() {
     require_cmd grep
 
     # ========================================================
-    # DETECT ENVIRONMENT
+    # SAVE ORIGINAL PARTNER ENVIRONMENT
     # ========================================================
 
-    detect_current_project
-    detect_current_account
+    ORIGINAL_ACCOUNT="$(current_account)"
+    ORIGINAL_PROJECT="$(current_project)"
 
-    echo
-    echo "${BLUE}--------------------------------------------------------------${RESET}"
-    echo "${WHITE}${BOLD}GOOGLE CLOUD ENVIRONMENT${RESET}"
-    echo "${BLUE}--------------------------------------------------------------${RESET}"
-    echo "${WHITE}Account : ${CYAN}${BOLD}${CURRENT_ACCOUNT}${RESET}"
-    echo "${WHITE}Project : ${GREEN}${BOLD}${CURRENT_PROJECT}${RESET}"
-    echo "${BLUE}--------------------------------------------------------------${RESET}"
+    if [[ -z "$ORIGINAL_ACCOUNT" ]]; then
+        fail "No active Partner account was detected."
+    fi
+
+    PARTNER_ACCOUNT="$ORIGINAL_ACCOUNT"
+    PARTNER_PROJECT="$ORIGINAL_PROJECT"
+
+    step "DATA SHARING PARTNER ENVIRONMENT"
+
+    echo "${WHITE}Partner account : ${CYAN}${BOLD}${PARTNER_ACCOUNT}${RESET}"
+    echo "${WHITE}Partner project : ${GREEN}${BOLD}${PARTNER_PROJECT:-not detected}${RESET}"
 
     # ========================================================
-    # DETECT LAB ROLE
+    # AUTO FIND PARTNER PROJECT IF NEEDED
     # ========================================================
 
-    detect_project_role
+    if \
+        [[ -z "$PARTNER_PROJECT" ]] \
+        ||
+        ! dataset_exists "$PARTNER_PROJECT" "$PARTNER_DATASET"
+    then
 
-    if [[ "$PROJECT_ROLE" == "UNKNOWN" ]]; then
-        ask_project_role
+        find_project_with_dataset \
+            "$PARTNER_ACCOUNT" \
+            "$PARTNER_DATASET" \
+            PARTNER_PROJECT \
+            "Partner"
     fi
 
     # ========================================================
-    # EXECUTE CORRECT SECTION
+    # PARTNER CONTEXT
     # ========================================================
 
-    case "$PROJECT_ROLE" in
+    switch_context \
+        "$PARTNER_ACCOUNT" \
+        "$PARTNER_PROJECT"
 
-        PARTNER)
+    # ========================================================
+    # TASK 1 - 3
+    # ========================================================
 
-            PARTNER_PROJECT="$CURRENT_PROJECT"
+    task1
+    task2
+    task3
+    verify_partner
 
-            run_partner
-            ;;
+    # ========================================================
+    # CUSTOMER A LOGIN IN SAME TERMINAL
+    # ========================================================
 
-        CUSTOMER_A)
+    ensure_user_login \
+        "$CUSTOMER_A_USER" \
+        "CUSTOMER A"
 
-            echo
-            echo "${GREEN}${BOLD}MODE: CUSTOMER A${RESET}"
+    # ========================================================
+    # AUTO FIND CUSTOMER A PROJECT
+    # ========================================================
 
-            ask_partner_project
+    find_project_with_dataset \
+        "$CUSTOMER_A_USER" \
+        "$CUSTOMER_A_DATASET" \
+        CUSTOMER_A_PROJECT \
+        "Customer A"
 
-            run_customer_a
-            ;;
+    # ========================================================
+    # CUSTOMER A CONTEXT
+    # ========================================================
 
-        CUSTOMER_B)
+    switch_context \
+        "$CUSTOMER_A_USER" \
+        "$CUSTOMER_A_PROJECT"
 
-            echo
-            echo "${GREEN}${BOLD}MODE: CUSTOMER B${RESET}"
+    # ========================================================
+    # TASK 4 - CUSTOMER A
+    # ========================================================
 
-            ask_partner_project
+    run_customer_a
 
-            run_customer_b
-            ;;
+    # ========================================================
+    # CUSTOMER B LOGIN IN SAME TERMINAL
+    # ========================================================
 
-        *)
+    ensure_user_login \
+        "$CUSTOMER_B_USER" \
+        "CUSTOMER B"
 
-            fail "Unknown lab project type."
-            ;;
-    esac
+    # ========================================================
+    # AUTO FIND CUSTOMER B PROJECT
+    # ========================================================
+
+    find_project_with_dataset \
+        "$CUSTOMER_B_USER" \
+        "$CUSTOMER_B_DATASET" \
+        CUSTOMER_B_PROJECT \
+        "Customer B"
+
+    # ========================================================
+    # CUSTOMER B CONTEXT
+    # ========================================================
+
+    switch_context \
+        "$CUSTOMER_B_USER" \
+        "$CUSTOMER_B_PROJECT"
+
+    # ========================================================
+    # TASK 4 - CUSTOMER B
+    # ========================================================
+
+    run_customer_b
+
+    # ========================================================
+    # FINAL
+    # ========================================================
 
     echo
-    echo "${CYAN}${BOLD}==============================================================${RESET}"
-    echo "${CYAN}${BOLD}                       © ePlus.DEV                            ${RESET}"
-    echo "${CYAN}${BOLD}==============================================================${RESET}"
+    echo "${GREEN}${BOLD}╔══════════════════════════════════════════════════════════════╗${RESET}"
+    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
+    echo "${GREEN}${BOLD}║                    ALL TASKS COMPLETE                        ║${RESET}"
+    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
+    echo "${GREEN}${BOLD}║                       TASK 1 ✓                               ║${RESET}"
+    echo "${GREEN}${BOLD}║                       TASK 2 ✓                               ║${RESET}"
+    echo "${GREEN}${BOLD}║                       TASK 3 ✓                               ║${RESET}"
+    echo "${GREEN}${BOLD}║                       TASK 4 ✓                               ║${RESET}"
+    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
+    echo "${GREEN}${BOLD}║                      © ePlus.DEV                             ║${RESET}"
+    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
+    echo "${GREEN}${BOLD}╚══════════════════════════════════════════════════════════════╝${RESET}"
+
+    echo
+    echo "${YELLOW}${BOLD}→ Click Check my progress for Task 1${RESET}"
+    echo "${YELLOW}${BOLD}→ Click Check my progress for Task 2${RESET}"
+    echo "${YELLOW}${BOLD}→ Click Check my progress for Task 3${RESET}"
+    echo "${YELLOW}${BOLD}→ Click Check my progress for Task 4${RESET}"
+
+    echo
+    echo "${CYAN}${BOLD}Partner account/project will now be restored automatically.${RESET}"
 }
 
 main "$@"
