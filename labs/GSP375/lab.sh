@@ -4,7 +4,13 @@
 # Share Data Using Google Data Cloud - Challenge Lab
 #
 # ONE TERMINAL • ONE SOURCE
-# TASK 1 → TASK 4
+#
+# Dynamic values:
+#   - Customer user
+#   - Partner Authorized View
+#   - Customer Authorized View
+#
+# Project IDs are automatically detected.
 #
 # © ePlus.DEV
 # ============================================================
@@ -39,28 +45,29 @@ else
 fi
 
 # ============================================================
-# LAB CONSTANTS
+# FIXED LAB RESOURCE NAMES
 # ============================================================
 
 PARTNER_DATASET="demo_dataset"
-PARTNER_VIEW="authorized_view_5805"
 
 CUSTOMER_DATASET="customer_dataset"
 CUSTOMER_INFO="customer_info"
-CUSTOMER_VIEW="customer_authorized_view_e90o"
-
-# Current lab username.
-# Press ENTER to use it, or type another value if your lab changed.
-DEFAULT_CUSTOMER_USER="student-04-06d62d8a1d0f@qwiklabs.net"
 
 # ============================================================
-# VARIABLES
+# DYNAMIC VALUES
+# ============================================================
+
+CUSTOMER_USER=""
+PARTNER_VIEW=""
+CUSTOMER_VIEW=""
+
+# ============================================================
+# AUTO-DETECTED VALUES
 # ============================================================
 
 PARTNER_USER=""
 PARTNER_PROJECT=""
 
-CUSTOMER_USER=""
 CUSTOMER_PROJECT=""
 
 ORIGINAL_ACCOUNT=""
@@ -147,20 +154,16 @@ fail() {
 # INPUT
 # ============================================================
 
-colored_read_default() {
+colored_read() {
 
     local variable="$1"
     local label="$2"
-    local default="$3"
     local value=""
 
-    printf "%s%s%s%s %s[%s]%s %s>%s " \
+    printf "%s%s%s%s %s>%s " \
         "$YELLOW" \
         "$BOLD" \
         "$label" \
-        "$RESET" \
-        "$WHITE" \
-        "$default" \
         "$RESET" \
         "$GREEN" \
         "$CYAN"
@@ -169,12 +172,12 @@ colored_read_default() {
 
     printf "%s" "$RESET"
 
-    if [[ -z "$value" ]]; then
-        value="$default"
-    fi
-
     printf -v "$variable" '%s' "$value"
 }
+
+# ============================================================
+# VALIDATION
+# ============================================================
 
 valid_email() {
     [[ "$1" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]
@@ -184,6 +187,10 @@ valid_project() {
     [[ "$1" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
 }
 
+valid_bq_name() {
+    [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
+}
+
 require_cmd() {
 
     command -v "$1" >/dev/null 2>&1 || \
@@ -191,23 +198,25 @@ require_cmd() {
 }
 
 # ============================================================
-# ASK CUSTOMER USER FIRST
+# ASK ALL INSTANCE-SPECIFIC VALUES FIRST
 # ============================================================
 
-ask_customer_user() {
+ask_lab_inputs() {
 
-    step "ENTER CUSTOMER ACCOUNT"
+    step "ENTER LAB PARAMETERS"
 
-    echo "${WHITE}Press ENTER to use the username shown in the lab.${RESET}"
-    echo "${WHITE}If your lab instance changed, paste the new Customer username.${RESET}"
+    echo "${WHITE}Copy the values exactly from the lab instructions.${RESET}"
     echo
+
+    # --------------------------------------------------------
+    # Customer user
+    # --------------------------------------------------------
 
     while true; do
 
-        colored_read_default \
+        colored_read \
             CUSTOMER_USER \
-            "Customer user" \
-            "$DEFAULT_CUSTOMER_USER"
+            "Customer user"
 
         echo
 
@@ -215,11 +224,70 @@ ask_customer_user() {
             break
         fi
 
-        warn "Invalid email address."
+        warn "Invalid Customer email."
         echo
     done
 
-    ok "Customer: ${CUSTOMER_USER}"
+    echo
+
+    # --------------------------------------------------------
+    # Partner Authorized View
+    #
+    # Example:
+    # authorized_view_5805
+    # --------------------------------------------------------
+
+    while true; do
+
+        colored_read \
+            PARTNER_VIEW \
+            "Partner Authorized View name"
+
+        echo
+
+        if valid_bq_name "$PARTNER_VIEW"; then
+            break
+        fi
+
+        warn "Invalid BigQuery view name."
+        echo
+    done
+
+    echo
+
+    # --------------------------------------------------------
+    # Customer Authorized View
+    #
+    # Example:
+    # customer_authorized_view_e90o
+    # --------------------------------------------------------
+
+    while true; do
+
+        colored_read \
+            CUSTOMER_VIEW \
+            "Customer Authorized View name"
+
+        echo
+
+        if valid_bq_name "$CUSTOMER_VIEW"; then
+            break
+        fi
+
+        warn "Invalid BigQuery view name."
+        echo
+    done
+
+    echo
+    echo "${BLUE}--------------------------------------------------------------${RESET}"
+    echo "${WHITE}${BOLD}INPUT SUMMARY${RESET}"
+    echo "${BLUE}--------------------------------------------------------------${RESET}"
+
+    echo "${WHITE}Customer user            : ${CYAN}${BOLD}${CUSTOMER_USER}${RESET}"
+    echo "${WHITE}Partner Authorized View  : ${GREEN}${BOLD}${PARTNER_VIEW}${RESET}"
+    echo "${WHITE}Customer Authorized View : ${MAGENTA}${BOLD}${CUSTOMER_VIEW}${RESET}"
+
+    echo "${BLUE}--------------------------------------------------------------${RESET}"
 }
 
 # ============================================================
@@ -267,18 +335,18 @@ dataset_exists() {
         >/dev/null 2>&1
 }
 
-view_exists() {
+resource_exists() {
 
     local project="$1"
     local dataset="$2"
-    local view="$3"
+    local resource="$3"
 
     timeout 20s \
     bq \
         --quiet \
         --project_id="$project" \
         show \
-        "$project:$dataset.$view" \
+        "$project:$dataset.$resource" \
         >/dev/null 2>&1
 }
 
@@ -308,7 +376,50 @@ get_location() {
 }
 
 # ============================================================
-# LOGIN CUSTOMER IN SAME TERMINAL
+# SWITCH ACCOUNT + PROJECT
+# ============================================================
+
+switch_context() {
+
+    local account="$1"
+    local project="$2"
+
+    echo
+
+    info "Activating account: ${account}"
+
+    gcloud config set account \
+        "$account" \
+        --quiet \
+        >/dev/null
+
+    info "Setting project: ${project}"
+
+    gcloud config set project \
+        "$project" \
+        --quiet \
+        >/dev/null
+
+    local active_account=""
+    local active_project=""
+
+    active_account="$(get_active_account)"
+    active_project="$(get_config_project)"
+
+    if [[ "$active_account" != "$account" ]]; then
+        fail "Failed to activate account ${account}."
+    fi
+
+    if [[ "$active_project" != "$project" ]]; then
+        fail "Failed to activate project ${project}."
+    fi
+
+    ok "Account : ${account}"
+    ok "Project : ${project}"
+}
+
+# ============================================================
+# LOGIN CUSTOMER
 # ============================================================
 
 ensure_login() {
@@ -318,7 +429,10 @@ ensure_login() {
 
     step "LOGIN - ${label}"
 
+    # --------------------------------------------------------
     # Reuse credential if already stored
+    # --------------------------------------------------------
+
     if \
         gcloud auth list \
             --format='value(account)' \
@@ -339,15 +453,18 @@ ensure_login() {
         echo
         echo "${CYAN}${BOLD}${account}${RESET}"
         echo
-        echo "${YELLOW}${BOLD}A Google login URL will appear below.${RESET}"
+
+        echo "${YELLOW}${BOLD}A Google authorization URL will appear below.${RESET}"
         echo
-        echo "${WHITE}1. Open the URL.${RESET}"
-        echo "${WHITE}2. Login with the Customer account.${RESET}"
+
+        echo "${WHITE}1. Open the URL in an Incognito window.${RESET}"
+        echo "${WHITE}2. Login using the Customer account.${RESET}"
         echo "${WHITE}3. Use the temporary lab password.${RESET}"
         echo "${WHITE}4. Copy the authorization code.${RESET}"
         echo "${WHITE}5. Paste it back into this terminal.${RESET}"
         echo
 
+        # No timeout here because browser login needs time.
         gcloud auth login \
             "$account" \
             --no-launch-browser \
@@ -366,33 +483,6 @@ ensure_login() {
 
     echo
     ok "${label} authenticated."
-}
-
-# ============================================================
-# SWITCH CONTEXT
-# ============================================================
-
-switch_context() {
-
-    local account="$1"
-    local project="$2"
-
-    info "Activating account: ${account}"
-
-    gcloud config set account \
-        "$account" \
-        --quiet \
-        >/dev/null
-
-    info "Setting project: ${project}"
-
-    gcloud config set project \
-        "$project" \
-        --quiet \
-        >/dev/null
-
-    ok "Account : ${account}"
-    ok "Project : ${project}"
 }
 
 # ============================================================
@@ -431,6 +521,7 @@ find_project_with_dataset() {
             info "Checking ${project}..."
 
             if dataset_exists "$project" "$dataset"; then
+
                 found="$project"
                 break
             fi
@@ -438,29 +529,25 @@ find_project_with_dataset() {
         done <<< "$projects"
     fi
 
+    # --------------------------------------------------------
     # Manual fallback
+    # --------------------------------------------------------
+
     if [[ -z "$found" ]]; then
 
-        warn "Could not auto-detect ${label} Project."
+        warn "Could not automatically detect ${label} Project."
         echo
 
         while true; do
 
-            printf "%s%s%s%s %s>%s " \
-                "$YELLOW" \
-                "$BOLD" \
-                "${label} Project ID" \
-                "$RESET" \
-                "$GREEN" \
-                "$CYAN"
+            colored_read \
+                found \
+                "${label} Project ID"
 
-            IFS= read -r found
-
-            printf "%s" "$RESET"
             echo
 
             if ! valid_project "$found"; then
-                warn "Invalid Project ID."
+                warn "Invalid Google Cloud Project ID."
                 echo
                 continue
             fi
@@ -480,13 +567,14 @@ find_project_with_dataset() {
 }
 
 # ============================================================
-# AUTHORIZE VIEW IN DATASET ACL
+# AUTHORIZE BIGQUERY VIEW
 # ============================================================
 
 authorize_view() {
 
     local project="$1"
     local dataset="$2"
+
     local view_project="$3"
     local view_dataset="$4"
     local view_name="$5"
@@ -499,6 +587,10 @@ authorize_view() {
 
     TMP_FILES+=("$before" "$after")
 
+    # --------------------------------------------------------
+    # Read current dataset ACL
+    # --------------------------------------------------------
+
     info "Reading ${project}.${dataset} ACL..."
 
     timeout 30s \
@@ -510,9 +602,14 @@ authorize_view() {
         "$project:$dataset" \
         > "$before"
 
+    # --------------------------------------------------------
     # Preserve all current ACL entries.
-    # Remove an existing copy of this authorized-view entry
-    # before appending the correct one.
+    # Remove duplicate entry for this view.
+    # Append correct Authorized View entry.
+    # --------------------------------------------------------
+
+    info "Adding Authorized View..."
+
     jq \
         --arg vp "$view_project" \
         --arg vd "$view_dataset" \
@@ -573,13 +670,14 @@ authorize_view() {
 }
 
 # ============================================================
-# VERIFY AUTHORIZED VIEW ACL
+# VERIFY AUTHORIZED VIEW
 # ============================================================
 
 verify_authorized_view() {
 
     local project="$1"
     local dataset="$2"
+
     local view_project="$3"
     local view_dataset="$4"
     local view_name="$5"
@@ -659,9 +757,10 @@ verify_data_viewer() {
     local user="$4"
 
     local policy=""
-    local matches=""
+    local count=""
 
     policy="$(mktemp)"
+
     TMP_FILES+=("$policy")
 
     timeout 30s \
@@ -673,7 +772,7 @@ verify_data_viewer() {
         "${project}:${dataset}.${view}" \
         > "$policy"
 
-    matches="$(
+    count="$(
         jq \
             --arg member "user:${user}" \
             '
@@ -685,7 +784,11 @@ verify_data_viewer() {
                 select(
                     .role == "roles/bigquery.dataViewer"
                     and
-                    (.members // [] | index($member))
+                    (
+                        (.members // [])
+                        |
+                        index($member)
+                    )
                 )
             ]
             |
@@ -694,7 +797,7 @@ verify_data_viewer() {
             "$policy"
     )"
 
-    if [[ "$matches" -lt 1 ]]; then
+    if [[ "$count" -lt 1 ]]; then
         fail "BigQuery Data Viewer verification failed for ${user}."
     fi
 
@@ -702,14 +805,77 @@ verify_data_viewer() {
 }
 
 # ============================================================
+# RETRY QUERY FOR IAM PROPAGATION
+# ============================================================
+
+run_query_retry() {
+
+    local project="$1"
+    local location="$2"
+    local sql="$3"
+    local label="$4"
+
+    local attempt=""
+    local max_attempts=6
+    local logfile=""
+
+    logfile="$(mktemp)"
+    TMP_FILES+=("$logfile")
+
+    for attempt in $(seq 1 "$max_attempts"); do
+
+        info "${label} - attempt ${attempt}/${max_attempts}..."
+
+        if timeout 120s \
+            bq \
+                --quiet \
+                --project_id="$project" \
+                query \
+                --location="$location" \
+                --use_legacy_sql=false \
+                "$sql" \
+                >"$logfile" 2>&1
+        then
+
+            cat "$logfile"
+            return 0
+        fi
+
+        if grep -Eqi \
+            'Access Denied|Permission denied|PERMISSION_DENIED|does not have permission' \
+            "$logfile"
+        then
+
+            if [[ "$attempt" -lt "$max_attempts" ]]; then
+                warn "IAM permission may still be propagating."
+                warn "Waiting 10 seconds..."
+                sleep 10
+                continue
+            fi
+        fi
+
+        echo
+        cat "$logfile"
+        echo
+
+        fail "${label} failed."
+    done
+
+    echo
+    cat "$logfile"
+    echo
+
+    fail "${label} failed after retries."
+}
+
+# ============================================================
 # TASK 1A
-#
 # CREATE PARTNER AUTHORIZED VIEW
 # ============================================================
 
 task1_create_partner_view() {
 
-    step "[1/4] TASK 1 - CREATE PARTNER AUTHORIZED VIEW"
+    step "[1/4] CREATE PARTNER AUTHORIZED VIEW"
 
     local location=""
 
@@ -719,10 +885,10 @@ task1_create_partner_view() {
             "$PARTNER_DATASET"
     )"
 
-    echo "${WHITE}Project : ${CYAN}${BOLD}${PARTNER_PROJECT}${RESET}"
-    echo "${WHITE}Dataset : ${CYAN}${PARTNER_DATASET}${RESET}"
-    echo "${WHITE}View    : ${GREEN}${PARTNER_VIEW}${RESET}"
-    echo "${WHITE}Location: ${CYAN}${location}${RESET}"
+    echo "${WHITE}Partner Project : ${CYAN}${BOLD}${PARTNER_PROJECT}${RESET}"
+    echo "${WHITE}Dataset         : ${CYAN}${PARTNER_DATASET}${RESET}"
+    echo "${WHITE}View            : ${GREEN}${BOLD}${PARTNER_VIEW}${RESET}"
+    echo "${WHITE}Location        : ${CYAN}${location}${RESET}"
 
     echo
     info "Creating ${PARTNER_VIEW}..."
@@ -745,7 +911,7 @@ task1_create_partner_view() {
             \`bigquery-public-data.geo_us_boundaries.zip_codes\`
         "
 
-    if ! view_exists \
+    if ! resource_exists \
         "$PARTNER_PROJECT" \
         "$PARTNER_DATASET" \
         "$PARTNER_VIEW"
@@ -753,7 +919,7 @@ task1_create_partner_view() {
         fail "${PARTNER_VIEW} was not created."
     fi
 
-    ok "${PARTNER_VIEW} created."
+    ok "${PARTNER_VIEW} created successfully."
 
     echo
     echo "${GREEN}${BOLD}✓ CREATE THE PARTNER AUTHORIZED VIEW COMPLETE${RESET}"
@@ -761,13 +927,16 @@ task1_create_partner_view() {
 
 # ============================================================
 # TASK 1B
-#
-# AUTHORIZE VIEW + CUSTOMER IAM
+# AUTHORIZE PARTNER VIEW + CUSTOMER IAM
 # ============================================================
 
 task1_authorize_partner_view() {
 
     step "[2/4] AUTHORIZE PARTNER VIEW + CUSTOMER IAM"
+
+    # --------------------------------------------------------
+    # Authorized View
+    # --------------------------------------------------------
 
     info "Authorizing ${PARTNER_VIEW}..."
 
@@ -785,6 +954,10 @@ task1_authorize_partner_view() {
         "$PARTNER_DATASET" \
         "$PARTNER_VIEW"
 
+    # --------------------------------------------------------
+    # Customer → BigQuery Data Viewer
+    # --------------------------------------------------------
+
     echo
     info "Granting Customer BigQuery Data Viewer..."
 
@@ -800,16 +973,17 @@ task1_authorize_partner_view() {
         "$PARTNER_VIEW" \
         "$CUSTOMER_USER"
 
-    ok "Customer → ${PARTNER_VIEW}"
+    echo
+    ok "Customer : ${CUSTOMER_USER}"
+    ok "View     : ${PARTNER_VIEW}"
 
     echo
-    echo "${GREEN}${BOLD}✓ AUTHORIZE VIEW + CUSTOMER IAM COMPLETE${RESET}"
+    echo "${GREEN}${BOLD}✓ PARTNER VIEW AUTHORIZATION + IAM COMPLETE${RESET}"
 }
 
 # ============================================================
 # TASK 2
-#
-# UPDATE CUSTOMER DATA
+# UPDATE CUSTOMER TABLE
 # ============================================================
 
 task2_update_customer() {
@@ -824,19 +998,15 @@ task2_update_customer() {
             "$CUSTOMER_DATASET"
     )"
 
-    echo "${WHITE}Customer Project : ${CYAN}${CUSTOMER_PROJECT}${RESET}"
-    echo "${WHITE}Partner Project  : ${MAGENTA}${PARTNER_PROJECT}${RESET}"
+    echo "${WHITE}Customer Project : ${CYAN}${BOLD}${CUSTOMER_PROJECT}${RESET}"
+    echo "${WHITE}Partner Project  : ${MAGENTA}${BOLD}${PARTNER_PROJECT}${RESET}"
+    echo "${WHITE}Partner View     : ${GREEN}${PARTNER_VIEW}${RESET}"
 
     echo
-    info "Updating county values from Partner authorized view..."
 
-    timeout 120s \
-    bq \
-        --quiet \
-        --project_id="$CUSTOMER_PROJECT" \
-        query \
-        --location="$location" \
-        --use_legacy_sql=false \
+    run_query_retry \
+        "$CUSTOMER_PROJECT" \
+        "$location" \
         "
         UPDATE
             \`${CUSTOMER_PROJECT}.${CUSTOMER_DATASET}.${CUSTOMER_INFO}\`
@@ -851,15 +1021,16 @@ task2_update_customer() {
 
         WHERE
             vw.zip_code = cust.postal_code;
-        "
+        " \
+        "Updating customer county values"
 
-    ok "Customer county values updated."
+    echo
+    ok "Customer data table updated successfully."
 }
 
 # ============================================================
 # TASK 3
-#
-# CUSTOMER AUTHORIZED VIEW
+# CREATE CUSTOMER AUTHORIZED VIEW
 # ============================================================
 
 task3_customer_view() {
@@ -874,13 +1045,13 @@ task3_customer_view() {
             "$CUSTOMER_DATASET"
     )"
 
-    echo "${WHITE}Project : ${CYAN}${CUSTOMER_PROJECT}${RESET}"
-    echo "${WHITE}Dataset : ${CYAN}${CUSTOMER_DATASET}${RESET}"
-    echo "${WHITE}View    : ${GREEN}${CUSTOMER_VIEW}${RESET}"
+    echo "${WHITE}Customer Project : ${CYAN}${BOLD}${CUSTOMER_PROJECT}${RESET}"
+    echo "${WHITE}Dataset          : ${CYAN}${CUSTOMER_DATASET}${RESET}"
+    echo "${WHITE}Customer View    : ${GREEN}${BOLD}${CUSTOMER_VIEW}${RESET}"
 
-    # --------------------------------------------------------
-    # Create View
-    # --------------------------------------------------------
+    # ========================================================
+    # CREATE CUSTOMER VIEW
+    # ========================================================
 
     echo
     info "Creating ${CUSTOMER_VIEW}..."
@@ -909,7 +1080,7 @@ task3_customer_view() {
             county IS NOT NULL
         "
 
-    if ! view_exists \
+    if ! resource_exists \
         "$CUSTOMER_PROJECT" \
         "$CUSTOMER_DATASET" \
         "$CUSTOMER_VIEW"
@@ -917,14 +1088,14 @@ task3_customer_view() {
         fail "${CUSTOMER_VIEW} was not created."
     fi
 
-    ok "${CUSTOMER_VIEW} created."
+    ok "${CUSTOMER_VIEW} created successfully."
 
     echo
-    echo "${GREEN}${BOLD}✓ CREATE THE CUSTOMER AUTHORIZED VIEW COMPLETE${RESET}"
+    echo "${GREEN}${BOLD}✓ CREATE CUSTOMER AUTHORIZED VIEW COMPLETE${RESET}"
 
-    # --------------------------------------------------------
-    # Authorize customer view
-    # --------------------------------------------------------
+    # ========================================================
+    # AUTHORIZE CUSTOMER VIEW
+    # ========================================================
 
     echo
     info "Authorizing ${CUSTOMER_VIEW}..."
@@ -943,9 +1114,9 @@ task3_customer_view() {
         "$CUSTOMER_DATASET" \
         "$CUSTOMER_VIEW"
 
-    # --------------------------------------------------------
-    # Grant Partner IAM
-    # --------------------------------------------------------
+    # ========================================================
+    # PARTNER → BIGQUERY DATA VIEWER
+    # ========================================================
 
     echo
     info "Granting Partner BigQuery Data Viewer..."
@@ -962,22 +1133,35 @@ task3_customer_view() {
         "$CUSTOMER_VIEW" \
         "$PARTNER_USER"
 
-    ok "Partner → ${CUSTOMER_VIEW}"
+    echo
+    ok "Partner : ${PARTNER_USER}"
+    ok "View    : ${CUSTOMER_VIEW}"
 
     echo
-    echo "${GREEN}${BOLD}✓ AUTHORIZE CUSTOMER VIEW + PARTNER IAM COMPLETE${RESET}"
+    echo "${GREEN}${BOLD}✓ CUSTOMER VIEW AUTHORIZATION + IAM COMPLETE${RESET}"
 }
 
 # ============================================================
-# PREPARE TASK 4
+# TASK 4 PREPARATION
 #
-# Switch back to Partner and verify it can consume
-# customer_authorized_view_e90o.
+# IMPORTANT:
+#
+# The Looker Studio source MUST be:
+#
+# CUSTOMER_PROJECT
+#   → customer_dataset
+#   → CUSTOMER_VIEW
+#
+# NOT:
+#
+# PARTNER_PROJECT
+#   → demo_dataset
+#   → PARTNER_VIEW
 # ============================================================
 
 prepare_task4() {
 
-    step "PREPARE TASK 4 - VERIFY CUSTOMER VIEW ACCESS"
+    step "PREPARE TASK 4 - VERIFY CUSTOMER VIEW"
 
     switch_context \
         "$PARTNER_USER" \
@@ -991,16 +1175,17 @@ prepare_task4() {
             "$PARTNER_DATASET"
     )"
 
-    info "Testing Customer Authorized View as Partner..."
+    echo
+    echo "${WHITE}${BOLD}Correct Looker Studio source:${RESET}"
+    echo
+    echo "${CYAN}${CUSTOMER_PROJECT}${RESET}"
+    echo "${WHITE}  → ${CUSTOMER_DATASET}${RESET}"
+    echo "${GREEN}  → ${CUSTOMER_VIEW}${RESET}"
+    echo
 
-    timeout 120s \
-    bq \
-        --quiet \
-        --project_id="$PARTNER_PROJECT" \
-        query \
-        --location="$location" \
-        --use_legacy_sql=false \
-        --max_rows=10 \
+    run_query_retry \
+        "$PARTNER_PROJECT" \
+        "$location" \
         "
         SELECT
             county,
@@ -1010,20 +1195,37 @@ prepare_task4() {
         ORDER BY
             Count DESC
         LIMIT 10
-        "
+        " \
+        "Testing Customer Authorized View as Partner"
 
-    ok "Partner can query ${CUSTOMER_VIEW}."
-    ok "BigQuery data source is ready for Looker Studio."
+    echo
+    ok "Partner can query Customer Authorized View."
+    ok "Task 4 BigQuery source is ready."
 }
 
 # ============================================================
-# TASK 4 MANUAL INSTRUCTIONS
+# LOOKER STUDIO INSTRUCTIONS
 # ============================================================
 
 show_looker_steps() {
 
     echo
-    echo "${YELLOW}${BOLD}TASK 4 - LOOKER STUDIO STEPS${RESET}"
+    echo "${YELLOW}${BOLD}TASK 4 - LOOKER STUDIO${RESET}"
+    echo "${BLUE}${BOLD}==============================================================${RESET}"
+
+    echo
+    echo "${RED}${BOLD}DO NOT SELECT:${RESET}"
+    echo "${WHITE}   ${PARTNER_PROJECT}${RESET}"
+    echo "${WHITE}   → ${PARTNER_DATASET}${RESET}"
+    echo "${RED}   → ${PARTNER_VIEW}${RESET}"
+
+    echo
+    echo "${GREEN}${BOLD}SELECT THIS CUSTOMER VIEW:${RESET}"
+    echo "${WHITE}   Project : ${CYAN}${CUSTOMER_PROJECT}${RESET}"
+    echo "${WHITE}   Dataset : ${CYAN}${CUSTOMER_DATASET}${RESET}"
+    echo "${WHITE}   View    : ${GREEN}${CUSTOMER_VIEW}${RESET}"
+
+    echo
     echo "${BLUE}${BOLD}==============================================================${RESET}"
 
     echo
@@ -1031,40 +1233,51 @@ show_looker_steps() {
     echo "${CYAN}   https://lookerstudio.google.com/${RESET}"
 
     echo
-    echo "${WHITE}2. Make sure you are logged in as Partner:${RESET}"
+    echo "${WHITE}2. Login as Data Sharing Partner:${RESET}"
     echo "${CYAN}   ${PARTNER_USER}${RESET}"
 
     echo
     echo "${WHITE}3. Create a Blank Report.${RESET}"
 
     echo
-    echo "${WHITE}4. Add BigQuery data:${RESET}"
-    echo "${WHITE}   Project : ${CYAN}${CUSTOMER_PROJECT}${RESET}"
-    echo "${WHITE}   Dataset : ${CYAN}${CUSTOMER_DATASET}${RESET}"
-    echo "${WHITE}   View    : ${GREEN}${CUSTOMER_VIEW}${RESET}"
+    echo "${WHITE}4. Select BigQuery.${RESET}"
 
     echo
-    echo "${WHITE}5. Add the data source to the report.${RESET}"
+    echo "${WHITE}5. If the Customer Project is not listed:${RESET}"
+    echo "${YELLOW}   Click Enter Project Id manually${RESET}"
 
     echo
-    echo "${WHITE}6. Rename report:${RESET}"
+    echo "${WHITE}6. Enter:${RESET}"
+    echo "${CYAN}   ${CUSTOMER_PROJECT}${RESET}"
+
+    echo
+    echo "${WHITE}7. Select:${RESET}"
+    echo "${CYAN}   ${CUSTOMER_DATASET}${RESET}"
+    echo "${GREEN}   ${CUSTOMER_VIEW}${RESET}"
+
+    echo
+    echo "${WHITE}8. Click Add → Add to Report.${RESET}"
+
+    echo
+    echo "${WHITE}9. Report name:${RESET}"
     echo "${GREEN}   Data Sharing Partner Vizualization${RESET}"
 
     echo
-    echo "${WHITE}7. Insert a Vertical Bar Chart.${RESET}"
+    echo "${WHITE}10. Insert a Vertical Bar Chart.${RESET}"
 
     echo
-    echo "${WHITE}8. Configure:${RESET}"
-    echo "${WHITE}   Dimension           : ${GREEN}county${RESET}"
-    echo "${WHITE}   Breakdown Dimension : ${GREEN}Count${RESET}"
-    echo "${WHITE}   Metric              : ${GREEN}Count${RESET}"
+    echo "${WHITE}11. Configure:${RESET}"
+    echo "${WHITE}    Dimension           : ${GREEN}county${RESET}"
+    echo "${WHITE}    Breakdown Dimension : ${GREEN}Count${RESET}"
+    echo "${WHITE}    Metric              : ${GREEN}Count${RESET}"
 
     echo
-    echo "${WHITE}9. Click Check my progress for:${RESET}"
-    echo "${YELLOW}   Connect BigQuery to Data Studio${RESET}"
+    echo "${WHITE}12. Click Check my progress:${RESET}"
+    echo "${YELLOW}    Connect BigQuery to Data Studio${RESET}"
 
     echo
     echo "${BLUE}${BOLD}==============================================================${RESET}"
+    echo "${CYAN}${BOLD}© ePlus.DEV${RESET}"
 }
 
 # ============================================================
@@ -1076,13 +1289,13 @@ main() {
     banner
 
     # ========================================================
-    # INPUT FIRST
+    # INPUT VALUES FIRST
     # ========================================================
 
-    ask_customer_user
+    ask_lab_inputs
 
     # ========================================================
-    # REQUIREMENTS
+    # REQUIRED COMMANDS
     # ========================================================
 
     require_cmd gcloud
@@ -1090,9 +1303,10 @@ main() {
     require_cmd jq
     require_cmd grep
     require_cmd timeout
+    require_cmd seq
 
     # ========================================================
-    # DETECT PARTNER
+    # DETECT DATA SHARING PARTNER
     # ========================================================
 
     ORIGINAL_ACCOUNT="$(get_active_account)"
@@ -1103,6 +1317,7 @@ main() {
     fi
 
     PARTNER_USER="$ORIGINAL_ACCOUNT"
+
     PARTNER_PROJECT="${DEVSHELL_PROJECT_ID:-}"
 
     if [[ -z "$PARTNER_PROJECT" ]]; then
@@ -1113,9 +1328,11 @@ main() {
 
     echo "${WHITE}Partner User    : ${CYAN}${BOLD}${PARTNER_USER}${RESET}"
     echo "${WHITE}Partner Project : ${GREEN}${BOLD}${PARTNER_PROJECT:-not detected}${RESET}"
+    echo "${WHITE}Partner View    : ${GREEN}${BOLD}${PARTNER_VIEW}${RESET}"
 
     # --------------------------------------------------------
-    # Fallback if current project is incorrect
+    # If current project is not the lab Partner project,
+    # search for demo_dataset.
     # --------------------------------------------------------
 
     if \
@@ -1130,7 +1347,7 @@ main() {
             "$PARTNER_USER" \
             "$PARTNER_DATASET" \
             PARTNER_PROJECT \
-            "Partner"
+            "Data Sharing Partner"
     fi
 
     switch_context \
@@ -1145,7 +1362,7 @@ main() {
     task1_authorize_partner_view
 
     # ========================================================
-    # LOGIN CUSTOMER
+    # CUSTOMER LOGIN
     # ========================================================
 
     ensure_login \
@@ -1179,7 +1396,7 @@ main() {
     task3_customer_view
 
     # ========================================================
-    # SWITCH BACK TO PARTNER + VERIFY TASK 4 SOURCE
+    # RETURN TO PARTNER + VERIFY TASK 4 SOURCE
     # ========================================================
 
     prepare_task4
@@ -1193,14 +1410,15 @@ main() {
     echo "${GREEN}${BOLD}║                                                              ║${RESET}"
     echo "${GREEN}${BOLD}║                    BIGQUERY TASKS COMPLETE                   ║${RESET}"
     echo "${GREEN}${BOLD}║                                                              ║${RESET}"
-    echo "${GREEN}${BOLD}║            Partner authorized view              ✓           ║${RESET}"
-    echo "${GREEN}${BOLD}║            Partner view authorization + IAM     ✓           ║${RESET}"
-    echo "${GREEN}${BOLD}║            Customer data update                 ✓           ║${RESET}"
-    echo "${GREEN}${BOLD}║            Customer authorized view             ✓           ║${RESET}"
-    echo "${GREEN}${BOLD}║            Customer view authorization + IAM    ✓           ║${RESET}"
-    echo "${GREEN}${BOLD}║            Task 4 BigQuery source verified      ✓           ║${RESET}"
+    echo "${GREEN}${BOLD}║        Partner Authorized View                    ✓          ║${RESET}"
+    echo "${GREEN}${BOLD}║        Partner View Authorization + IAM           ✓          ║${RESET}"
+    echo "${GREEN}${BOLD}║        Customer Data Update                       ✓          ║${RESET}"
+    echo "${GREEN}${BOLD}║        Customer Authorized View                   ✓          ║${RESET}"
+    echo "${GREEN}${BOLD}║        Customer View Authorization + IAM          ✓          ║${RESET}"
+    echo "${GREEN}${BOLD}║        Customer View Access From Partner          ✓          ║${RESET}"
     echo "${GREEN}${BOLD}║                                                              ║${RESET}"
     echo "${GREEN}${BOLD}║                      © ePlus.DEV                             ║${RESET}"
+    echo "${GREEN}${BOLD}║                                                              ║${RESET}"
     echo "${GREEN}${BOLD}╚══════════════════════════════════════════════════════════════╝${RESET}"
 
     echo
@@ -1208,6 +1426,10 @@ main() {
     echo "${YELLOW}${BOLD}→ Check my progress: Authorize the view and Assign IAM permissions${RESET}"
     echo "${YELLOW}${BOLD}→ Check my progress: Create the customer authorized view${RESET}"
     echo "${YELLOW}${BOLD}→ Check my progress: Authorize the view and Assign IAM permissions${RESET}"
+
+    # ========================================================
+    # IMPORTANT FINAL LOOKER INSTRUCTIONS
+    # ========================================================
 
     show_looker_steps
 }
