@@ -38,10 +38,12 @@ BOLD=`tput bold`
 RESET=`tput sgr0`
 #----------------------------------------------------start--------------------------------------------------#
 
-echo "${BG_MAGENTA}${BOLD}Starting Execution${RESET}"
+echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV${RESET}"
 
 # ===== Required Inputs =====
 echo "${MAGENTA}${BOLD}>>> Please provide required inputs <<<${RESET}"
+
+ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])" 2>/dev/null || true)
 
 read -p "${CYAN}${BOLD}Enter Cluster Name (e.g., hello-world-xxxx): ${RESET}" CLUSTER_NAME
 read -p "${CYAN}${BOLD}Enter Namespace (e.g., gmp-xxxx): ${RESET}" NAMESPACE
@@ -267,6 +269,6 @@ EOF_END
 
 gcloud alpha monitoring policies create --policy-from-file="awesome.json"
 
-echo "${BG_RED}${BOLD}Congratulations For Completing The Lab !!!${RESET}"
+echo "${BG_RED}${BOLD}Congratulations For Completing The Lab !!! - ePlus.DEV${RESET}"
 
 #-----------------------------------------------------end----------------------------------------------------------#
