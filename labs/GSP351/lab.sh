@@ -1,21 +1,15 @@
 #!/usr/bin/env bash
 
 # ============================================================
-# GSP351
-# Migrate MySQL Data to Cloud SQL using Database Migration Service
+# GSP351 - FULL AUTO
+# Migrate MySQL Data to Cloud SQL using DMS
 #
-# Usage:
-#   bash lab.sh task2
-#   bash lab.sh task3
-#   bash lab.sh task4
-#   bash lab.sh task5
-#   bash lab.sh status
+# Task 1 -> Task 2 -> Task 3 -> Task 4 -> Task 5
 #
 # © ePlus.DEV
 # ============================================================
 
 set -u
-
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
 # ============================================================
@@ -29,87 +23,121 @@ BLUE=$'\033[0;94m'
 MAGENTA=$'\033[0;95m'
 CYAN=$'\033[0;96m'
 WHITE=$'\033[0;97m'
-
 BOLD=$'\033[1m'
 RESET=$'\033[0m'
 
-# ============================================================
-# UI
-# ============================================================
-
 section() {
-  echo
-  echo "${CYAN}${BOLD}======================================================================${RESET}"
-  echo "${CYAN}${BOLD}$1${RESET}"
-  echo "${CYAN}${BOLD}======================================================================${RESET}"
+    echo
+    echo "${CYAN}${BOLD}======================================================================${RESET}"
+    echo "${CYAN}${BOLD}$1${RESET}"
+    echo "${CYAN}${BOLD}======================================================================${RESET}"
 }
 
 ok() {
-  echo "${GREEN}✓ $*${RESET}"
+    echo "${GREEN}✓ $*${RESET}"
 }
 
 warn() {
-  echo "${YELLOW}⚠ $*${RESET}"
+    echo "${YELLOW}⚠ $*${RESET}"
 }
 
 fail() {
-  echo "${RED}✗ $*${RESET}"
+    echo "${RED}✗ $*${RESET}"
 }
 
 die() {
-  fail "$*"
-  exit 1
-}
-
-banner() {
-
-  clear
-
-  echo "${MAGENTA}${BOLD}"
-  echo "╔══════════════════════════════════════════════════════════════════╗"
-  echo "║                           GSP351                               ║"
-  echo "║          MySQL → Cloud SQL Database Migration Service          ║"
-  echo "║                        © ePlus.DEV                             ║"
-  echo "╚══════════════════════════════════════════════════════════════════╝"
-  echo "${RESET}"
-}
-
-finish() {
-
-  echo
-  echo "${MAGENTA}${BOLD}======================================================================${RESET}"
-  echo "${GREEN}${BOLD}$1${RESET}"
-  echo "${MAGENTA}${BOLD}======================================================================${RESET}"
-  echo
-  echo "${WHITE}$2${RESET}"
-  echo
-  echo "${CYAN}${BOLD}© ePlus.DEV${RESET}"
-}
-
-# ============================================================
-# MODE
-# ============================================================
-
-MODE="${1:-status}"
-
-case "$MODE" in
-
-  task2|task3|task4|task5|status)
-    ;;
-
-  *)
-    echo "Usage:"
-    echo "  bash lab.sh task2"
-    echo "  bash lab.sh task3"
-    echo "  bash lab.sh task4"
-    echo "  bash lab.sh task5"
-    echo "  bash lab.sh status"
+    fail "$*"
     exit 1
-    ;;
+}
 
-esac
+# ============================================================
+# PROGRESS UI
+# ============================================================
 
-banner
+format_seconds() {
+    local total="$1"
+    printf "%02d:%02d" $((total / 60)) $((total % 60))
+}
+
+spinner_char() {
+    case $(($1 % 4)) in
+        0) printf "|" ;;
+        1) printf "/" ;;
+        2) printf "-" ;;
+        3) printf "\\" ;;
+    esac
+}
+
+progress_bar() {
+
+    local current="$1"
+    local total="$2"
+    local width="${3:-30}"
+
+    (( total <= 0 )) && total=1
+    (( current > total )) && current="$total"
+
+    local filled=$((current * width / total))
+    local empty=$((width - filled))
+
+    printf "["
+
+    if (( filled > 0 )); then
+        printf "%${filled}s" "" | tr ' ' '#'
+    fi
+
+    if (( empty > 0 )); then
+        printf "%${empty}s" "" | tr ' ' '-'
+    fi
+
+    printf "]"
+}
+
+wait_countdown() {
+
+    local total="$1"
+    local message="$2"
+
+    echo
+    echo "${YELLOW}${BOLD}$message${RESET}"
+    echo
+
+    for ((elapsed=0; elapsed<=total; elapsed++)); do
+
+        local remaining=$((total - elapsed))
+        local percent=$((elapsed * 100 / total))
+
+        printf "\r${CYAN}"
+
+        progress_bar "$elapsed" "$total" 32
+
+        printf " %3d%% | Remaining: %02ds${RESET}   " \
+            "$percent" \
+            "$remaining"
+
+        (( elapsed == total )) && break
+
+        sleep 1
+    done
+
+    echo
+    ok "$message completed."
+}
+
+# ============================================================
+# BANNER
+# ============================================================
+
+clear
+
+echo "${MAGENTA}${BOLD}"
+echo "╔══════════════════════════════════════════════════════════════════╗"
+echo "║                           GSP351                               ║"
+echo "║            FULL AUTO MYSQL → CLOUD SQL MIGRATION               ║"
+echo "║                                                                ║"
+echo "║                        © ePlus.DEV                             ║"
+echo "╚══════════════════════════════════════════════════════════════════╝"
+echo "${RESET}"
 
 # ============================================================
 # INPUT
@@ -117,29 +145,29 @@ banner
 
 section "LAB RESOURCE INPUT"
 
-echo "${WHITE}Enter the three resource names shown in the lab.${RESET}"
+echo "${WHITE}Enter the three resource names provided by the lab.${RESET}"
 echo
 
 read -r -p "$(echo "${CYAN}${BOLD}MySQL source instance                : ${RESET}")" \
-  SOURCE_VM
+    SOURCE_VM
 
 read -r -p "$(echo "${CYAN}${BOLD}Cloud SQL one-time migration target  : ${RESET}")" \
-  ONE_TIME_TARGET
+    ONE_TIME_TARGET
 
 read -r -p "$(echo "${CYAN}${BOLD}Cloud SQL continuous migration target: ${RESET}")" \
-  CONTINUOUS_TARGET
+    CONTINUOUS_TARGET
 
 [[ -z "$SOURCE_VM" ]] &&
-  die "MySQL source instance cannot be empty."
+    die "MySQL source instance is required."
 
 [[ -z "$ONE_TIME_TARGET" ]] &&
-  die "One-time Cloud SQL target cannot be empty."
+    die "One-time Cloud SQL target is required."
 
 [[ -z "$CONTINUOUS_TARGET" ]] &&
-  die "Continuous Cloud SQL target cannot be empty."
+    die "Continuous Cloud SQL target is required."
 
 [[ "$ONE_TIME_TARGET" == "$CONTINUOUS_TARGET" ]] &&
-  die "One-time and continuous destinations must be different."
+    die "One-time and continuous destinations must be different."
 
 # ============================================================
 # CONSTANTS
@@ -152,11 +180,13 @@ MYSQL_PORT="3306"
 PROJECT_ID="${DEVSHELL_PROJECT_ID:-}"
 
 if [[ -z "$PROJECT_ID" ]]; then
-  PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+    PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
 fi
 
 [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]] &&
-  die "Unable to detect Project ID."
+    die "Unable to detect Project ID."
+
+SOURCE_CP="mysql-source-profile"
 
 ONE_TIME_JOB="$ONE_TIME_TARGET"
 CONTINUOUS_JOB="$CONTINUOUS_TARGET"
@@ -171,265 +201,259 @@ CONTINUOUS_DEST_CP="${CONTINUOUS_DEST_CP:0:60}"
 # DETECT ENVIRONMENT
 # ============================================================
 
-section "Detecting Google Cloud environment"
+section "[1/10] Detecting Google Cloud environment"
 
 ZONE=$(
-  gcloud compute instances list \
-    --project="$PROJECT_ID" \
-    --filter="name=$SOURCE_VM" \
-    --format='value(zone.basename())' |
-    head -n1
+    gcloud compute instances list \
+        --project="$PROJECT_ID" \
+        --filter="name=$SOURCE_VM" \
+        --format='value(zone.basename())' |
+        head -1
 )
 
 [[ -z "$ZONE" ]] &&
-  die "Compute Engine instance not found: $SOURCE_VM"
+    die "Compute Engine instance not found: $SOURCE_VM"
 
 REGION="${ZONE%-*}"
 
 SOURCE_EXTERNAL_IP=$(
-  gcloud compute instances describe "$SOURCE_VM" \
-    --project="$PROJECT_ID" \
-    --zone="$ZONE" \
-    --format='value(networkInterfaces[0].accessConfigs[0].natIP)'
+    gcloud compute instances describe "$SOURCE_VM" \
+        --project="$PROJECT_ID" \
+        --zone="$ZONE" \
+        --format='value(networkInterfaces[0].accessConfigs[0].natIP)'
 )
 
 SOURCE_INTERNAL_IP=$(
-  gcloud compute instances describe "$SOURCE_VM" \
-    --project="$PROJECT_ID" \
-    --zone="$ZONE" \
-    --format='value(networkInterfaces[0].networkIP)'
+    gcloud compute instances describe "$SOURCE_VM" \
+        --project="$PROJECT_ID" \
+        --zone="$ZONE" \
+        --format='value(networkInterfaces[0].networkIP)'
 )
 
 NETWORK_URI=$(
-  gcloud compute instances describe "$SOURCE_VM" \
-    --project="$PROJECT_ID" \
-    --zone="$ZONE" \
-    --format='value(networkInterfaces[0].network)'
+    gcloud compute instances describe "$SOURCE_VM" \
+        --project="$PROJECT_ID" \
+        --zone="$ZONE" \
+        --format='value(networkInterfaces[0].network)'
 )
 
 NETWORK_NAME="${NETWORK_URI##*/}"
 
 [[ -z "$SOURCE_EXTERNAL_IP" ]] &&
-  die "Source VM does not have an external IP."
+    die "Source VM does not have an external IP."
 
 [[ -z "$SOURCE_INTERNAL_IP" ]] &&
-  die "Source VM does not have an internal IP."
+    die "Source VM does not have an internal IP."
 
 gcloud config set project "$PROJECT_ID" >/dev/null
 gcloud config set compute/zone "$ZONE" >/dev/null
 gcloud config set compute/region "$REGION" >/dev/null
 
-echo "${WHITE}Project                   : ${CYAN}$PROJECT_ID${RESET}"
-echo "${WHITE}Region                    : ${CYAN}$REGION${RESET}"
-echo "${WHITE}Zone                      : ${CYAN}$ZONE${RESET}"
+echo "${WHITE}Project                : ${CYAN}$PROJECT_ID${RESET}"
+echo "${WHITE}Region                 : ${CYAN}$REGION${RESET}"
+echo "${WHITE}Zone                   : ${CYAN}$ZONE${RESET}"
 echo
-echo "${WHITE}MySQL source              : ${CYAN}$SOURCE_VM${RESET}"
-echo "${WHITE}External IP               : ${CYAN}$SOURCE_EXTERNAL_IP${RESET}"
-echo "${WHITE}Internal IP               : ${CYAN}$SOURCE_INTERNAL_IP${RESET}"
-echo "${WHITE}VPC                       : ${CYAN}$NETWORK_NAME${RESET}"
+echo "${WHITE}MySQL source           : ${CYAN}$SOURCE_VM${RESET}"
+echo "${WHITE}External IP            : ${CYAN}$SOURCE_EXTERNAL_IP${RESET}"
+echo "${WHITE}Internal IP            : ${CYAN}$SOURCE_INTERNAL_IP${RESET}"
+echo "${WHITE}VPC                    : ${CYAN}$NETWORK_NAME${RESET}"
 echo
-echo "${WHITE}One-time destination      : ${GREEN}$ONE_TIME_TARGET${RESET}"
-echo "${WHITE}Continuous destination    : ${GREEN}$CONTINUOUS_TARGET${RESET}"
-echo "${WHITE}Execution mode            : ${YELLOW}$MODE${RESET}"
+echo "${WHITE}One-time destination   : ${GREEN}$ONE_TIME_TARGET${RESET}"
+echo "${WHITE}Continuous destination : ${GREEN}$CONTINUOUS_TARGET${RESET}"
 
 # ============================================================
-# VALIDATE DESTINATIONS
+# VALIDATE CLOUD SQL
 # ============================================================
 
 gcloud sql instances describe "$ONE_TIME_TARGET" \
-  --project="$PROJECT_ID" >/dev/null 2>&1 ||
-  die "Cloud SQL instance not found: $ONE_TIME_TARGET"
+    --project="$PROJECT_ID" >/dev/null 2>&1 ||
+    die "Cloud SQL instance not found: $ONE_TIME_TARGET"
 
 gcloud sql instances describe "$CONTINUOUS_TARGET" \
-  --project="$PROJECT_ID" >/dev/null 2>&1 ||
-  die "Cloud SQL instance not found: $CONTINUOUS_TARGET"
+    --project="$PROJECT_ID" >/dev/null 2>&1 ||
+    die "Cloud SQL instance not found: $CONTINUOUS_TARGET"
 
 # ============================================================
-# FIND EXISTING SOURCE CONNECTION PROFILE
+# HELPERS
 # ============================================================
 
-SOURCE_CP="mysql-source-profile"
+profile_exists() {
 
-if ! gcloud database-migration connection-profiles describe "$SOURCE_CP" \
-    --region="$REGION" \
-    --project="$PROJECT_ID" >/dev/null 2>&1; then
-
-  while read -r cp; do
-
-    [[ -z "$cp" ]] && continue
-
-    HOST=$(
-      gcloud database-migration connection-profiles describe "$cp" \
+    gcloud database-migration connection-profiles describe "$1" \
         --region="$REGION" \
         --project="$PROJECT_ID" \
-        --format='value(mysql.host)' \
-        2>/dev/null || true
-    )
-
-    if [[ "$HOST" == "$SOURCE_EXTERNAL_IP" ||
-          "$HOST" == "$SOURCE_INTERNAL_IP" ]]; then
-
-      SOURCE_CP="$cp"
-      break
-    fi
-
-  done < <(
-    gcloud database-migration connection-profiles list \
-      --region="$REGION" \
-      --project="$PROJECT_ID" \
-      --format='value(name.basename())' \
-      2>/dev/null
-  )
-fi
-
-echo "${WHITE}Source connection profile : ${CYAN}$SOURCE_CP${RESET}"
-
-# ============================================================
-# GENERIC DMS HELPERS
-# ============================================================
+        >/dev/null 2>&1
+}
 
 job_exists() {
 
-  gcloud database-migration migration-jobs describe "$1" \
-    --region="$REGION" \
-    --project="$PROJECT_ID" >/dev/null 2>&1
+    gcloud database-migration migration-jobs describe "$1" \
+        --region="$REGION" \
+        --project="$PROJECT_ID" \
+        >/dev/null 2>&1
 }
 
 job_state() {
 
-  gcloud database-migration migration-jobs describe "$1" \
-    --region="$REGION" \
-    --project="$PROJECT_ID" \
-    --format='value(state)' \
-    2>/dev/null || true
+    gcloud database-migration migration-jobs describe "$1" \
+        --region="$REGION" \
+        --project="$PROJECT_ID" \
+        --format='value(state)' \
+        2>/dev/null || true
 }
 
 job_phase() {
 
-  gcloud database-migration migration-jobs describe "$1" \
-    --region="$REGION" \
-    --project="$PROJECT_ID" \
-    --format='value(phase)' \
-    2>/dev/null || true
-}
-
-profile_exists() {
-
-  gcloud database-migration connection-profiles describe "$1" \
-    --region="$REGION" \
-    --project="$PROJECT_ID" >/dev/null 2>&1
+    gcloud database-migration migration-jobs describe "$1" \
+        --region="$REGION" \
+        --project="$PROJECT_ID" \
+        --format='value(phase)' \
+        2>/dev/null || true
 }
 
 source_profile_host() {
 
-  gcloud database-migration connection-profiles describe "$SOURCE_CP" \
-    --region="$REGION" \
-    --project="$PROJECT_ID" \
-    --format='value(mysql.host)' \
-    2>/dev/null || true
+    gcloud database-migration connection-profiles describe "$SOURCE_CP" \
+        --region="$REGION" \
+        --project="$PROJECT_ID" \
+        --format='value(mysql.host)' \
+        2>/dev/null || true
 }
 
 # ============================================================
-# WAIT DMS LONG-RUNNING OPERATION
+# DMS OPERATION WAIT
 # ============================================================
 
 wait_operation() {
 
-  local operation="$1"
+    local operation="$1"
 
-  [[ -z "$operation" ]] && return 0
+    [[ -z "$operation" ]] && return 0
 
-  local op_id="${operation##*/}"
+    local op_id="${operation##*/}"
+    local elapsed=0
+    local interval=5
+    local timeout=1800
 
-  echo "${YELLOW}Waiting for DMS operation: $op_id${RESET}"
+    echo
+    echo "${YELLOW}Waiting for DMS operation${RESET}"
+    echo "${WHITE}Operation : ${CYAN}$op_id${RESET}"
+    echo "${WHITE}Refresh   : ${CYAN}every ${interval}s${RESET}"
+    echo
 
-  for ((i=1; i<=360; i++)); do
+    while (( elapsed <= timeout )); do
 
-    local done
-    local err
+        local done
+        local err
+        local spin
 
-    done=$(
-      gcloud database-migration operations describe "$op_id" \
-        --region="$REGION" \
-        --project="$PROJECT_ID" \
-        --format='value(done)' \
-        2>/dev/null || true
-    )
+        done=$(
+            gcloud database-migration operations describe "$op_id" \
+                --region="$REGION" \
+                --project="$PROJECT_ID" \
+                --format='value(done)' \
+                2>/dev/null || true
+        )
 
-    err=$(
-      gcloud database-migration operations describe "$op_id" \
-        --region="$REGION" \
-        --project="$PROJECT_ID" \
-        --format='value(error.message)' \
-        2>/dev/null || true
-    )
+        err=$(
+            gcloud database-migration operations describe "$op_id" \
+                --region="$REGION" \
+                --project="$PROJECT_ID" \
+                --format='value(error.message)' \
+                2>/dev/null || true
+        )
 
-    if [[ -n "$err" ]]; then
-      echo
-      fail "DMS operation failed:"
-      echo "$err"
-      return 1
-    fi
+        if [[ -n "$err" ]]; then
 
-    if [[ "$done" == "True" ||
-          "$done" == "true" ]]; then
+            echo
+            echo
 
-      echo
-      ok "DMS operation completed."
-      return 0
-    fi
+            fail "DMS operation failed:"
+            echo "$err"
 
-    printf "\r${YELLOW}DMS operation in progress... %-3d${RESET}" "$i"
+            return 1
+        fi
 
-    sleep 5
-  done
+        if [[ "$done" == "True" || "$done" == "true" ]]; then
 
-  echo
-  fail "Timeout waiting for DMS operation."
+            echo
+            echo
 
-  return 1
+            ok "DMS operation completed after $(format_seconds "$elapsed")."
+
+            return 0
+        fi
+
+        spin=$(spinner_char $((elapsed / interval)))
+
+        printf "\r${YELLOW}%s DMS is working | Elapsed: %s | Next check: %ss${RESET}   " \
+            "$spin" \
+            "$(format_seconds "$elapsed")" \
+            "$interval"
+
+        sleep "$interval"
+
+        elapsed=$((elapsed + interval))
+    done
+
+    echo
+    echo
+
+    fail "DMS operation timeout after $(format_seconds "$timeout")."
+
+    return 1
 }
 
 # ============================================================
 # DMS ACTION
 #
 # IMPORTANT:
-# demote-destination / verify / start / restart /
-# resume / promote do NOT use --no-async here.
+# No --no-async for:
+# demote-destination
+# verify
+# start
+# restart
+# resume
+# promote
 # ============================================================
 
 dms_action() {
 
-  local action="$1"
-  local job="$2"
+    local action="$1"
+    local job="$2"
 
-  local error_file="/tmp/gsp351-${action}-${job}.err"
-  local operation=""
+    local error_file="/tmp/gsp351-${action}-${job}.err"
+    local operation=""
 
-  echo "${YELLOW}${action}: $job${RESET}"
+    echo
+    echo "${YELLOW}${BOLD}DMS action: $action${RESET}"
+    echo "${WHITE}Migration job: ${CYAN}$job${RESET}"
 
-  operation=$(
-    gcloud database-migration migration-jobs "$action" "$job" \
-      --region="$REGION" \
-      --project="$PROJECT_ID" \
-      --quiet \
-      --format='value(name)' \
-      2>"$error_file"
-  )
+    operation=$(
+        gcloud database-migration migration-jobs "$action" "$job" \
+            --region="$REGION" \
+            --project="$PROJECT_ID" \
+            --quiet \
+            --format='value(name)' \
+            2>"$error_file"
+    )
 
-  local rc=$?
+    local rc=$?
 
-  if [[ $rc -ne 0 ]]; then
-    fail "DMS action '$action' failed."
-    cat "$error_file"
-    return "$rc"
-  fi
+    if [[ $rc -ne 0 ]]; then
 
-  if [[ -n "$operation" ]]; then
-    wait_operation "$operation" || return 1
-  fi
+        fail "DMS action '$action' failed."
 
-  return 0
+        cat "$error_file"
+
+        return "$rc"
+    fi
+
+    if [[ -n "$operation" ]]; then
+        wait_operation "$operation" || return 1
+    fi
+
+    return 0
 }
 
 # ============================================================
@@ -438,50 +462,72 @@ dms_action() {
 
 wait_for_state() {
 
-  local job="$1"
-  local wanted="$2"
+    local job="$1"
+    local expected="$2"
 
-  echo
+    local elapsed=0
+    local interval=5
+    local timeout=1800
 
-  for ((i=1; i<=360; i++)); do
+    echo
+    echo "${YELLOW}Waiting for migration job state${RESET}"
+    echo "${WHITE}Job      : ${CYAN}$job${RESET}"
+    echo "${WHITE}Expected : ${GREEN}$expected${RESET}"
+    echo
 
-    local state
-    local phase
+    while (( elapsed <= timeout )); do
 
-    state=$(job_state "$job")
-    phase=$(job_phase "$job")
+        local state
+        local phase
+        local spin
 
-    printf "\r${YELLOW}Job %-28s State: %-18s Phase: %-22s${RESET}" \
-      "$job" \
-      "${state:-UNKNOWN}" \
-      "${phase:-N/A}"
+        state=$(job_state "$job")
+        phase=$(job_phase "$job")
 
-    if [[ "$state" == "$wanted" ]]; then
-      echo
-      ok "$job reached state $wanted."
-      return 0
-    fi
+        spin=$(spinner_char $((elapsed / interval)))
 
-    if [[ "$state" == "FAILED" ]]; then
+        printf "\r${YELLOW}%s State: %-18s | Phase: %-22s | Elapsed: %s${RESET}   " \
+            "$spin" \
+            "${state:-UNKNOWN}" \
+            "${phase:-N/A}" \
+            "$(format_seconds "$elapsed")"
 
-      echo
-      fail "$job entered FAILED state."
+        if [[ "$state" == "$expected" ]]; then
 
-      gcloud database-migration migration-jobs describe "$job" \
-        --region="$REGION" \
-        --project="$PROJECT_ID" \
-        --format='yaml(state,phase,error)'
+            echo
+            echo
 
-      return 1
-    fi
+            ok "$job reached $expected after $(format_seconds "$elapsed")."
 
-    sleep 5
-  done
+            return 0
+        fi
 
-  echo
-  fail "Timeout waiting for migration job."
+        if [[ "$state" == "FAILED" ]]; then
 
-  return 1
+            echo
+            echo
+
+            fail "$job entered FAILED state."
+
+            gcloud database-migration migration-jobs describe "$job" \
+                --region="$REGION" \
+                --project="$PROJECT_ID" \
+                --format='yaml(state,phase,error)'
+
+            return 1
+        fi
+
+        sleep "$interval"
+
+        elapsed=$((elapsed + interval))
+    done
+
+    echo
+    echo
+
+    fail "Timeout waiting for $job -> $expected."
+
+    return 1
 }
 
 # ============================================================
@@ -490,131 +536,148 @@ wait_for_state() {
 
 wait_for_cdc() {
 
-  local job="$1"
+    local job="$1"
 
-  echo
-  echo "${YELLOW}Waiting for continuous migration to reach CDC...${RESET}"
+    local elapsed=0
+    local interval=5
+    local timeout=1800
 
-  for ((i=1; i<=360; i++)); do
+    echo
+    echo "${YELLOW}${BOLD}Waiting for continuous migration${RESET}"
+    echo "${WHITE}Target phase: ${CYAN}FULL_DUMP → CDC${RESET}"
+    echo
+    echo "${WHITE}The terminal refreshes every 5 seconds.${RESET}"
+    echo
 
-    local state
-    local phase
+    while (( elapsed <= timeout )); do
 
-    state=$(job_state "$job")
-    phase=$(job_phase "$job")
+        local state
+        local phase
+        local spin
 
-    printf "\r${YELLOW}Job %-28s State: %-18s Phase: %-22s${RESET}" \
-      "$job" \
-      "${state:-UNKNOWN}" \
-      "${phase:-N/A}"
+        state=$(job_state "$job")
+        phase=$(job_phase "$job")
 
-    if [[ "$state" == "RUNNING" &&
-          "$phase" == "CDC" ]]; then
+        spin=$(spinner_char $((elapsed / interval)))
 
-      echo
-      ok "Continuous migration is RUNNING / CDC."
-      return 0
-    fi
+        printf "\r${YELLOW}%s State: %-18s | Phase: %-22s | Elapsed: %s${RESET}   " \
+            "$spin" \
+            "${state:-UNKNOWN}" \
+            "${phase:-N/A}" \
+            "$(format_seconds "$elapsed")"
 
-    if [[ "$state" == "FAILED" ]]; then
+        if [[ "$state" == "RUNNING" &&
+              "$phase" == "CDC" ]]; then
 
-      echo
-      fail "Continuous migration FAILED."
+            echo
+            echo
 
-      gcloud database-migration migration-jobs describe "$job" \
-        --region="$REGION" \
-        --project="$PROJECT_ID" \
-        --format='yaml(state,phase,error)'
+            ok "Continuous migration reached RUNNING / CDC after $(format_seconds "$elapsed")."
 
-      return 1
-    fi
+            return 0
+        fi
 
-    if [[ "$state" == "COMPLETED" ]]; then
+        if [[ "$state" == "FAILED" ]]; then
 
-      echo
-      warn "Continuous migration has already been promoted."
-      return 2
-    fi
+            echo
+            echo
 
-    sleep 5
-  done
+            fail "Continuous migration FAILED."
 
-  echo
-  fail "Continuous migration did not reach CDC."
+            gcloud database-migration migration-jobs describe "$job" \
+                --region="$REGION" \
+                --project="$PROJECT_ID" \
+                --format='yaml(state,phase,error)'
 
-  return 1
-}
+            return 1
+        fi
 
-# ============================================================
-# SOURCE PROFILE
-# ============================================================
+        if [[ "$state" == "COMPLETED" ]]; then
 
-create_source_profile() {
+            echo
+            echo
 
-  if profile_exists "$SOURCE_CP"; then
-    ok "Source connection profile already exists: $SOURCE_CP"
-    return 0
-  fi
+            warn "Continuous migration is already COMPLETED."
 
-  echo "${YELLOW}Creating MySQL source connection profile...${RESET}"
+            return 2
+        fi
 
-  gcloud database-migration connection-profiles create mysql "$SOURCE_CP" \
-    --region="$REGION" \
-    --project="$PROJECT_ID" \
-    --display-name="MySQL Source Profile" \
-    --host="$SOURCE_EXTERNAL_IP" \
-    --port="$MYSQL_PORT" \
-    --username="$MYSQL_USER" \
-    --password="$MYSQL_PASSWORD" \
-    --ssl-type=NONE \
-    --no-async \
-    --quiet ||
+        sleep "$interval"
+
+        elapsed=$((elapsed + interval))
+    done
+
+    echo
+    echo
+
+    fail "Continuous migration did not reach CDC."
+
     return 1
-
-  ok "Source connection profile created."
-
-  return 0
 }
+
+# ============================================================
+# SOURCE PROFILE UPDATE
+# ============================================================
 
 set_source_host() {
 
-  local wanted_host="$1"
-  local current_host
+    local wanted="$1"
+    local current
 
-  current_host=$(source_profile_host)
+    current=$(source_profile_host)
 
-  if [[ "$current_host" == "$wanted_host" ]]; then
-    ok "Source profile already uses $wanted_host"
-    return 0
-  fi
+    if [[ "$current" == "$wanted" ]]; then
 
-  echo "${YELLOW}Updating source connection profile -> $wanted_host${RESET}"
+        ok "Source connection profile already uses $wanted"
 
-  gcloud database-migration connection-profiles update "$SOURCE_CP" \
-    --region="$REGION" \
-    --project="$PROJECT_ID" \
-    --host="$wanted_host" \
-    --port="$MYSQL_PORT" \
-    --username="$MYSQL_USER" \
-    --password="$MYSQL_PASSWORD" \
-    --quiet >/dev/null ||
-    return 1
-
-  for ((i=1; i<=60; i++)); do
-
-    current_host=$(source_profile_host)
-
-    if [[ "$current_host" == "$wanted_host" ]]; then
-      ok "Source profile host: $wanted_host"
-      return 0
+        return 0
     fi
 
-    sleep 2
-  done
+    echo
+    echo "${YELLOW}Updating source connection profile${RESET}"
+    echo "${WHITE}New host: ${CYAN}$wanted${RESET}"
 
-  fail "Unable to confirm source profile update."
+    gcloud database-migration connection-profiles update "$SOURCE_CP" \
+        --region="$REGION" \
+        --project="$PROJECT_ID" \
+        --host="$wanted" \
+        --port="$MYSQL_PORT" \
+        --username="$MYSQL_USER" \
+        --password="$MYSQL_PASSWORD" \
+        --quiet >/dev/null ||
+        return 1
 
-  return 1
+    local elapsed=0
+
+    for ((i=1; i<=60; i++)); do
+
+        current=$(source_profile_host)
+
+        if [[ "$current" == "$wanted" ]]; then
+
+            echo
+            ok "Source connection profile updated to $wanted."
+
+            return 0
+        fi
+
+        local spin
+        spin=$(spinner_char "$i")
+
+        printf "\r${YELLOW}%s Propagating source profile... Elapsed: %02ds${RESET}   " \
+            "$spin" \
+            "$elapsed"
+
+        sleep 2
+
+        elapsed=$((elapsed + 2))
+    done
+
+    echo
+
+    fail "Unable to confirm source profile update."
+
+    return 1
 }
 
 # ============================================================
@@ -623,93 +686,98 @@ set_source_host() {
 
 create_destination_profile() {
 
-  local profile="$1"
-  local instance="$2"
-  local display_name="$3"
+    local profile="$1"
+    local instance="$2"
+    local display_name="$3"
 
-  if profile_exists "$profile"; then
-    ok "Destination profile already exists: $profile"
+    if profile_exists "$profile"; then
+
+        ok "Destination connection profile already exists: $profile"
+
+        return 0
+    fi
+
+    echo
+    echo "${YELLOW}Creating destination connection profile${RESET}"
+    echo "${WHITE}Profile  : ${CYAN}$profile${RESET}"
+    echo "${WHITE}Instance : ${CYAN}$instance${RESET}"
+
+    gcloud database-migration connection-profiles create mysql "$profile" \
+        --region="$REGION" \
+        --project="$PROJECT_ID" \
+        --display-name="$display_name" \
+        --cloudsql-instance="$instance" \
+        --no-async \
+        --quiet ||
+        return 1
+
+    ok "Destination connection profile created: $profile"
+
     return 0
-  fi
-
-  echo "${YELLOW}Creating destination connection profile: $profile${RESET}"
-
-  gcloud database-migration connection-profiles create mysql "$profile" \
-    --region="$REGION" \
-    --project="$PROJECT_ID" \
-    --display-name="$display_name" \
-    --cloudsql-instance="$instance" \
-    --no-async \
-    --quiet ||
-    return 1
-
-  ok "Destination connection profile created."
-
-  return 0
 }
 
 # ============================================================
-# DEMOTE EXISTING CLOUD SQL
+# DEMOTE
 # ============================================================
 
-demote_destination_if_required() {
+demote_destination() {
 
-  local job="$1"
-  local instance="$2"
+    local job="$1"
+    local instance="$2"
 
-  local instance_type
+    local instance_type
 
-  instance_type=$(
-    gcloud sql instances describe "$instance" \
-      --project="$PROJECT_ID" \
-      --format='value(instanceType)' \
-      2>/dev/null || true
-  )
+    instance_type=$(
+        gcloud sql instances describe "$instance" \
+            --project="$PROJECT_ID" \
+            --format='value(instanceType)' \
+            2>/dev/null || true
+    )
 
-  if [[ "$instance_type" == "READ_REPLICA_INSTANCE" ]]; then
-    ok "$instance is already demoted."
+    if [[ "$instance_type" == "READ_REPLICA_INSTANCE" ]]; then
+
+        ok "$instance is already demoted."
+
+        return 0
+    fi
+
+    echo
+    echo "${YELLOW}${BOLD}Demoting existing Cloud SQL destination${RESET}"
+    echo "${WHITE}Instance: ${CYAN}$instance${RESET}"
+
+    dms_action demote-destination "$job" ||
+        return 1
+
+    ok "Destination demotion completed."
+
     return 0
-  fi
-
-  echo "${YELLOW}Demoting existing Cloud SQL destination...${RESET}"
-
-  dms_action demote-destination "$job" ||
-    return 1
-
-  ok "Destination demotion completed."
-
-  return 0
 }
 
 # ============================================================
-# MYSQL QUERY ON SOURCE
+# SOURCE MYSQL QUERY
 # ============================================================
 
 source_query() {
 
-  local sql="$1"
+    local sql="$1"
 
-  gcloud compute ssh "$SOURCE_VM" \
-    --project="$PROJECT_ID" \
-    --zone="$ZONE" \
-    --quiet \
-    --command="
-      MYSQL_PWD='$MYSQL_PASSWORD' \
-      mysql \
-        -u'$MYSQL_USER' \
-        -Nse \"$sql\"
-    "
+    gcloud compute ssh "$SOURCE_VM" \
+        --project="$PROJECT_ID" \
+        --zone="$ZONE" \
+        --quiet \
+        --command="
+            MYSQL_PWD='$MYSQL_PASSWORD' \
+            mysql -u'$MYSQL_USER' -Nse \"$sql\"
+        " 2>/dev/null
 }
 
 # ============================================================
-# REQUIRED APIS
+# TASK PREPARATION
 # ============================================================
 
-enable_apis() {
+section "[2/10] Preparing Google Cloud APIs"
 
-  section "Preparing Google Cloud APIs"
-
-  gcloud services enable \
+gcloud services enable \
     datamigration.googleapis.com \
     sqladmin.googleapis.com \
     compute.googleapis.com \
@@ -717,630 +785,562 @@ enable_apis() {
     --project="$PROJECT_ID" \
     --quiet
 
-  ok "Required APIs enabled."
-}
+ok "Required APIs enabled."
 
 # ============================================================
 # FIREWALL
 # ============================================================
 
-ensure_firewall() {
+section "[3/10] Preparing MySQL network access"
 
-  section "Preparing MySQL network access"
+FW_RULE="dms-mysql-source-3306"
+VM_TAG="dms-mysql-source"
 
-  local fw_rule="dms-mysql-source-3306"
-  local vm_tag="dms-mysql-source"
-
-  gcloud compute instances add-tags "$SOURCE_VM" \
+gcloud compute instances add-tags "$SOURCE_VM" \
     --project="$PROJECT_ID" \
     --zone="$ZONE" \
-    --tags="$vm_tag" \
+    --tags="$VM_TAG" \
     --quiet >/dev/null 2>&1 || true
 
-  if gcloud compute firewall-rules describe "$fw_rule" \
-      --project="$PROJECT_ID" >/dev/null 2>&1; then
+if gcloud compute firewall-rules describe "$FW_RULE" \
+    --project="$PROJECT_ID" >/dev/null 2>&1; then
 
-    ok "Firewall rule already exists."
-    return 0
-  fi
+    ok "Firewall rule already exists: $FW_RULE"
 
-  gcloud compute firewall-rules create "$fw_rule" \
-    --project="$PROJECT_ID" \
-    --network="$NETWORK_NAME" \
-    --direction=INGRESS \
-    --priority=1000 \
-    --action=ALLOW \
-    --rules=tcp:3306 \
-    --source-ranges=0.0.0.0/0 \
-    --target-tags="$vm_tag" \
-    --quiet ||
-    return 1
+else
 
-  ok "MySQL TCP/3306 firewall rule created."
+    echo "${YELLOW}Creating MySQL TCP/3306 firewall rule...${RESET}"
 
-  return 0
-}
+    gcloud compute firewall-rules create "$FW_RULE" \
+        --project="$PROJECT_ID" \
+        --network="$NETWORK_NAME" \
+        --direction=INGRESS \
+        --priority=1000 \
+        --action=ALLOW \
+        --rules=tcp:3306 \
+        --source-ranges=0.0.0.0/0 \
+        --target-tags="$VM_TAG" \
+        --quiet ||
+        die "Unable to create firewall rule."
+
+    ok "MySQL firewall rule created."
+fi
 
 # ============================================================
-# STATUS
+# TASK 1
 # ============================================================
 
-show_status() {
+section "[4/10] TASK 1 - MySQL source connection profile"
 
-  section "DATABASE MIGRATION STATUS"
+if ! profile_exists "$SOURCE_CP"; then
 
-  echo "${BOLD}Connection profiles${RESET}"
-  echo
+    echo "${YELLOW}Creating MySQL source connection profile...${RESET}"
 
-  gcloud database-migration connection-profiles list \
-    --region="$REGION" \
-    --project="$PROJECT_ID" \
-    --format='table(displayName,name.basename(),state)' \
-    2>/dev/null || true
+    gcloud database-migration connection-profiles create mysql "$SOURCE_CP" \
+        --region="$REGION" \
+        --project="$PROJECT_ID" \
+        --display-name="MySQL Source Profile" \
+        --host="$SOURCE_EXTERNAL_IP" \
+        --port="$MYSQL_PORT" \
+        --username="$MYSQL_USER" \
+        --password="$MYSQL_PASSWORD" \
+        --ssl-type=NONE \
+        --no-async \
+        --quiet ||
+        die "Unable to create source connection profile."
 
-  echo
-  echo "${BOLD}Migration jobs${RESET}"
-  echo
+    ok "Source connection profile created."
 
-  gcloud database-migration migration-jobs list \
-    --region="$REGION" \
-    --project="$PROJECT_ID" \
-    --format='table(displayName,type,state,phase)' \
-    2>/dev/null || true
+else
 
-  echo
-  echo "${BOLD}Cloud SQL instances${RESET}"
-  echo
+    ok "Source connection profile already exists: $SOURCE_CP"
 
-  gcloud sql instances list \
-    --project="$PROJECT_ID" \
-    --filter="name=($ONE_TIME_TARGET $CONTINUOUS_TARGET)" \
-    --format='table(name,instanceType,state,region,databaseVersion)' \
-    2>/dev/null || true
+fi
 
-  echo
-  echo "${CYAN}${BOLD}© ePlus.DEV${RESET}"
-}
+# Task 1 + Task 2 require EXTERNAL IP.
+
+set_source_host "$SOURCE_EXTERNAL_IP" ||
+    die "Unable to configure source external IP."
+
+ok "TASK 1 configured using EXTERNAL IP."
+
+echo
+echo "${YELLOW}Checking source customers_data database...${RESET}"
+
+SOURCE_COUNT=$(
+    source_query \
+        "SELECT COUNT(*) FROM customers_data.customers;" |
+        tail -1
+)
+
+echo "${WHITE}customers_data.customers : ${CYAN}${SOURCE_COUNT:-UNKNOWN}${RESET}"
+
+if [[ "$SOURCE_COUNT" == "5030" ]]; then
+    ok "Source database contains 5030 customers."
+else
+    warn "Expected 5030 rows. Current result: ${SOURCE_COUNT:-UNKNOWN}"
+fi
 
 # ============================================================
 # TASK 2
-#
-# Includes ensuring Task 1 source profile is correctly configured.
-# Stops after one-time job becomes COMPLETED.
 # ============================================================
 
-run_task2() {
+section "[5/10] TASK 2 - One-time migration using external IP"
 
-  enable_apis
-
-  ensure_firewall ||
-    die "Unable to prepare source firewall."
-
-  section "TASK 1 - Source MySQL connection profile"
-
-  create_source_profile ||
-    die "Unable to create source connection profile."
-
-  # Task 1 + Task 2 use EXTERNAL IP.
-  set_source_host "$SOURCE_EXTERNAL_IP" ||
-    die "Unable to configure source external IP."
-
-  echo
-  echo "${YELLOW}Checking source database...${RESET}"
-
-  local source_count
-
-  source_count=$(
-    source_query \
-      "SELECT COUNT(*) FROM customers_data.customers;" |
-      tail -n1
-  )
-
-  echo "${WHITE}customers_data.customers : ${CYAN}${source_count:-UNKNOWN}${RESET}"
-
-  if [[ "$source_count" == "5030" ]]; then
-    ok "Source row count = 5030."
-  else
-    warn "Expected row count is 5030."
-  fi
-
-  section "TASK 2 - One-time migration"
-
-  create_destination_profile \
+create_destination_profile \
     "$ONE_TIME_DEST_CP" \
     "$ONE_TIME_TARGET" \
     "One Time Destination" ||
     die "Unable to create one-time destination profile."
 
-  if ! job_exists "$ONE_TIME_JOB"; then
+if ! job_exists "$ONE_TIME_JOB"; then
 
-    echo "${YELLOW}Creating one-time migration job...${RESET}"
+    echo
+    echo "${YELLOW}Creating ONE_TIME migration job...${RESET}"
 
     gcloud database-migration migration-jobs create "$ONE_TIME_JOB" \
-      --region="$REGION" \
-      --project="$PROJECT_ID" \
-      --display-name="$ONE_TIME_JOB" \
-      --type=ONE_TIME \
-      --source="$SOURCE_CP" \
-      --destination="$ONE_TIME_DEST_CP" \
-      --static-ip \
-      --no-async \
-      --quiet ||
-      die "Unable to create one-time migration job."
+        --region="$REGION" \
+        --project="$PROJECT_ID" \
+        --display-name="$ONE_TIME_JOB" \
+        --type=ONE_TIME \
+        --source="$SOURCE_CP" \
+        --destination="$ONE_TIME_DEST_CP" \
+        --static-ip \
+        --no-async \
+        --quiet ||
+        die "Unable to create one-time migration job."
 
     ok "One-time migration job created."
 
-  else
+else
 
-    warn "One-time migration job already exists."
+    ok "One-time migration job already exists: $ONE_TIME_JOB"
 
-  fi
+fi
 
-  local state
+ONE_STATE=$(job_state "$ONE_TIME_JOB")
+ONE_PHASE=$(job_phase "$ONE_TIME_JOB")
 
-  state=$(job_state "$ONE_TIME_JOB")
+echo
+echo "${WHITE}Current state : ${CYAN}${ONE_STATE:-UNKNOWN}${RESET}"
+echo "${WHITE}Current phase : ${CYAN}${ONE_PHASE:-N/A}${RESET}"
 
-  echo "${WHITE}Current state: ${YELLOW}${state:-UNKNOWN}${RESET}"
-
-  case "$state" in
+case "$ONE_STATE" in
 
     COMPLETED)
 
-      ok "One-time migration is already COMPLETED."
-      ;;
+        ok "One-time migration is already COMPLETED."
+        ;;
 
     NOT_STARTED|DRAFT)
 
-      demote_destination_if_required \
-        "$ONE_TIME_JOB" \
-        "$ONE_TIME_TARGET" ||
-        die "Unable to demote one-time destination."
+        demote_destination \
+            "$ONE_TIME_JOB" \
+            "$ONE_TIME_TARGET" ||
+            die "Unable to demote one-time destination."
 
-      echo
-      echo "${YELLOW}Verifying one-time migration job...${RESET}"
+        echo
+        echo "${YELLOW}Verifying one-time migration job...${RESET}"
 
-      dms_action verify "$ONE_TIME_JOB" ||
-        die "One-time migration verification failed."
+        dms_action verify "$ONE_TIME_JOB" ||
+            die "One-time migration verification failed."
 
-      echo
-      echo "${YELLOW}Starting one-time migration...${RESET}"
+        echo
+        echo "${YELLOW}Starting one-time migration...${RESET}"
 
-      dms_action start "$ONE_TIME_JOB" ||
-        die "Unable to start one-time migration."
+        dms_action start "$ONE_TIME_JOB" ||
+            die "Unable to start one-time migration."
 
-      wait_for_state "$ONE_TIME_JOB" "COMPLETED" ||
-        die "One-time migration did not complete."
+        wait_for_state "$ONE_TIME_JOB" "COMPLETED" ||
+            die "One-time migration failed."
 
-      ;;
+        ;;
 
     RUNNING|STARTING)
 
-      warn "One-time migration is already running."
+        warn "One-time migration is already running."
 
-      wait_for_state "$ONE_TIME_JOB" "COMPLETED" ||
-        die "One-time migration did not complete."
+        wait_for_state "$ONE_TIME_JOB" "COMPLETED" ||
+            die "One-time migration failed."
 
-      ;;
+        ;;
 
     FAILED)
 
-      warn "Restarting failed one-time migration."
+        warn "Restarting failed one-time migration."
 
-      dms_action restart "$ONE_TIME_JOB" ||
-        die "Unable to restart one-time migration."
+        dms_action restart "$ONE_TIME_JOB" ||
+            die "Unable to restart one-time migration."
 
-      wait_for_state "$ONE_TIME_JOB" "COMPLETED" ||
-        die "One-time migration did not complete."
+        wait_for_state "$ONE_TIME_JOB" "COMPLETED" ||
+            die "One-time migration failed."
 
-      ;;
+        ;;
 
     STOPPED)
 
-      warn "Restarting stopped one-time migration."
+        warn "Restarting stopped one-time migration."
 
-      dms_action restart "$ONE_TIME_JOB" ||
-        die "Unable to restart one-time migration."
+        dms_action restart "$ONE_TIME_JOB" ||
+            die "Unable to restart one-time migration."
 
-      wait_for_state "$ONE_TIME_JOB" "COMPLETED" ||
-        die "One-time migration did not complete."
+        wait_for_state "$ONE_TIME_JOB" "COMPLETED" ||
+            die "One-time migration failed."
 
-      ;;
+        ;;
 
     *)
 
-      die "Unexpected one-time job state: $state"
-      ;;
+        die "Unexpected one-time migration state: $ONE_STATE"
+        ;;
+esac
 
-  esac
-
-  # Keep Task 1/2 profile on EXTERNAL IP.
-  set_source_host "$SOURCE_EXTERNAL_IP" ||
-    die "Unable to restore source external IP."
-
-  echo
-  gcloud database-migration migration-jobs describe "$ONE_TIME_JOB" \
-    --region="$REGION" \
-    --project="$PROJECT_ID" \
-    --format='yaml(displayName,type,state,phase,staticIpConnectivity)'
-
-  finish \
-    "TASK 1 + TASK 2 COMPLETE" \
-    "One-time migration is COMPLETED. Check Task 1 and Task 2 in the lab before running Task 3."
-}
+ok "TASK 2 one-time migration COMPLETED."
 
 # ============================================================
 # TASK 3
-#
-# Continuous migration with VPC Peering.
-# Stops while job is RUNNING / CDC.
 # ============================================================
 
-run_task3() {
+section "[6/10] TASK 3 - Continuous migration using VPC Peering"
 
-  section "TASK 3 - Continuous migration using VPC Peering"
+echo "${WHITE}Switching the SAME source connection profile:${RESET}"
+echo "${WHITE}$SOURCE_EXTERNAL_IP → ${CYAN}$SOURCE_INTERNAL_IP${RESET}"
+echo
 
-  if ! job_exists "$ONE_TIME_JOB"; then
-    die "Task 2 migration job does not exist."
-  fi
-
-  if [[ "$(job_state "$ONE_TIME_JOB")" != "COMPLETED" ]]; then
-    die "Task 2 is not completed yet."
-  fi
-
-  create_source_profile ||
-    die "Unable to locate/create source connection profile."
-
-  # Same connection profile, PRIVATE IP for VPC Peering.
-  set_source_host "$SOURCE_INTERNAL_IP" ||
+set_source_host "$SOURCE_INTERNAL_IP" ||
     die "Unable to configure source internal IP."
 
-  create_destination_profile \
+create_destination_profile \
     "$CONTINUOUS_DEST_CP" \
     "$CONTINUOUS_TARGET" \
     "Continuous Destination" ||
     die "Unable to create continuous destination profile."
 
-  if ! job_exists "$CONTINUOUS_JOB"; then
+if ! job_exists "$CONTINUOUS_JOB"; then
 
-    echo "${YELLOW}Creating continuous migration job...${RESET}"
+    echo
+    echo "${YELLOW}Creating CONTINUOUS migration job...${RESET}"
+    echo "${WHITE}Connectivity: ${CYAN}VPC Peering${RESET}"
 
     gcloud database-migration migration-jobs create "$CONTINUOUS_JOB" \
-      --region="$REGION" \
-      --project="$PROJECT_ID" \
-      --display-name="$CONTINUOUS_JOB" \
-      --type=CONTINUOUS \
-      --source="$SOURCE_CP" \
-      --destination="$CONTINUOUS_DEST_CP" \
-      --peer-vpc="$NETWORK_URI" \
-      --no-async \
-      --quiet ||
-      die "Unable to create continuous migration job."
+        --region="$REGION" \
+        --project="$PROJECT_ID" \
+        --display-name="$CONTINUOUS_JOB" \
+        --type=CONTINUOUS \
+        --source="$SOURCE_CP" \
+        --destination="$CONTINUOUS_DEST_CP" \
+        --peer-vpc="$NETWORK_URI" \
+        --no-async \
+        --quiet ||
+        die "Unable to create continuous migration job."
 
     ok "Continuous migration job created."
 
-  else
+else
 
-    warn "Continuous migration job already exists."
+    ok "Continuous migration job already exists: $CONTINUOUS_JOB"
 
-  fi
+fi
 
-  local state
-  local phase
+CONT_STATE=$(job_state "$CONTINUOUS_JOB")
+CONT_PHASE=$(job_phase "$CONTINUOUS_JOB")
 
-  state=$(job_state "$CONTINUOUS_JOB")
-  phase=$(job_phase "$CONTINUOUS_JOB")
+echo
+echo "${WHITE}Current state : ${CYAN}${CONT_STATE:-UNKNOWN}${RESET}"
+echo "${WHITE}Current phase : ${CYAN}${CONT_PHASE:-N/A}${RESET}"
 
-  echo "${WHITE}Current state: ${YELLOW}${state:-UNKNOWN}${RESET}"
-  echo "${WHITE}Current phase: ${YELLOW}${phase:-N/A}${RESET}"
-
-  case "$state" in
+case "$CONT_STATE" in
 
     NOT_STARTED|DRAFT)
 
-      demote_destination_if_required \
-        "$CONTINUOUS_JOB" \
-        "$CONTINUOUS_TARGET" ||
-        die "Unable to demote continuous destination."
+        demote_destination \
+            "$CONTINUOUS_JOB" \
+            "$CONTINUOUS_TARGET" ||
+            die "Unable to demote continuous destination."
 
-      echo
-      echo "${YELLOW}Verifying continuous migration job...${RESET}"
+        echo
+        echo "${YELLOW}Verifying continuous migration job...${RESET}"
 
-      dms_action verify "$CONTINUOUS_JOB" ||
-        die "Continuous migration verification failed."
+        dms_action verify "$CONTINUOUS_JOB" ||
+            die "Continuous migration verification failed."
 
-      echo
-      echo "${YELLOW}Starting continuous migration...${RESET}"
+        echo
+        echo "${YELLOW}Starting continuous migration...${RESET}"
 
-      dms_action start "$CONTINUOUS_JOB" ||
-        die "Unable to start continuous migration."
+        dms_action start "$CONTINUOUS_JOB" ||
+            die "Unable to start continuous migration."
 
-      wait_for_cdc "$CONTINUOUS_JOB" ||
-        die "Continuous migration did not reach CDC."
+        wait_for_cdc "$CONTINUOUS_JOB" ||
+            die "Continuous migration failed to reach CDC."
 
-      ;;
+        ;;
 
     RUNNING)
 
-      if [[ "$phase" != "CDC" ]]; then
+        if [[ "$CONT_PHASE" == "CDC" ]]; then
 
-        wait_for_cdc "$CONTINUOUS_JOB" ||
-          die "Continuous migration did not reach CDC."
+            ok "Continuous migration is already RUNNING / CDC."
 
-      else
+        else
 
-        ok "Continuous migration is already RUNNING / CDC."
+            wait_for_cdc "$CONTINUOUS_JOB" ||
+                die "Continuous migration failed to reach CDC."
 
-      fi
+        fi
 
-      ;;
+        ;;
 
     FAILED)
 
-      warn "Restarting failed continuous migration."
+        warn "Restarting failed continuous migration."
 
-      dms_action restart "$CONTINUOUS_JOB" ||
-        die "Unable to restart continuous migration."
+        dms_action restart "$CONTINUOUS_JOB" ||
+            die "Unable to restart continuous migration."
 
-      wait_for_cdc "$CONTINUOUS_JOB" ||
-        die "Continuous migration did not reach CDC."
+        wait_for_cdc "$CONTINUOUS_JOB" ||
+            die "Continuous migration failed to reach CDC."
 
-      ;;
+        ;;
 
     STOPPED)
 
-      if [[ "$phase" == "CDC" ]]; then
+        if [[ "$CONT_PHASE" == "CDC" ]]; then
 
-        warn "Resuming continuous migration."
+            warn "Resuming continuous migration."
 
-        dms_action resume "$CONTINUOUS_JOB" ||
-          die "Unable to resume continuous migration."
+            dms_action resume "$CONTINUOUS_JOB" ||
+                die "Unable to resume continuous migration."
 
-      else
+        else
 
-        warn "Restarting continuous migration."
+            warn "Restarting continuous migration."
 
-        dms_action restart "$CONTINUOUS_JOB" ||
-          die "Unable to restart continuous migration."
+            dms_action restart "$CONTINUOUS_JOB" ||
+                die "Unable to restart continuous migration."
 
-      fi
+        fi
 
-      wait_for_cdc "$CONTINUOUS_JOB" ||
-        die "Continuous migration did not reach CDC."
+        wait_for_cdc "$CONTINUOUS_JOB" ||
+            die "Continuous migration failed to reach CDC."
 
-      ;;
+        ;;
 
     COMPLETED)
 
-      warn "Continuous migration has already been promoted."
-      ;;
+        warn "Continuous migration is already COMPLETED."
+        ;;
 
     *)
 
-      die "Unexpected continuous job state: $state"
-      ;;
-
-  esac
-
-  echo
-  gcloud database-migration migration-jobs describe "$CONTINUOUS_JOB" \
-    --region="$REGION" \
-    --project="$PROJECT_ID" \
-    --format='yaml(displayName,type,state,phase,vpcPeeringConnectivity)'
-
-  finish \
-    "TASK 3 COMPLETE" \
-    "Continuous migration is RUNNING / CDC. Check Task 3 before running Task 4."
-}
-
-# ============================================================
-# TASK 4
-#
-# Update source data and leave continuous job RUNNING.
-# ============================================================
-
-run_task4() {
-
-  section "TASK 4 - Verify continuous replication"
-
-  if ! job_exists "$CONTINUOUS_JOB"; then
-    die "Continuous migration job does not exist."
-  fi
-
-  set_source_host "$SOURCE_INTERNAL_IP" ||
-    die "Unable to configure source internal IP."
-
-  local state
-  local phase
-
-  state=$(job_state "$CONTINUOUS_JOB")
-  phase=$(job_phase "$CONTINUOUS_JOB")
-
-  if [[ "$state" != "RUNNING" ]]; then
-    die "Continuous migration must be RUNNING. Current state: $state"
-  fi
-
-  if [[ "$phase" != "CDC" ]]; then
-
-    wait_for_cdc "$CONTINUOUS_JOB" ||
-      die "Continuous migration did not reach CDC."
-
-  fi
-
-  echo
-  echo "${YELLOW}Executing required source update...${RESET}"
-
-  source_query "
-    USE customers_data;
-    UPDATE customers
-    SET gender='FEMALE'
-    WHERE addressKey=934;
-    SELECT addressKey, gender
-    FROM customers
-    WHERE addressKey=934;
-  " ||
-    die "Unable to update source MySQL database."
-
-  echo
-  echo "${YELLOW}Confirming source value...${RESET}"
-
-  local gender
-
-  gender=$(
-    source_query "
-      SELECT gender
-      FROM customers_data.customers
-      WHERE addressKey=934;
-    " |
-    tail -n1
-  )
-
-  echo "${WHITE}addressKey : ${CYAN}934${RESET}"
-  echo "${WHITE}gender     : ${CYAN}${gender:-UNKNOWN}${RESET}"
-
-  [[ "$gender" != "FEMALE" ]] &&
-    die "Source update was not confirmed."
-
-  ok "Source row updated successfully."
-
-  echo
-  echo "${YELLOW}Waiting 75 seconds for CDC propagation...${RESET}"
-
-  for ((remaining=75; remaining>=1; remaining--)); do
-
-    printf "\r${YELLOW}Replication wait: %02d seconds remaining...${RESET}" \
-      "$remaining"
-
-    sleep 1
-  done
-
-  echo
-
-  state=$(job_state "$CONTINUOUS_JOB")
-  phase=$(job_phase "$CONTINUOUS_JOB")
-
-  echo
-  echo "${WHITE}Migration state : ${CYAN}$state${RESET}"
-  echo "${WHITE}Migration phase : ${CYAN}${phase:-N/A}${RESET}"
-
-  finish \
-    "TASK 4 COMPLETE" \
-    "addressKey=934 is FEMALE and CDC has been given time to replicate. Check Task 4 before running Task 5."
-}
-
-# ============================================================
-# TASK 5
-#
-# Promote continuous destination.
-# ============================================================
-
-run_task5() {
-
-  section "TASK 5 - Promote Cloud SQL destination"
-
-  if ! job_exists "$CONTINUOUS_JOB"; then
-    die "Continuous migration job does not exist."
-  fi
-
-  local state
-  local phase
-
-  state=$(job_state "$CONTINUOUS_JOB")
-  phase=$(job_phase "$CONTINUOUS_JOB")
-
-  if [[ "$state" == "COMPLETED" ]]; then
-
-    ok "Continuous migration is already promoted."
-
-    finish \
-      "TASK 5 COMPLETE" \
-      "Continuous Cloud SQL destination is already standalone."
-
-    return 0
-  fi
-
-  if [[ "$state" != "RUNNING" ]]; then
-    die "Continuous migration must be RUNNING before promotion. Current state: $state"
-  fi
-
-  if [[ "$phase" != "CDC" ]]; then
-
-    wait_for_cdc "$CONTINUOUS_JOB" ||
-      die "Continuous migration is not ready for promotion."
-
-  fi
-
-  echo
-  echo "${YELLOW}Checking Task 4 source value...${RESET}"
-
-  local gender
-
-  gender=$(
-    source_query "
-      SELECT gender
-      FROM customers_data.customers
-      WHERE addressKey=934;
-    " |
-    tail -n1
-  )
-
-  echo "${WHITE}addressKey 934 gender : ${CYAN}${gender:-UNKNOWN}${RESET}"
-
-  [[ "$gender" != "FEMALE" ]] &&
-    die "Task 4 has not been completed."
-
-  echo
-  echo "${YELLOW}Promoting continuous destination...${RESET}"
-
-  dms_action promote "$CONTINUOUS_JOB" ||
-    die "Unable to promote continuous migration."
-
-  wait_for_state "$CONTINUOUS_JOB" "COMPLETED" ||
-    die "Promotion did not complete."
-
-  echo
-  echo "${BOLD}Migration job:${RESET}"
-
-  gcloud database-migration migration-jobs describe "$CONTINUOUS_JOB" \
-    --region="$REGION" \
-    --project="$PROJECT_ID" \
-    --format='yaml(displayName,type,state,phase)'
-
-  echo
-  echo "${BOLD}Cloud SQL destination:${RESET}"
-
-  gcloud sql instances describe "$CONTINUOUS_TARGET" \
-    --project="$PROJECT_ID" \
-    --format='yaml(name,state,instanceType,masterInstanceName,region)'
-
-  finish \
-    "TASK 5 COMPLETE" \
-    "Continuous destination has been promoted to standalone Cloud SQL."
-}
-
-# ============================================================
-# EXECUTE
-# ============================================================
-
-case "$MODE" in
-
-  task2)
-    run_task2
-    ;;
-
-  task3)
-    run_task3
-    ;;
-
-  task4)
-    run_task4
-    ;;
-
-  task5)
-    run_task5
-    ;;
-
-  status)
-    show_status
-    ;;
-
+        die "Unexpected continuous migration state: $CONT_STATE"
+        ;;
 esac
+
+CONT_STATE=$(job_state "$CONTINUOUS_JOB")
+
+# If previous run already promoted it, do not repeat Task 4/5.
+
+if [[ "$CONT_STATE" == "COMPLETED" ]]; then
+
+    warn "Continuous destination has already been promoted."
+
+else
+
+    ok "TASK 3 continuous migration reached RUNNING / CDC."
+
+    # ========================================================
+    # SMALL VISUAL STABILIZATION
+    # ========================================================
+
+    wait_countdown 10 \
+        "Continuous migration is stable in CDC"
+
+    # ========================================================
+    # TASK 4
+    # ========================================================
+
+    section "[7/10] TASK 4 - Test continuous replication"
+
+    CURRENT_GENDER=$(
+        source_query \
+            "SELECT gender
+             FROM customers_data.customers
+             WHERE addressKey=934;" |
+            tail -1
+    )
+
+    echo "${WHITE}Current gender for addressKey 934: ${CYAN}${CURRENT_GENDER:-UNKNOWN}${RESET}"
+
+    # Make reruns idempotent while ensuring a real change occurs
+    # after CDC has started.
+
+    if [[ "$CURRENT_GENDER" == "FEMALE" ]]; then
+
+        warn "Record is already FEMALE from a previous attempt."
+        echo "${YELLOW}Resetting temporarily to MALE before applying required update...${RESET}"
+
+        source_query "
+            USE customers_data;
+            UPDATE customers
+            SET gender='MALE'
+            WHERE addressKey=934;
+        " >/dev/null ||
+            die "Unable to reset source row."
+
+        wait_countdown 5 "Preparing fresh CDC update"
+
+    fi
+
+    echo
+    echo "${YELLOW}${BOLD}Executing required Task 4 query${RESET}"
+    echo "${WHITE}UPDATE customers SET gender='FEMALE' WHERE addressKey=934;${RESET}"
+    echo
+
+    source_query "
+        USE customers_data;
+
+        UPDATE customers
+        SET gender='FEMALE'
+        WHERE addressKey=934;
+
+        SELECT CONCAT(addressKey,' | ',gender)
+        FROM customers
+        WHERE addressKey=934;
+    " ||
+        die "Unable to update source MySQL database."
+
+    GENDER=$(
+        source_query "
+            SELECT gender
+            FROM customers_data.customers
+            WHERE addressKey=934;
+        " |
+        tail -1
+    )
+
+    echo
+    echo "${WHITE}addressKey : ${CYAN}934${RESET}"
+    echo "${WHITE}gender     : ${CYAN}${GENDER:-UNKNOWN}${RESET}"
+
+    [[ "$GENDER" != "FEMALE" ]] &&
+        die "Task 4 source update could not be confirmed."
+
+    ok "Source row successfully updated to FEMALE."
+
+    # Lab asks to allow time for replication.
+
+    wait_countdown 90 \
+        "Waiting for continuous CDC replication"
+
+    CONT_STATE=$(job_state "$CONTINUOUS_JOB")
+    CONT_PHASE=$(job_phase "$CONTINUOUS_JOB")
+
+    echo
+    echo "${WHITE}Continuous state : ${CYAN}$CONT_STATE${RESET}"
+    echo "${WHITE}Continuous phase : ${CYAN}${CONT_PHASE:-N/A}${RESET}"
+
+    [[ "$CONT_STATE" != "RUNNING" ]] &&
+        die "Continuous migration is no longer RUNNING."
+
+    ok "TASK 4 CDC propagation period completed."
+
+    # ========================================================
+    # TASK 5
+    # ========================================================
+
+    section "[8/10] TASK 5 - Promote continuous Cloud SQL destination"
+
+    CONT_PHASE=$(job_phase "$CONTINUOUS_JOB")
+
+    if [[ "$CONT_PHASE" != "CDC" ]]; then
+
+        wait_for_cdc "$CONTINUOUS_JOB" ||
+            die "Continuous migration is not ready for promotion."
+
+    fi
+
+    echo
+    echo "${YELLOW}${BOLD}Promoting destination: $CONTINUOUS_TARGET${RESET}"
+
+    dms_action promote "$CONTINUOUS_JOB" ||
+        die "Continuous migration promotion failed."
+
+    wait_for_state "$CONTINUOUS_JOB" "COMPLETED" ||
+        die "Promotion did not complete."
+
+    ok "TASK 5 destination promoted successfully."
+
+fi
+
+# ============================================================
+# RESTORE TASK 1 SOURCE PROFILE
+# ============================================================
+
+section "[9/10] Restoring Task 1 source connection profile"
+
+echo "${WHITE}Restoring source host to external IP:${RESET}"
+echo "${CYAN}$SOURCE_EXTERNAL_IP${RESET}"
+
+set_source_host "$SOURCE_EXTERNAL_IP" ||
+    warn "Unable to restore source connection profile external IP."
+
+# ============================================================
+# FINAL VERIFICATION
+# ============================================================
+
+section "[10/10] FINAL VERIFICATION"
+
+echo "${BOLD}Migration Jobs${RESET}"
+echo
+
+gcloud database-migration migration-jobs list \
+    --region="$REGION" \
+    --project="$PROJECT_ID" \
+    --format='table(displayName,type,state,phase)' ||
+    true
+
+echo
+echo "${BOLD}Cloud SQL Instances${RESET}"
+echo
+
+gcloud sql instances list \
+    --project="$PROJECT_ID" \
+    --filter="name=($ONE_TIME_TARGET $CONTINUOUS_TARGET)" \
+    --format='table(name,instanceType,state,region,databaseVersion)' ||
+    true
+
+echo
+echo "${BOLD}Source verification${RESET}"
+echo
+
+FINAL_SOURCE_COUNT=$(
+    source_query \
+        "SELECT COUNT(*) FROM customers_data.customers;" |
+        tail -1
+)
+
+FINAL_GENDER=$(
+    source_query \
+        "SELECT gender
+         FROM customers_data.customers
+         WHERE addressKey=934;" |
+        tail -1
+)
+
+echo "${WHITE}customers count       : ${CYAN}${FINAL_SOURCE_COUNT:-UNKNOWN}${RESET}"
+echo "${WHITE}addressKey 934 gender : ${CYAN}${FINAL_GENDER:-UNKNOWN}${RESET}"
+
+echo
+echo "${GREEN}${BOLD}"
+echo "╔══════════════════════════════════════════════════════════════════╗"
+echo "║                    GSP351 EXECUTION COMPLETE                  ║"
+echo "╠══════════════════════════════════════════════════════════════════╣"
+echo "║ TASK 1  ✓ Source connection profile / External IP              ║"
+echo "║ TASK 2  ✓ One-time migration / COMPLETED                       ║"
+echo "║ TASK 3  ✓ Continuous migration / VPC Peering                   ║"
+echo "║ TASK 4  ✓ CDC replication / gender = FEMALE                    ║"
+echo "║ TASK 5  ✓ Continuous destination promoted                     ║"
+echo "║                                                                ║"
+echo "║                        © ePlus.DEV                             ║"
+echo "╚══════════════════════════════════════════════════════════════════╝"
+echo "${RESET}"
