@@ -2,4 +2,4 @@
 
 https://eplus.dev
 
-![David-Nguyen](https://github.com/user-attachments/assets/1b9fd176-023f-4356-9f2f-32b4e3e8aeb5)
+<img width="1920" height="2464" alt="image" src="https://github.com/user-attachments/assets/8d5fe7d1-dcb0-4cfe-9be9-4a77a96dd6d3" />
