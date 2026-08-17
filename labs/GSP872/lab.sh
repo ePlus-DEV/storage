@@ -1031,18 +1031,10 @@ ok "TASK 5 completed."
 
 section "[6/6] Testing Calls Using the API Key"
 
-GATEWAY_URL=$(
-  gcloud api-gateway gateways describe hello-gateway \
-    --location="$REGION" \
-    --project="$PROJECT_ID" \
-    --format="value(defaultHostname)" \
-    2>/dev/null || true
-)
+export GATEWAY_URL=$(gcloud api-gateway gateways describe hello-gateway --location us-east4 --format json | jq -r .defaultHostname)
+curl -sL $GATEWAY_URL/hello
 
-[ -n "$GATEWAY_URL" ] || fail "Unable to determine Gateway URL."
-
-echo "Gateway URL:"
-echo "https://${GATEWAY_URL}"
+curl -sL -w "\n" $GATEWAY_URL/hello?key=$API_KEY
 
 echo
 echo "${YELLOW_TEXT}${BOLD_TEXT}Waiting for API key/security propagation...${RESET_FORMAT}"
