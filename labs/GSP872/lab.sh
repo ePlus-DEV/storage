@@ -391,12 +391,22 @@ ok "TASK 1 completed."
 
 section "[2/6] Testing the API Backend"
 
+export PROJECT_ID="$(gcloud config get-value project)"
+
+FUNCTION_URL=$(gcloud functions describe helloGET \
+  --region="$REGION" \
+  --format="value(url)")
+
+echo "$FUNCTION_URL"
+curl -v "$FUNCTION_URL"
+
+
 BACKEND_RESPONSE=""
 
 for I in $(seq 1 24); do
 
   BACKEND_RESPONSE=$(
-    curl -fsSL "$FUNCTION_URL" \
+    curl -v "$FUNCTION_URL" \
       2>/dev/null || true
   )
 
