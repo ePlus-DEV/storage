@@ -23,8 +23,7 @@ echo "${BLUE_TEXT}${BOLD_TEXT}==================================================
 echo
 
 # Instruction for entering the region
-read -p "${YELLOW_TEXT}${BOLD_TEXT}Enter the region:${RESET_FORMAT} " REGION
-export REGION=$REGION
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null || true)
 
 # Instruction for setting project ID
 echo "${CYAN_TEXT}${BOLD_TEXT}Fetching the current project ID and setting the compute region...${RESET_FORMAT}"
