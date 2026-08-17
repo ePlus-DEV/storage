@@ -1,88 +1,90 @@
-#!/usr/bin/env bash
-set -uo pipefail
+#!/bin/bash
 
 # ============================================================
-# API Gateway - Secure Traffic to a Backend Service
+# Secure Traffic to a Backend Service with API Gateway
 # © ePlus.DEV
 # ============================================================
 
-REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null || true)
-GATEWAY_ID="hello-gateway"
-CONFIG1_ID="hello-world-config"
-CONFIG2_ID="hello-config"
-KEY_DISPLAY_NAME="Hello World API Key"
+set -uo pipefail
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+# ------------------------------------------------------------
+# COLORS
+# ------------------------------------------------------------
 
-banner() {
-  echo -e "${CYAN}==============================================================${NC}"
-  echo -e "${CYAN}  API Gateway Lab Automation - © ePlus.DEV${NC}"
-  echo -e "${CYAN}==============================================================${NC}"
-}
+BLACK_TEXT=$'\033[0;90m'
+RED_TEXT=$'\033[0;91m'
+GREEN_TEXT=$'\033[0;92m'
+YELLOW_TEXT=$'\033[0;93m'
+BLUE_TEXT=$'\033[0;94m'
+MAGENTA_TEXT=$'\033[0;95m'
+CYAN_TEXT=$'\033[0;96m'
+WHITE_TEXT=$'\033[0;97m'
 
-step() {
-  echo -e "\n${BLUE}[$1/6] $2${NC}"
-}
+RESET_FORMAT=$'\033[0m'
+BOLD_TEXT=$'\033[1m'
+
+# ------------------------------------------------------------
+# HELPERS
+# ------------------------------------------------------------
 
 ok() {
-  echo -e "${GREEN}✓ $*${NC}"
+  echo "${GREEN_TEXT}${BOLD_TEXT}✓ $*${RESET_FORMAT}"
 }
 
 warn() {
-  echo -e "${YELLOW}⚠ $*${NC}"
+  echo "${YELLOW_TEXT}${BOLD_TEXT}⚠ $*${RESET_FORMAT}"
 }
 
-fail() {
-  echo -e "${RED}✗ $*${NC}"
-  exit 1
+error() {
+  echo "${RED_TEXT}${BOLD_TEXT}✗ $*${RESET_FORMAT}"
 }
 
-retry_cmd() {
-  local max="$1"
-  local delay="$2"
-  shift 2
+section() {
+  echo
+  echo "${BLUE_TEXT}${BOLD_TEXT}======================================================================${RESET_FORMAT}"
+  echo "${BLUE_TEXT}${BOLD_TEXT}$1${RESET_FORMAT}"
+  echo "${BLUE_TEXT}${BOLD_TEXT}======================================================================${RESET_FORMAT}"
+}
 
-  local i
-  for ((i=1; i<=max; i++)); do
-    if "$@"; then
-      return 0
-    fi
+countdown() {
+  local seconds="$1"
+  local message="$2"
 
-    warn "Attempt $i/$max failed. Retrying in ${delay}s..."
-    sleep "$delay"
+  while [ "$seconds" -gt 0 ]; do
+    printf "\r${YELLOW_TEXT}${BOLD_TEXT}%s %3ds${RESET_FORMAT}" \
+      "$message" "$seconds"
+    sleep 1
+    seconds=$((seconds - 1))
   done
 
-  return 1
+  printf "\r%-100s\r" " "
 }
 
 wait_api_config() {
-  local config="$1"
-  local api="$2"
-  local state
-  local i
+  local CONFIG_ID="$1"
+  local API_NAME="$2"
+  local STATE=""
+  local I
 
-  for i in {1..60}; do
-    state=$(
-      gcloud api-gateway api-configs describe "$config" \
-        --api="$api" \
+  for I in $(seq 1 90); do
+
+    STATE=$(
+      gcloud api-gateway api-configs describe "$CONFIG_ID" \
+        --api="$API_NAME" \
         --project="$PROJECT_ID" \
-        --format='value(state)' 2>/dev/null || true
+        --format="value(state)" \
+        2>/dev/null || true
     )
 
-    printf "\r  Waiting for API config %-24s state: %-10s (%02d/60)" \
-      "$config" "${state:-PENDING}" "$i"
+    printf "\r${YELLOW_TEXT}API Config %-24s state: %-10s [%02d/90]${RESET_FORMAT}" \
+      "$CONFIG_ID" "${STATE:-PENDING}" "$I"
 
-    if [[ "$state" == "ACTIVE" ]]; then
+    if [ "$STATE" = "ACTIVE" ]; then
       echo
       return 0
     fi
 
-    if [[ "$state" == "FAILED" ]]; then
+    if [ "$STATE" = "FAILED" ]; then
       echo
       return 1
     fi
@@ -95,26 +97,28 @@ wait_api_config() {
 }
 
 wait_gateway() {
-  local state
-  local i
+  local STATE=""
+  local I
 
-  for i in {1..90}; do
-    state=$(
-      gcloud api-gateway gateways describe "$GATEWAY_ID" \
+  for I in $(seq 1 90); do
+
+    STATE=$(
+      gcloud api-gateway gateways describe hello-gateway \
         --location="$REGION" \
         --project="$PROJECT_ID" \
-        --format='value(state)' 2>/dev/null || true
+        --format="value(state)" \
+        2>/dev/null || true
     )
 
-    printf "\r  Waiting for gateway %-18s state: %-10s (%02d/90)" \
-      "$GATEWAY_ID" "${state:-PENDING}" "$i"
+    printf "\r${YELLOW_TEXT}Gateway hello-gateway state: %-10s [%02d/90]${RESET_FORMAT}" \
+      "${STATE:-PENDING}" "$I"
 
-    if [[ "$state" == "ACTIVE" ]]; then
+    if [ "$STATE" = "ACTIVE" ]; then
       echo
       return 0
     fi
 
-    if [[ "$state" == "FAILED" ]]; then
+    if [ "$STATE" = "FAILED" ]; then
       echo
       return 1
     fi
@@ -126,83 +130,167 @@ wait_gateway() {
   return 1
 }
 
-banner
+# ============================================================
+# HEADER
+# ============================================================
+
+clear
+
+echo "${CYAN_TEXT}${BOLD_TEXT}======================================================================${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}          API GATEWAY LAB AUTOMATION - ePlus.DEV                    ${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}======================================================================${RESET_FORMAT}"
+echo
 
 # ============================================================
 # TASK 1
 # ============================================================
 
-step 1 "Detecting project and deploying API backend"
+section "[1/6] Detecting environment and deploying API backend"
 
 PROJECT_ID=$(gcloud config get-value project 2>/dev/null || true)
 
-[[ -n "$PROJECT_ID" && "$PROJECT_ID" != "(unset)" ]] || \
-  fail "No active Google Cloud project found."
+if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "(unset)" ]; then
+  error "Unable to detect Project ID."
+  exit 1
+fi
 
 PROJECT_NUMBER=$(
   gcloud projects describe "$PROJECT_ID" \
-    --format='value(projectNumber)' 2>/dev/null
-) || fail "Cannot read project number."
+    --format="value(projectNumber)" \
+    2>/dev/null || true
+)
+
+if [ -z "$PROJECT_NUMBER" ]; then
+  error "Unable to detect Project Number."
+  exit 1
+fi
+
+# Lab requires us-east4.
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null || true)
 
 COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+GCF_SERVICE_AGENT="service-${PROJECT_NUMBER}@gcf-admin-robot.iam.gserviceaccount.com"
 
-gcloud config set project "$PROJECT_ID" --quiet >/dev/null
-gcloud config set compute/region "$REGION" --quiet >/dev/null
+export PROJECT_ID
+export PROJECT_NUMBER
+export REGION
 
 echo "Project ID     : $PROJECT_ID"
 echo "Project number : $PROJECT_NUMBER"
 echo "Region         : $REGION"
+echo "Compute SA     : $COMPUTE_SA"
 
-echo "→ Enabling required APIs"
+gcloud config set project "$PROJECT_ID" --quiet >/dev/null
+gcloud config set compute/region "$REGION" --quiet >/dev/null
+
+# ------------------------------------------------------------
+# Enable APIs
+# ------------------------------------------------------------
+
+echo
+echo "${MAGENTA_TEXT}${BOLD_TEXT}→ Enabling required Google Cloud APIs${RESET_FORMAT}"
 
 gcloud services enable \
   apigateway.googleapis.com \
+  cloudfunctions.googleapis.com \
+  run.googleapis.com \
+  cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com \
+  storage.googleapis.com \
   servicemanagement.googleapis.com \
   servicecontrol.googleapis.com \
-  cloudfunctions.googleapis.com \
-  cloudbuild.googleapis.com \
-  run.googleapis.com \
-  artifactregistry.googleapis.com \
-  compute.googleapis.com \
   apikeys.googleapis.com \
+  iam.googleapis.com \
+  compute.googleapis.com \
   --project="$PROJECT_ID" \
-  --quiet >/dev/null || fail "Could not enable required APIs."
+  --quiet
 
-# Wait for Compute Engine default service account if necessary
-for _ in {1..12}; do
+if [ $? -ne 0 ]; then
+  error "Failed to enable required APIs."
+  exit 1
+fi
+
+countdown 20 "Waiting for API propagation..."
+
+# ------------------------------------------------------------
+# Ensure Compute default SA exists
+# ------------------------------------------------------------
+
+echo
+echo "${MAGENTA_TEXT}${BOLD_TEXT}→ Checking Compute Engine default service account${RESET_FORMAT}"
+
+for I in $(seq 1 12); do
+
   if gcloud iam service-accounts describe "$COMPUTE_SA" \
       --project="$PROJECT_ID" >/dev/null 2>&1; then
     break
   fi
 
+  printf "\rWaiting for Compute default service account... [%02d/12]" "$I"
   sleep 5
+
 done
 
+echo
+
 # ------------------------------------------------------------
-# Create Cloud Function source
+# IAM from reference script + build permissions
 # ------------------------------------------------------------
 
-mkdir -p "$HOME/helloGET-src"
+echo "${MAGENTA_TEXT}${BOLD_TEXT}→ Preparing IAM permissions${RESET_FORMAT}"
 
-cat > "$HOME/helloGET-src/index.js" <<'EOF'
-exports.helloGET = (req, res) => {
-  res.send('Hello World!');
-};
-EOF
+for ROLE in \
+  roles/serviceusage.serviceUsageAdmin \
+  roles/artifactregistry.reader \
+  roles/cloudbuild.builds.builder
+do
 
-cat > "$HOME/helloGET-src/package.json" <<'EOF'
-{
-  "name": "hello-get",
-  "version": "1.0.0",
-  "main": "index.js",
-  "engines": {
-    "node": "22"
-  },
-  "dependencies": {
-    "@google-cloud/functions-framework": "^3.4.0"
-  }
-}
-EOF
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${COMPUTE_SA}" \
+    --role="$ROLE" \
+    --condition=None \
+    --quiet >/dev/null 2>&1 || true
+
+done
+
+# Restore Cloud Functions service-agent permission if needed.
+
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${GCF_SERVICE_AGENT}" \
+  --role="roles/cloudfunctions.serviceAgent" \
+  --condition=None \
+  --quiet >/dev/null 2>&1 || true
+
+countdown 30 "Waiting for IAM propagation..."
+
+# ------------------------------------------------------------
+# Prepare source code
+# ------------------------------------------------------------
+
+echo
+echo "${MAGENTA_TEXT}${BOLD_TEXT}→ Preparing helloGET source code${RESET_FORMAT}"
+
+cd "$HOME" || exit 1
+
+if [ ! -d "$HOME/nodejs-docs-samples" ]; then
+
+  git clone --depth=1 \
+    https://github.com/GoogleCloudPlatform/nodejs-docs-samples.git
+
+fi
+
+FUNCTION_DIR="$HOME/nodejs-docs-samples/functions/helloworld/helloworldGet"
+
+if [ ! -d "$FUNCTION_DIR" ]; then
+  error "Function source directory not found."
+  exit 1
+fi
+
+cd "$FUNCTION_DIR" || exit 1
+
+# ------------------------------------------------------------
+# Deploy helloGET
+# ------------------------------------------------------------
 
 if gcloud functions describe helloGET \
     --region="$REGION" \
@@ -212,86 +300,204 @@ if gcloud functions describe helloGET \
 
 else
 
-  echo "→ Deploying helloGET"
+  echo
+  echo "${YELLOW_TEXT}${BOLD_TEXT}→ Deploying helloGET using Node.js 22${RESET_FORMAT}"
 
-  retry_cmd 2 15 \
-    gcloud functions deploy helloGET \
-      --runtime=nodejs22 \
-      --trigger-http \
-      --allow-unauthenticated \
-      --region="$REGION" \
-      --source="$HOME/helloGET-src" \
-      --entry-point=helloGET \
-      --project="$PROJECT_ID" \
-      --quiet || fail "helloGET deployment failed."
+  DEPLOY_OK=false
+
+  # ----------------------------------------------------------
+  # First try: current default deployment (Gen 2)
+  # ----------------------------------------------------------
+
+  for ATTEMPT in 1 2 3; do
+
+    echo
+    echo "Deployment attempt $ATTEMPT/3..."
+
+    if gcloud functions deploy helloGET \
+        --runtime=nodejs22 \
+        --region="$REGION" \
+        --trigger-http \
+        --allow-unauthenticated \
+        --project="$PROJECT_ID" \
+        --quiet
+    then
+
+      DEPLOY_OK=true
+      break
+
+    fi
+
+    warn "Deployment attempt $ATTEMPT failed."
+
+    if [ "$ATTEMPT" -lt 3 ]; then
+      countdown 30 "Waiting before retry..."
+    fi
+
+  done
+
+  # ----------------------------------------------------------
+  # Fallback for gcf-v2-uploads bucket error
+  # ----------------------------------------------------------
+
+  if [ "$DEPLOY_OK" != "true" ]; then
+
+    echo
+    warn "Gen 2 deployment is still failing."
+    warn "Trying Cloud Functions 1st gen with the same Node.js 22 runtime."
+
+    if gcloud functions deploy helloGET \
+        --no-gen2 \
+        --runtime=nodejs22 \
+        --region="$REGION" \
+        --trigger-http \
+        --allow-unauthenticated \
+        --project="$PROJECT_ID" \
+        --quiet
+    then
+
+      DEPLOY_OK=true
+
+    fi
+
+  fi
+
+  if [ "$DEPLOY_OK" != "true" ]; then
+    error "helloGET deployment failed."
+    exit 1
+  fi
+
 fi
 
 FUNCTION_URL="https://${REGION}-${PROJECT_ID}.cloudfunctions.net/helloGET"
 
-ok "Task 1 backend deployed:"
+echo
+echo "Function URL:"
 echo "$FUNCTION_URL"
+
+ok "Task 1 backend deployed."
 
 # ============================================================
 # TASK 2
 # ============================================================
 
-step 2 "Testing API backend"
+section "[2/6] Testing API backend"
 
-BACKEND_RESULT=""
+BACKEND_RESPONSE=""
 
-for i in {1..12}; do
+for I in $(seq 1 24); do
 
-  BACKEND_RESULT=$(
-    curl -fsS "$FUNCTION_URL" 2>/dev/null || true
+  BACKEND_RESPONSE=$(
+    curl -fsS \
+      "$FUNCTION_URL" \
+      2>/dev/null || true
   )
 
-  if [[ "$BACKEND_RESULT" == "Hello World!" ]]; then
+  if [ "$BACKEND_RESPONSE" = "Hello World!" ]; then
     break
   fi
 
-  echo "  Backend not ready yet ($i/12). Retrying..."
+  printf "\rWaiting for backend response... [%02d/24]" "$I"
   sleep 5
+
 done
 
-[[ "$BACKEND_RESULT" == "Hello World!" ]] || \
-  fail "Backend did not return 'Hello World!'."
+echo
 
-ok "Task 2 backend response: $BACKEND_RESULT"
+if [ "$BACKEND_RESPONSE" != "Hello World!" ]; then
+
+  error "Backend test failed."
+  echo "Response:"
+  echo "$BACKEND_RESPONSE"
+  exit 1
+
+fi
+
+ok "Backend response: Hello World!"
+ok "Task 2 completed."
 
 # ============================================================
 # TASK 3
 # ============================================================
 
-step 3 "Creating API, API config and gateway"
+section "[3/6] Creating API and Gateway"
 
-# Reuse API if script was already run
-API_ID=$(
-  gcloud api-gateway apis list \
-    --project="$PROJECT_ID" \
-    --filter='displayName="Hello World API"' \
-    --format='value(name.basename())' \
-    2>/dev/null | head -n1
-)
+cd "$HOME" || exit 1
 
-if [[ -z "$API_ID" ]]; then
+# ------------------------------------------------------------
+# Detect existing API connected to hello-gateway first
+# ------------------------------------------------------------
 
-  API_ID="hello-world-$(tr -dc 'a-z' </dev/urandom | head -c 8)"
+API_ID=""
 
-  gcloud api-gateway apis create "$API_ID" \
-    --display-name="Hello World API" \
-    --project="$PROJECT_ID" \
-    --quiet || fail "Could not create API."
+if gcloud api-gateway gateways describe hello-gateway \
+    --location="$REGION" \
+    --project="$PROJECT_ID" >/dev/null 2>&1; then
 
-  ok "Created API: $API_ID"
+  EXISTING_CONFIG=$(
+    gcloud api-gateway gateways describe hello-gateway \
+      --location="$REGION" \
+      --project="$PROJECT_ID" \
+      --format="value(apiConfig)" \
+      2>/dev/null || true
+  )
 
-else
-
-  ok "Using existing API: $API_ID"
+  API_ID=$(
+    echo "$EXISTING_CONFIG" |
+    sed -n 's#.*apis/\([^/]*\)/configs/.*#\1#p'
+  )
 
 fi
 
 # ------------------------------------------------------------
-# First OpenAPI config - no API key
+# Find Hello World API if Gateway doesn't already exist
+# ------------------------------------------------------------
+
+if [ -z "$API_ID" ]; then
+
+  API_ID=$(
+    gcloud api-gateway apis list \
+      --project="$PROJECT_ID" \
+      --filter='displayName="Hello World API"' \
+      --format="value(name)" \
+      2>/dev/null |
+    head -n1 |
+    awk -F/ '{print $NF}'
+  )
+
+fi
+
+# ------------------------------------------------------------
+# Create API if needed
+# ------------------------------------------------------------
+
+if [ -z "$API_ID" ]; then
+
+  API_ID="hello-world-$(tr -dc 'a-z' </dev/urandom | head -c 8)"
+
+  echo "Creating API:"
+  echo "$API_ID"
+
+  gcloud api-gateway apis create "$API_ID" \
+    --display-name="Hello World API" \
+    --project="$PROJECT_ID" \
+    --quiet
+
+  if [ $? -ne 0 ]; then
+    error "Unable to create API."
+    exit 1
+  fi
+
+else
+
+  ok "Using API: $API_ID"
+
+fi
+
+export API_ID
+
+# ------------------------------------------------------------
+# OpenAPI #1
 # ------------------------------------------------------------
 
 cat > "$HOME/openapi2-functions.yaml" <<EOF
@@ -324,185 +530,375 @@ paths:
             type: string
 EOF
 
+INITIAL_CONFIG="hello-world-config"
+
 # ------------------------------------------------------------
-# Gateway may already exist after a partial run
+# Create initial config only if Gateway does not yet exist
 # ------------------------------------------------------------
 
-if gcloud api-gateway gateways describe "$GATEWAY_ID" \
+if ! gcloud api-gateway gateways describe hello-gateway \
     --location="$REGION" \
     --project="$PROJECT_ID" >/dev/null 2>&1; then
 
-  ok "Gateway $GATEWAY_ID already exists."
-
-else
-
-  if ! gcloud api-gateway api-configs describe "$CONFIG1_ID" \
+  if ! gcloud api-gateway api-configs describe "$INITIAL_CONFIG" \
       --api="$API_ID" \
       --project="$PROJECT_ID" >/dev/null 2>&1; then
 
-    echo "→ Creating initial API config"
+    echo
+    echo "${MAGENTA_TEXT}${BOLD_TEXT}→ Creating Hello World Config${RESET_FORMAT}"
 
-    gcloud api-gateway api-configs create "$CONFIG1_ID" \
+    gcloud api-gateway api-configs create "$INITIAL_CONFIG" \
+      --project="$PROJECT_ID" \
       --api="$API_ID" \
       --openapi-spec="$HOME/openapi2-functions.yaml" \
       --backend-auth-service-account="$COMPUTE_SA" \
       --display-name="Hello World Config" \
-      --project="$PROJECT_ID" \
       --async \
-      --quiet >/dev/null || \
-      fail "Could not start initial API config creation."
+      --quiet
+
+    if [ $? -ne 0 ]; then
+      error "Unable to start initial API config creation."
+      exit 1
+    fi
 
   fi
 
-  wait_api_config "$CONFIG1_ID" "$API_ID" || \
-    fail "Initial API config did not become ACTIVE."
+  if ! wait_api_config "$INITIAL_CONFIG" "$API_ID"; then
+    error "Initial API config failed."
+    exit 1
+  fi
 
-  echo "→ Creating gateway"
+  # ----------------------------------------------------------
+  # Create Gateway
+  # ----------------------------------------------------------
 
-  gcloud api-gateway gateways create "$GATEWAY_ID" \
+  echo
+  echo "${MAGENTA_TEXT}${BOLD_TEXT}→ Creating Hello Gateway${RESET_FORMAT}"
+
+  gcloud api-gateway gateways create hello-gateway \
+    --location="$REGION" \
+    --project="$PROJECT_ID" \
     --api="$API_ID" \
-    --api-config="$CONFIG1_ID" \
-    --location="$REGION" \
+    --api-config="$INITIAL_CONFIG" \
     --display-name="Hello Gateway" \
-    --project="$PROJECT_ID" \
     --async \
-    --quiet >/dev/null || \
-    fail "Could not start gateway creation."
+    --quiet
 
-  wait_gateway || \
-    fail "Gateway did not become ACTIVE."
-
-fi
-
-GATEWAY_URL=$(
-  gcloud api-gateway gateways describe "$GATEWAY_ID" \
-    --location="$REGION" \
-    --project="$PROJECT_ID" \
-    --format='value(defaultHostname)'
-)
-
-[[ -n "$GATEWAY_URL" ]] || \
-  fail "Could not determine gateway hostname."
-
-echo
-echo "Gateway URL:"
-echo "https://$GATEWAY_URL"
-
-INITIAL_RESULT=$(
-  curl -sS "https://${GATEWAY_URL}/hello" 2>/dev/null || true
-)
-
-if [[ "$INITIAL_RESULT" == *"Hello World!"* ]]; then
-
-  ok "Task 3 gateway is working: Hello World!"
+  if [ $? -ne 0 ]; then
+    error "Unable to start Gateway creation."
+    exit 1
+  fi
 
 else
 
-  warn "Gateway may already be protected from a previous run."
-  warn "Continuing with security tasks."
+  ok "hello-gateway already exists."
 
 fi
+
+if ! wait_gateway; then
+  error "Gateway failed to become ACTIVE."
+  exit 1
+fi
+
+GATEWAY_URL=$(
+  gcloud api-gateway gateways describe hello-gateway \
+    --location="$REGION" \
+    --project="$PROJECT_ID" \
+    --format="value(defaultHostname)"
+)
+
+if [ -z "$GATEWAY_URL" ]; then
+  error "Gateway hostname could not be determined."
+  exit 1
+fi
+
+echo
+echo "Gateway URL:"
+echo "https://${GATEWAY_URL}"
+
+# Initial test.
+INITIAL_RESPONSE=$(
+  curl -fsS \
+    "https://${GATEWAY_URL}/hello" \
+    2>/dev/null || true
+)
+
+if [ "$INITIAL_RESPONSE" = "Hello World!" ]; then
+
+  ok "Initial Gateway test: Hello World!"
+
+else
+
+  warn "Initial request is already protected."
+  warn "This is OK if the script was previously partially completed."
+
+fi
+
+ok "Task 3 completed."
 
 # ============================================================
 # TASK 4
 # ============================================================
 
-step 4 "Enabling managed service and creating restricted API key"
+section "[4/6] Creating and restricting API key"
+
+# ------------------------------------------------------------
+# Get exact Managed Service for THIS API
+# ------------------------------------------------------------
 
 MANAGED_SERVICE=$(
   gcloud api-gateway apis describe "$API_ID" \
     --project="$PROJECT_ID" \
-    --format='value(managedService)'
+    --format="value(managedService)" \
+    2>/dev/null || true
 )
 
-[[ -n "$MANAGED_SERVICE" ]] || \
-  fail "Managed Service name not found."
+if [ -z "$MANAGED_SERVICE" ]; then
+  error "Unable to determine Managed Service for $API_ID."
+  exit 1
+fi
 
 echo "Managed Service : $MANAGED_SERVICE"
 
-echo "→ Enabling API key support"
-
-retry_cmd 12 10 \
-  gcloud services enable "$MANAGED_SERVICE" \
-    --project="$PROJECT_ID" \
-    --quiet >/dev/null || \
-  fail "Could not enable API key support."
-
 # ------------------------------------------------------------
-# Find existing API key
+# Enable Managed Service BEFORE creating/restricting key
 # ------------------------------------------------------------
 
-KEY_RESOURCE=$(
+echo
+echo "${MAGENTA_TEXT}${BOLD_TEXT}→ Enabling Managed Service${RESET_FORMAT}"
+
+SERVICE_ENABLED=false
+
+for I in $(seq 1 24); do
+
+  if gcloud services enable "$MANAGED_SERVICE" \
+      --project="$PROJECT_ID" \
+      --quiet >/dev/null 2>&1; then
+
+    SERVICE_ENABLED=true
+    break
+
+  fi
+
+  printf "\rManaged Service is propagating... [%02d/24]" "$I"
+  sleep 10
+
+done
+
+echo
+
+if [ "$SERVICE_ENABLED" != "true" ]; then
+  error "Unable to enable Managed Service."
+  exit 1
+fi
+
+ok "Managed Service enabled."
+
+countdown 15 "Waiting for Service Management propagation..."
+
+# ------------------------------------------------------------
+# Find API key from a previous run
+# ------------------------------------------------------------
+
+KEY_NAME=$(
   gcloud services api-keys list \
     --project="$PROJECT_ID" \
-    --filter="displayName=\"$KEY_DISPLAY_NAME\"" \
-    --format='value(name)' \
-    2>/dev/null | head -n1
+    --filter='displayName="awesome"' \
+    --format="value(name)" \
+    2>/dev/null |
+  head -n1
 )
 
-if [[ -z "$KEY_RESOURCE" ]]; then
+if [ -z "$KEY_NAME" ]; then
 
-  echo "→ Creating API key restricted to API Gateway"
+  echo
+  echo "${MAGENTA_TEXT}${BOLD_TEXT}→ Creating restricted API key${RESET_FORMAT}"
 
-  retry_cmd 6 10 \
-    gcloud services api-keys create \
-      --display-name="$KEY_DISPLAY_NAME" \
-      --api-target="service=$MANAGED_SERVICE" \
-      --project="$PROJECT_ID" \
-      --quiet >/dev/null || \
-    fail "Could not create API key."
+  gcloud services api-keys create \
+    --display-name="awesome" \
+    --api-target="service=${MANAGED_SERVICE}" \
+    --project="$PROJECT_ID" \
+    --quiet
 
-  # Wait until API key becomes visible
-  for _ in {1..12}; do
+  if [ $? -ne 0 ]; then
+    error "API key creation failed."
+    exit 1
+  fi
 
-    KEY_RESOURCE=$(
+  # Wait for new key resource to appear.
+
+  for I in $(seq 1 24); do
+
+    KEY_NAME=$(
       gcloud services api-keys list \
         --project="$PROJECT_ID" \
-        --filter="displayName=\"$KEY_DISPLAY_NAME\"" \
-        --format='value(name)' \
-        2>/dev/null | head -n1
+        --filter='displayName="awesome"' \
+        --format="value(name)" \
+        2>/dev/null |
+      head -n1
     )
 
-    [[ -n "$KEY_RESOURCE" ]] && break
+    if [ -n "$KEY_NAME" ]; then
+      break
+    fi
 
+    printf "\rWaiting for API key resource... [%02d/24]" "$I"
     sleep 5
+
   done
+
+  echo
 
 else
 
-  echo "→ Reusing existing API key"
+  echo
+  warn "API key 'awesome' already exists."
+  echo "${MAGENTA_TEXT}${BOLD_TEXT}→ Fixing API restriction on existing key${RESET_FORMAT}"
 
-  gcloud services api-keys update "$KEY_RESOURCE" \
-    --api-target="service=$MANAGED_SERVICE" \
+  # IMPORTANT:
+  # This repairs API keys created by the old script without restrictions.
+
+  gcloud services api-keys update "$KEY_NAME" \
+    --api-target="service=${MANAGED_SERVICE}" \
     --project="$PROJECT_ID" \
-    --quiet >/dev/null || \
-    fail "Could not update API key restriction."
+    --quiet
+
+  if [ $? -ne 0 ]; then
+    error "Unable to apply API restriction to existing API key."
+    exit 1
+  fi
 
 fi
 
-[[ -n "$KEY_RESOURCE" ]] || \
-  fail "API key resource was not found."
+if [ -z "$KEY_NAME" ]; then
+  error "API key resource not found."
+  exit 1
+fi
 
-API_KEY=$(
-  gcloud services api-keys get-key-string "$KEY_RESOURCE" \
-    --project="$PROJECT_ID" \
-    --format='value(keyString)' \
-    2>/dev/null
-)
+# ------------------------------------------------------------
+# Retrieve API key value
+# ------------------------------------------------------------
 
-[[ -n "$API_KEY" ]] || \
-  fail "Could not retrieve API key string."
+API_KEY=""
 
-ok "Task 4 API key created and restricted."
+for I in $(seq 1 24); do
+
+  API_KEY=$(
+    gcloud services api-keys get-key-string "$KEY_NAME" \
+      --project="$PROJECT_ID" \
+      --format="value(keyString)" \
+      2>/dev/null || true
+  )
+
+  if [ -n "$API_KEY" ]; then
+    break
+  fi
+
+  printf "\rWaiting for API key value... [%02d/24]" "$I"
+  sleep 5
+
+done
+
+echo
+
+if [ -z "$API_KEY" ]; then
+  error "Unable to retrieve API key value."
+  exit 1
+fi
+
+export API_KEY
+
+ok "API key created."
+ok "API key restricted to:"
+echo "  $MANAGED_SERVICE"
+
+ok "Task 4 completed."
 
 # ============================================================
 # TASK 5
 # ============================================================
 
-step 5 "Creating secured API config and updating gateway"
+section "[5/6] Creating secured API config"
 
 # ------------------------------------------------------------
-# OpenAPI config requiring ?key=
+# Find Qwiklabs User Service Account
+# ------------------------------------------------------------
+
+QWIKLABS_SA=$(
+  gcloud iam service-accounts list \
+    --project="$PROJECT_ID" \
+    --filter='displayName="Qwiklabs User Service Account"' \
+    --format="value(email)" \
+    2>/dev/null |
+  head -n1
+)
+
+# Reference labs often use:
+# PROJECT_ID@PROJECT_ID.iam.gserviceaccount.com
+
+if [ -z "$QWIKLABS_SA" ]; then
+
+  POSSIBLE_QWIKLABS_SA="${PROJECT_ID}@${PROJECT_ID}.iam.gserviceaccount.com"
+
+  if gcloud iam service-accounts describe "$POSSIBLE_QWIKLABS_SA" \
+      --project="$PROJECT_ID" >/dev/null 2>&1; then
+
+    QWIKLABS_SA="$POSSIBLE_QWIKLABS_SA"
+
+  fi
+
+fi
+
+# Try any SA with Qwiklabs in its display name.
+
+if [ -z "$QWIKLABS_SA" ]; then
+
+  QWIKLABS_SA=$(
+    gcloud iam service-accounts list \
+      --project="$PROJECT_ID" \
+      --filter='displayName:Qwiklabs' \
+      --format="value(email)" \
+      2>/dev/null |
+    head -n1
+  )
+
+fi
+
+if [ -z "$QWIKLABS_SA" ]; then
+
+  warn "Qwiklabs User Service Account was not found."
+  warn "Falling back to Compute Engine default service account."
+
+  QWIKLABS_SA="$COMPUTE_SA"
+
+fi
+
+echo "Backend SA      : $QWIKLABS_SA"
+
+# ------------------------------------------------------------
+# Give backend SA permission to invoke function.
+# Best effort because some Qwiklabs IAM policies are restricted.
+# ------------------------------------------------------------
+
+echo
+echo "${MAGENTA_TEXT}${BOLD_TEXT}→ Preparing backend service account permissions${RESET_FORMAT}"
+
+for ROLE in \
+  roles/cloudfunctions.invoker \
+  roles/run.invoker \
+  roles/serviceusage.serviceUsageAdmin
+do
+
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${QWIKLABS_SA}" \
+    --role="$ROLE" \
+    --condition=None \
+    --quiet >/dev/null 2>&1 || true
+
+done
+
+# ------------------------------------------------------------
+# Secured OpenAPI
 # ------------------------------------------------------------
 
 cat > "$HOME/openapi2-functions2.yaml" <<EOF
@@ -545,216 +941,312 @@ securityDefinitions:
 EOF
 
 # ------------------------------------------------------------
-# Lab explicitly asks for:
-# "Qwiklabs User Service Account"
-# Find it automatically.
+# Configs are immutable.
+#
+# First run       => hello-config
+# Rerun/old config => hello-config-HHMMSS
+#
+# Display name remains exactly "Hello Config".
 # ------------------------------------------------------------
 
-QWIKLABS_SA=$(
-  gcloud iam service-accounts list \
-    --project="$PROJECT_ID" \
-    --filter='displayName="Qwiklabs User Service Account"' \
-    --format='value(email)' \
-    2>/dev/null | head -n1
-)
+SEC_CONFIG_ID="hello-config"
 
-if [[ -z "$QWIKLABS_SA" ]]; then
-
-  QWIKLABS_SA=$(
-    gcloud iam service-accounts list \
-      --project="$PROJECT_ID" \
-      --filter='displayName~"Qwiklabs"' \
-      --format='value(email)' \
-      2>/dev/null | head -n1
-  )
-
-fi
-
-if [[ -z "$QWIKLABS_SA" ]]; then
-
-  warn "Qwiklabs User Service Account not found."
-  warn "Falling back to Compute Engine default service account."
-
-  QWIKLABS_SA="$COMPUTE_SA"
-
-fi
-
-echo "Backend SA      : $QWIKLABS_SA"
-
-# API configs are immutable.
-# Avoid conflict on reruns.
-
-if gcloud api-gateway api-configs describe "$CONFIG2_ID" \
+if gcloud api-gateway api-configs describe "$SEC_CONFIG_ID" \
     --api="$API_ID" \
     --project="$PROJECT_ID" >/dev/null 2>&1; then
 
-  CURRENT_CFG=$(
-    gcloud api-gateway gateways describe "$GATEWAY_ID" \
+  CURRENT_GATEWAY_CONFIG=$(
+    gcloud api-gateway gateways describe hello-gateway \
       --location="$REGION" \
       --project="$PROJECT_ID" \
-      --format='value(apiConfig)' \
+      --format="value(apiConfig)" \
       2>/dev/null || true
   )
 
-  if [[ "$CURRENT_CFG" == */configs/${CONFIG2_ID} ]]; then
+  if [[ "$CURRENT_GATEWAY_CONFIG" == *"/configs/${SEC_CONFIG_ID}" ]]; then
 
-    ok "Secured config $CONFIG2_ID is already attached."
+    # An existing hello-config may have been created by the old/broken
+    # script. Create a fresh config to guarantee the security spec.
+
+    SEC_CONFIG_ID="hello-config-$(date +%H%M%S)"
 
   else
 
-    CONFIG2_ID="hello-config-$(date +%H%M%S)"
+    SEC_CONFIG_ID="hello-config-$(date +%H%M%S)"
 
   fi
 
 fi
 
+echo
+echo "Secured Config  : $SEC_CONFIG_ID"
+
 # ------------------------------------------------------------
-# Create secured API config
+# Only one API config may be creating at a time.
 # ------------------------------------------------------------
 
-if ! gcloud api-gateway api-configs describe "$CONFIG2_ID" \
-    --api="$API_ID" \
-    --project="$PROJECT_ID" >/dev/null 2>&1; then
+echo "${MAGENTA_TEXT}${BOLD_TEXT}→ Waiting for any existing config operation${RESET_FORMAT}"
 
-  echo "→ Creating secured API config: $CONFIG2_ID"
+for I in $(seq 1 30); do
 
-  gcloud api-gateway api-configs create "$CONFIG2_ID" \
-    --api="$API_ID" \
-    --openapi-spec="$HOME/openapi2-functions2.yaml" \
-    --backend-auth-service-account="$QWIKLABS_SA" \
-    --display-name="Hello Config" \
-    --project="$PROJECT_ID" \
-    --async \
-    --quiet >/dev/null || \
-    fail "Could not start secured API config creation."
+  CREATING_COUNT=$(
+    gcloud api-gateway api-configs list \
+      --api="$API_ID" \
+      --project="$PROJECT_ID" \
+      --filter='state!=ACTIVE' \
+      --format='value(state)' \
+      2>/dev/null |
+    grep -c . || true
+  )
 
-  wait_api_config "$CONFIG2_ID" "$API_ID" || \
-    fail "Secured API config did not become ACTIVE."
+  if [ "${CREATING_COUNT:-0}" -eq 0 ]; then
+    break
+  fi
 
+  printf "\rWaiting for previous config operation... [%02d/30]" "$I"
+  sleep 10
+
+done
+
+echo
+
+# ------------------------------------------------------------
+# Create secured config
+# ------------------------------------------------------------
+
+echo "${MAGENTA_TEXT}${BOLD_TEXT}→ Creating Hello Config${RESET_FORMAT}"
+
+gcloud api-gateway api-configs create "$SEC_CONFIG_ID" \
+  --project="$PROJECT_ID" \
+  --display-name="Hello Config" \
+  --api="$API_ID" \
+  --openapi-spec="$HOME/openapi2-functions2.yaml" \
+  --backend-auth-service-account="$QWIKLABS_SA" \
+  --async \
+  --quiet
+
+if [ $? -ne 0 ]; then
+  error "Unable to start secured API config creation."
+  exit 1
 fi
 
-CURRENT_CFG=$(
-  gcloud api-gateway gateways describe "$GATEWAY_ID" \
+if ! wait_api_config "$SEC_CONFIG_ID" "$API_ID"; then
+  error "Secured API config failed."
+  exit 1
+fi
+
+ok "Secured API config is ACTIVE."
+
+# ------------------------------------------------------------
+# Update Gateway
+# ------------------------------------------------------------
+
+echo
+echo "${MAGENTA_TEXT}${BOLD_TEXT}→ Updating hello-gateway to secured config${RESET_FORMAT}"
+
+gcloud api-gateway gateways update hello-gateway \
+  --location="$REGION" \
+  --project="$PROJECT_ID" \
+  --api="$API_ID" \
+  --api-config="$SEC_CONFIG_ID" \
+  --async \
+  --quiet
+
+if [ $? -ne 0 ]; then
+  error "Unable to start Gateway update."
+  exit 1
+fi
+
+if ! wait_gateway; then
+  error "Gateway update failed."
+  exit 1
+fi
+
+# Confirm Gateway is actually pointing to secured config.
+
+CURRENT_GATEWAY_CONFIG=$(
+  gcloud api-gateway gateways describe hello-gateway \
     --location="$REGION" \
     --project="$PROJECT_ID" \
-    --format='value(apiConfig)' \
+    --format="value(apiConfig)" \
     2>/dev/null || true
 )
 
-# ------------------------------------------------------------
-# Update existing gateway
-# ------------------------------------------------------------
+echo
+echo "Gateway config:"
+echo "$CURRENT_GATEWAY_CONFIG"
 
-if [[ "$CURRENT_CFG" != */configs/${CONFIG2_ID} ]]; then
-
-  echo "→ Updating gateway to secured config"
-
-  gcloud api-gateway gateways update "$GATEWAY_ID" \
-    --api="$API_ID" \
-    --api-config="$CONFIG2_ID" \
-    --location="$REGION" \
-    --project="$PROJECT_ID" \
-    --async \
-    --quiet >/dev/null || \
-    fail "Could not start gateway update."
-
-  wait_gateway || \
-    fail "Gateway update did not become ACTIVE."
-
+if [[ "$CURRENT_GATEWAY_CONFIG" != *"/configs/${SEC_CONFIG_ID}" ]]; then
+  error "Gateway is not using the secured API config."
+  exit 1
 fi
 
-ok "Task 5 secured API config deployed."
+# Re-enable managed service after config deployment.
+
+gcloud services enable "$MANAGED_SERVICE" \
+  --project="$PROJECT_ID" \
+  --quiet >/dev/null 2>&1 || true
+
+ok "Task 5 completed."
 
 # ============================================================
 # TASK 6
 # ============================================================
 
-step 6 "Testing calls with and without API key"
+section "[6/6] Testing API key security"
 
 GATEWAY_URL=$(
-  gcloud api-gateway gateways describe "$GATEWAY_ID" \
+  gcloud api-gateway gateways describe hello-gateway \
     --location="$REGION" \
     --project="$PROJECT_ID" \
-    --format='value(defaultHostname)'
+    --format="value(defaultHostname)"
 )
 
-# ------------------------------------------------------------
-# Call without API key
-# Expected: UNAUTHENTICATED / HTTP 401 or 403
-# ------------------------------------------------------------
+if [ -z "$GATEWAY_URL" ]; then
+  error "Gateway URL not found."
+  exit 1
+fi
 
-NO_KEY_CODE=$(
-  curl -sS \
-    -o /tmp/no-key.out \
-    -w '%{http_code}' \
-    "https://${GATEWAY_URL}/hello" \
-    2>/dev/null || true
-)
+echo "Gateway URL:"
+echo "https://${GATEWAY_URL}"
 
 echo
-echo "Without API key : HTTP ${NO_KEY_CODE:-unknown}"
+echo "${YELLOW_TEXT}${BOLD_TEXT}Waiting for secured config and API-key propagation...${RESET_FORMAT}"
+
+FINAL_OK=false
+LAST_NO_KEY_CODE=""
+LAST_NO_KEY_RESPONSE=""
+LAST_KEY_CODE=""
+LAST_KEY_RESPONSE=""
 
 # ------------------------------------------------------------
-# Call with API key
+# We require BOTH conditions:
+#
+# 1. Request WITHOUT key must be rejected.
+# 2. Request WITH valid key must return Hello World!
+#
+# This avoids falsely marking Task 6 complete while the old
+# unprotected config is still being served.
 # ------------------------------------------------------------
 
-WITH_KEY_RESULT=""
+for I in $(seq 1 36); do
 
-for i in {1..18}; do
+  LAST_NO_KEY_CODE=$(
+    curl -sS \
+      -o /tmp/no-key-response.txt \
+      -w "%{http_code}" \
+      "https://${GATEWAY_URL}/hello" \
+      2>/dev/null || true
+  )
 
-  WITH_KEY_RESULT=$(
-    curl -fsS \
+  LAST_NO_KEY_RESPONSE=$(
+    cat /tmp/no-key-response.txt 2>/dev/null || true
+  )
+
+  LAST_KEY_CODE=$(
+    curl -sS \
+      -o /tmp/key-response.txt \
+      -w "%{http_code}" \
       "https://${GATEWAY_URL}/hello?key=${API_KEY}" \
       2>/dev/null || true
   )
 
-  if [[ "$WITH_KEY_RESULT" == "Hello World!" ]]; then
+  LAST_KEY_RESPONSE=$(
+    cat /tmp/key-response.txt 2>/dev/null || true
+  )
+
+  printf "\rAttempt %02d/36 | no-key HTTP %-3s | with-key HTTP %-3s" \
+    "$I" \
+    "${LAST_NO_KEY_CODE:----}" \
+    "${LAST_KEY_CODE:----}"
+
+  # Without key must NOT get Hello World!
+  # With key must get HTTP 200 + Hello World!
+
+  if [ "$LAST_NO_KEY_RESPONSE" != "Hello World!" ] &&
+     [ "$LAST_KEY_CODE" = "200" ] &&
+     [ "$LAST_KEY_RESPONSE" = "Hello World!" ]; then
+
+    FINAL_OK=true
     break
+
   fi
 
-  echo "  Waiting for API-key/config propagation ($i/18)..."
   sleep 10
 
 done
 
-if [[ "$WITH_KEY_RESULT" != "Hello World!" ]]; then
+echo
+echo
+
+echo "${CYAN_TEXT}${BOLD_TEXT}Test WITHOUT API key:${RESET_FORMAT}"
+echo "HTTP ${LAST_NO_KEY_CODE:-unknown}"
+
+if [ -n "$LAST_NO_KEY_RESPONSE" ]; then
+  echo "$LAST_NO_KEY_RESPONSE"
+fi
+
+echo
+echo "${CYAN_TEXT}${BOLD_TEXT}Test WITH API key:${RESET_FORMAT}"
+echo "HTTP ${LAST_KEY_CODE:-unknown}"
+
+if [ -n "$LAST_KEY_RESPONSE" ]; then
+  echo "$LAST_KEY_RESPONSE"
+fi
+
+echo
+
+if [ "$FINAL_OK" != "true" ]; then
+
+  error "Task 6 verification failed."
 
   echo
-  echo "Response with key:"
-  echo "${WITH_KEY_RESULT:-<empty>}"
+  echo "Expected:"
+  echo "  WITHOUT key -> rejected / UNAUTHENTICATED"
+  echo "  WITH key    -> HTTP 200 + Hello World!"
+  echo
 
-  fail "API key call did not return 'Hello World!'."
+  exit 1
 
 fi
 
-ok "Task 6 API key call returned: Hello World!"
+ok "Request without API key is rejected."
+ok "Request with API key returns Hello World!"
+ok "Task 6 completed."
 
 # ============================================================
-# DONE
+# FINAL VALIDATION
 # ============================================================
 
-echo
-echo -e "${GREEN}==============================================================${NC}"
-echo -e "${GREEN}  API GATEWAY LAB COMPLETE${NC}"
-echo -e "${GREEN}==============================================================${NC}"
+section "FINAL RESOURCE VALIDATION"
 
-echo
 echo "Project ID      : $PROJECT_ID"
+echo "Project Number  : $PROJECT_NUMBER"
+echo "Region          : $REGION"
+echo "Function        : helloGET"
 echo "API ID          : $API_ID"
-echo "Gateway         : $GATEWAY_ID"
-echo "Gateway URL     : https://$GATEWAY_URL"
+echo "Gateway ID      : hello-gateway"
+echo "Gateway URL     : https://${GATEWAY_URL}"
 echo "Managed Service : $MANAGED_SERVICE"
+echo "Secured Config  : $SEC_CONFIG_ID"
+echo "Backend SA      : $QWIKLABS_SA"
 echo "API Key         : ${API_KEY:0:8}...${API_KEY: -4}"
 
 echo
-echo -e "${GREEN}✓ TASK 1 - Deploying an API Backend${NC}"
-echo -e "${GREEN}✓ TASK 2 - Test the API Backend${NC}"
-echo -e "${GREEN}✓ TASK 3 - Creating a Gateway${NC}"
-echo -e "${GREEN}✓ TASK 4 - Securing Access by Using an API Key${NC}"
-echo -e "${GREEN}✓ TASK 5 - Create and deploy new API config${NC}"
-echo -e "${GREEN}✓ TASK 6 - Testing Calls Using Your API Key${NC}"
+echo "${GREEN_TEXT}${BOLD_TEXT}======================================================================${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}                       LAB COMPLETED                                ${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}======================================================================${RESET_FORMAT}"
+echo
+
+echo "${GREEN_TEXT}${BOLD_TEXT}✓ TASK 1 - Deploying an API Backend${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}✓ TASK 2 - Test the API Backend${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}✓ TASK 3 - Creating a Gateway${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}✓ TASK 4 - Securing Access by Using an API Key${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}✓ TASK 5 - Create and deploy a new API config${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}✓ TASK 6 - Testing Calls Using Your API Key${RESET_FORMAT}"
 
 echo
-echo "→ Click Check my progress for Tasks 1 → 6."
+echo "${CYAN_TEXT}${BOLD_TEXT}Click Check my progress for Tasks 1 → 6.${RESET_FORMAT}"
 echo
-echo "© ePlus.DEV"
+echo "${CYAN_TEXT}${BOLD_TEXT}© ePlus.DEV${RESET_FORMAT}"
+echo
