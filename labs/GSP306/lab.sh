@@ -46,26 +46,41 @@ wait_sql_ready() {
   local instance="$1"
   local state=""
   local i
+  local elapsed
+  local mins
+  local secs
 
   echo
   echo "Waiting for Cloud SQL instance to become RUNNABLE..."
+  echo "Checking every 10 seconds. Maximum wait: 15 minutes."
+  echo
 
   for i in $(seq 1 90); do
     state=$(gcloud sql instances describe "$instance" \
       --format='value(state)' 2>/dev/null || true)
 
+    elapsed=$(( (i - 1) * 10 ))
+    mins=$(( elapsed / 60 ))
+    secs=$(( elapsed % 60 ))
+
     if [[ "$state" == "RUNNABLE" ]]; then
-      echo
-      ok "Cloud SQL instance is RUNNABLE."
+      printf "\r\033[K"
+      printf "${GREEN_TEXT}[%02d:%02d] Check %02d/90 | State: RUNNABLE ✓${RESET_FORMAT}\n" \
+        "$mins" "$secs" "$i"
+
+      ok "Cloud SQL instance is ready."
       return 0
     fi
 
-    printf "\rCheck %02d/90 - State: %-20s" "$i" "${state:-CREATING}"
+    printf "\r\033[K"
+    printf "${YELLOW_TEXT}[%02d:%02d] Check %02d/90 | State: %-20s | Waiting...${RESET_FORMAT}" \
+      "$mins" "$secs" "$i" "${state:-CREATING}"
+
     sleep 10
   done
 
   echo
-  fail "Cloud SQL instance did not become RUNNABLE."
+  fail "Cloud SQL instance did not become RUNNABLE after 15 minutes."
   return 1
 }
 
