@@ -228,7 +228,6 @@ main() {
         --database-version=MYSQL_8_0 \
         --edition=enterprise \
         --tier=db-f1-micro \
-        --region="$TARGET_REGION" \
         --zone="$TARGET_ZONE" \
         --availability-type=zonal \
         --storage-type=SSD \
