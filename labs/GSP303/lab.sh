@@ -25,9 +25,9 @@ REVERSE_TEXT=$'\033[7m'
 clear
 
 # Welcome message
-echo "${CYAN_TEXT}${BOLD_TEXT}==================================================================${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}===========================${RESET_FORMAT}"
 echo "${CYAN_TEXT}${BOLD_TEXT}      ePlus.DEV  ${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}==================================================================${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}===========================${RESET_FORMAT}"
 echo
 
 # Function to validate zone format
