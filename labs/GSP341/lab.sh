@@ -1,393 +1,740 @@
 #!/bin/bash
 
-# ============================================================
-# Colors
-# ============================================================
-RED_TEXT=$'\033[0;91m'
-GREEN_TEXT=$'\033[0;92m'
-YELLOW_TEXT=$'\033[0;93m'
-BLUE_TEXT=$'\033[0;94m'
-MAGENTA_TEXT=$'\033[0;95m'
-CYAN_TEXT=$'\033[0;96m'
-WHITE_TEXT=$'\033[0;97m'
-TEAL_TEXT=$'\033[38;5;50m'
+main() {
+set -euo pipefail
 
-BOLD_TEXT=$'\033[1m'
-RESET_FORMAT=$'\033[0m'
+# ============================================================
+# COLORS
+# ============================================================
+RED=$'\033[0;91m'
+GREEN=$'\033[0;92m'
+YELLOW=$'\033[0;93m'
+BLUE=$'\033[0;94m'
+MAGENTA=$'\033[0;95m'
+CYAN=$'\033[0;96m'
+WHITE=$'\033[0;97m'
+BOLD=$'\033[1m'
+RESET=$'\033[0m'
 
 clear
 
-# ============================================================
-# Banner
-# ============================================================
-echo "${CYAN_TEXT}${BOLD_TEXT}"
-echo "======================================================================"
-echo "                   Create ML Models with BigQuery ML: Challenge Lab - GSP341 "
-echo "                       © ePlus.DEV"
-echo "======================================================================"
-echo "${RESET_FORMAT}"
-
-bq mk austin
-
-bq --location=US mk --dataset bq_dataset
-
-export EVALUATION_YEAR=2019
-
-bq query --use_legacy_sql=false "
-CREATE OR REPLACE MODEL austin.austin_location_model
-OPTIONS (
-  model_type='linear_reg',
-  labels=['duration_minutes']
-) AS
-SELECT
-  start_station_name,
-  EXTRACT(HOUR FROM start_time) AS start_hour,
-  EXTRACT(DAYOFWEEK FROM start_time) AS day_of_week,
-  duration_minutes,
-  address AS location
-FROM
-  \`bigquery-public-data.austin_bikeshare.bikeshare_trips\` AS trips
-JOIN
-  \`bigquery-public-data.austin_bikeshare.bikeshare_stations\` AS stations
-ON
-  trips.start_station_name = stations.name
-WHERE
-  EXTRACT(YEAR FROM start_time) = $EVALUATION_YEAR
-  AND duration_minutes > 0;
-"
-
-
-
-bq query --use_legacy_sql=false "
-SELECT
-  SQRT(mean_squared_error) AS rmse,
-  mean_absolute_error
-FROM
-  ML.EVALUATE(MODEL austin.austin_location_model, (
-  SELECT
-    start_station_name,
-    EXTRACT(HOUR FROM start_time) AS start_hour,
-    EXTRACT(DAYOFWEEK FROM start_time) AS day_of_week,
-    duration_minutes,
-    address AS location
-  FROM
-    \`bigquery-public-data.austin_bikeshare.bikeshare_trips\` AS trips
-  JOIN
-    \`bigquery-public-data.austin_bikeshare.bikeshare_stations\` AS stations
-  ON
-    trips.start_station_name = stations.name
-  WHERE EXTRACT(YEAR FROM start_time) = $EVALUATION_YEAR)
-)"
-
-
-
-bq query --use_legacy_sql=false "
-SELECT
-  SQRT(mean_squared_error) AS rmse,
-  mean_absolute_error
-FROM
-  ML.EVALUATE(MODEL austin.location_model, (
-  SELECT
-    start_station_name,
-    EXTRACT(HOUR FROM start_time) AS start_hour,
-    EXTRACT(DAYOFWEEK FROM start_time) AS day_of_week,
-    duration_minutes,
-	 address as location
-  FROM
-    \`bigquery-public-data.austin_bikeshare.bikeshare_trips\` AS trips
-  JOIN
-   \`bigquery-public-data.austin_bikeshare.bikeshare_stations\` AS stations
-  ON
-    trips.start_station_name = stations.name
-  WHERE EXTRACT(YEAR FROM start_time) = $EVALUATION_YEAR)
-)"
-
-
-
-
-bq query --use_legacy_sql=false "
-SELECT
-  SQRT(mean_squared_error) AS rmse,
-  mean_absolute_error
-FROM
-  ML.EVALUATE(MODEL austin.subscriber_model, (
-  SELECT
-    start_station_name,
-    EXTRACT(HOUR FROM start_time) AS start_hour,
-    subscriber_type,
-    duration_minutes
-  FROM
-    \`bigquery-public-data.austin_bikeshare.bikeshare_trips\` AS trips
-  WHERE
-    EXTRACT(YEAR FROM start_time) = $EVALUATION_YEAR)
-)"
-
-
-
-bq query --use_legacy_sql=false "
-SELECT
-  start_station_name,
-  COUNT(*) AS trips
-FROM
-  \`bigquery-public-data.austin_bikeshare.bikeshare_trips\`
-WHERE
-  EXTRACT(YEAR FROM start_time) = $EVALUATION_YEAR
-GROUP BY
-  start_station_name
-ORDER BY
-  trips DESC
-"
-
-
-bq query --use_legacy_sql=false "
-SELECT AVG(predicted_duration_minutes) AS average_predicted_trip_length
-FROM ML.predict(MODEL austin.subscriber_model, (
-SELECT
-    start_station_name,
-    EXTRACT(HOUR FROM start_time) AS start_hour,
-    subscriber_type,
-    duration_minutes
-FROM
-  \`bigquery-public-data.austin_bikeshare.bikeshare_trips\`
-WHERE
-  EXTRACT(YEAR FROM start_time) = $EVALUATION_YEAR
-  AND subscriber_type = 'Single Trip'
-  AND start_station_name = '21st & Speedway @PCL'))"
-
-
-
-# Form 2
-
-
-
-
-
-bq query --use_legacy_sql=false \
-"
-CREATE OR REPLACE MODEL \`ecommerce.customer_classification_model\`
-OPTIONS
-(
-model_type='logistic_reg',
-labels = ['will_buy_on_return_visit']
-)
-AS
-#standardSQL
-SELECT
-* EXCEPT(fullVisitorId)
-FROM
-# features
-(SELECT
-fullVisitorId,
-IFNULL(totals.bounces, 0) AS bounces,
-IFNULL(totals.timeOnSite, 0) AS time_on_site
-FROM
-\`data-to-insights.ecommerce.web_analytics\`
-WHERE
-totals.newVisits = 1
-AND date BETWEEN '20160801' AND '20170430') # train on first 9 months
-JOIN
-(SELECT
-fullvisitorid,
-IF(COUNTIF(totals.transactions > 0 AND totals.newVisits IS NULL) > 0, 1, 0) AS will_buy_on_return_visit
-FROM
-\`data-to-insights.ecommerce.web_analytics\`
-GROUP BY fullvisitorid)
-USING (fullVisitorId)
-;
-"
-
-
-
-bq query --use_legacy_sql=false \
-"
-#standardSQL
-CREATE OR REPLACE MODEL \`ecommerce.customer_classification_model\`
-OPTIONS(model_type='logistic_reg') AS
-SELECT
-  IF(totals.transactions IS NULL, 0, 1) AS label,
-  IFNULL(device.operatingSystem, '') AS os,
-  device.isMobile AS is_mobile,
-  IFNULL(geoNetwork.country, '') AS country,
-  IFNULL(totals.pageviews, 0) AS pageviews
-FROM
-  \`bigquery-public-data.google_analytics_sample.ga_sessions_*\`
-WHERE
-  _TABLE_SUFFIX BETWEEN '20160801' AND '20170631'
-LIMIT 100000;
-"
-
-
-
-
-bq query --use_legacy_sql=false \
-"
-#standardSQL
-SELECT
-  *
-FROM
-  ml.EVALUATE(MODEL \`ecommerce.customer_classification_model\`, (
-SELECT
-  IF(totals.transactions IS NULL, 0, 1) AS label,
-  IFNULL(device.operatingSystem, '') AS os,
-  device.isMobile AS is_mobile,
-  IFNULL(geoNetwork.country, '') AS country,
-  IFNULL(totals.pageviews, 0) AS pageviews
-FROM
-  \`bigquery-public-data.google_analytics_sample.ga_sessions_*\`
-WHERE
-  _TABLE_SUFFIX BETWEEN '20170701' AND '20170801'));
-"
-
-
-
-bq query --use_legacy_sql=false \
-"
-#standardSQL
-SELECT
-  country,
-  SUM(predicted_label) as total_predicted_purchases
-FROM
-  ml.PREDICT(MODEL \`ecommerce.customer_classification_model\`, (
-SELECT
-  IFNULL(device.operatingSystem, '') AS os,
-  device.isMobile AS is_mobile,
-  IFNULL(totals.pageviews, 0) AS pageviews,
-  IFNULL(geoNetwork.country, '') AS country
-FROM
-  \`bigquery-public-data.google_analytics_sample.ga_sessions_*\`
-WHERE
-  _TABLE_SUFFIX BETWEEN '20170701' AND '20170801'))
-GROUP BY country
-ORDER BY total_predicted_purchases DESC
-LIMIT 10;
-"
-
-
-
-bq query --use_legacy_sql=false \
-"
-#standardSQL
-SELECT
-  fullVisitorId,
-  SUM(predicted_label) as total_predicted_purchases
-FROM
-  ml.PREDICT(MODEL \`ecommerce.customer_classification_model\`, (
-SELECT
-  IFNULL(device.operatingSystem, '') AS os,
-  device.isMobile AS is_mobile,
-  IFNULL(totals.pageviews, 0) AS pageviews,
-  IFNULL(geoNetwork.country, '') AS country,
-  fullVisitorId
-FROM
-  \`bigquery-public-data.google_analytics_sample.ga_sessions_*\`
-WHERE
-  _TABLE_SUFFIX BETWEEN '20170701' AND '20170801'))
-GROUP BY fullVisitorId
-ORDER BY total_predicted_purchases DESC
-LIMIT 10;
-"
-
-
-
-
-
-# form 3
-
-bq --location=US mk --dataset bq_dataset
-
-
-bq query --use_legacy_sql=false "
-CREATE OR REPLACE MODEL bqml_dataset.predicts_visitor_model
-OPTIONS(model_type='logistic_reg') AS
-SELECT
-  IF(totals.transactions IS NULL, 0, 1) AS label,
-  IFNULL(device.operatingSystem, '') AS os,
-  device.isMobile AS is_mobile,
-  IFNULL(geoNetwork.country, '') AS country,
-  IFNULL(totals.pageviews, 0) AS pageviews
-FROM
-  \`bigquery-public-data.google_analytics_sample.ga_sessions_*\`
-WHERE
-  _TABLE_SUFFIX BETWEEN '20160801' AND '20170631'
-  LIMIT 100000;
-"
-
-
-
-
-bq query --use_legacy_sql=false \
-"
-#standardSQL
-SELECT
-  *
-FROM
-  ml.EVALUATE(MODEL \`bqml_dataset.predicts_visitor_model\`, (
-SELECT
-  IF(totals.transactions IS NULL, 0, 1) AS label,
-  IFNULL(device.operatingSystem, '') AS os,
-  device.isMobile AS is_mobile,
-  IFNULL(geoNetwork.country, '') AS country,
-  IFNULL(totals.pageviews, 0) AS pageviews
-FROM
-  \`bigquery-public-data.google_analytics_sample.ga_sessions_*\`
-WHERE
-  _TABLE_SUFFIX BETWEEN '20170701' AND '20170801'));
-"
-
-
-
-
-bq query --use_legacy_sql=false \
-"
-#standardSQL
-SELECT
-  country,
-  SUM(predicted_label) as total_predicted_purchases
-FROM
-  ml.PREDICT(MODEL \`bqml_dataset.predicts_visitor_model\`, (
-SELECT
-  IFNULL(device.operatingSystem, '') AS os,
-  device.isMobile AS is_mobile,
-  IFNULL(totals.pageviews, 0) AS pageviews,
-  IFNULL(geoNetwork.country, '') AS country
-FROM
-  \`bigquery-public-data.google_analytics_sample.ga_sessions_*\`
-WHERE
-  _TABLE_SUFFIX BETWEEN '20170701' AND '20170801'))
-GROUP BY country
-ORDER BY total_predicted_purchases DESC
-LIMIT 10;
-"
-
-
-
-bq query --use_legacy_sql=false \
-"
-#standardSQL
-SELECT
-  fullVisitorId,
-  SUM(predicted_label) as total_predicted_purchases
-FROM
-  ml.PREDICT(MODEL \`bqml_dataset.predicts_visitor_model\`, (
-SELECT
-  IFNULL(device.operatingSystem, '') AS os,
-  device.isMobile AS is_mobile,
-  IFNULL(totals.pageviews, 0) AS pageviews,
-  IFNULL(geoNetwork.country, '') AS country,
-  fullVisitorId
-FROM
-  \`bigquery-public-data.google_analytics_sample.ga_sessions_*\`
-WHERE
-  _TABLE_SUFFIX BETWEEN '20170701' AND '20170801'))
-GROUP BY fullVisitorId
-ORDER BY total_predicted_purchases DESC
-LIMIT 10;
-"
+echo "${CYAN}${BOLD}"
+echo "====================================================================="
+echo "     Create ML Models with BigQuery ML: Challenge Lab - GSP341"
+echo "                  © ePlus.DEV"
+echo "====================================================================="
+echo "${RESET}"
 
 # ============================================================
-# Complete
+# PROJECT
+# ============================================================
+PROJECT_ID="${DEVSHELL_PROJECT_ID:-}"
+
+if [[ -z "$PROJECT_ID" ]]; then
+  PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
+fi
+
+if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then
+  echo "${RED}Could not detect Project ID.${RESET}"
+  return 1
+fi
+
+gcloud config set project "$PROJECT_ID" --quiet >/dev/null
+
+echo "${GREEN}Project ID : ${PROJECT_ID}${RESET}"
+
+# ============================================================
+# LOCATION
 # ============================================================
 echo
-echo "${CYAN_TEXT}${BOLD_TEXT}======================================================================"
-echo "                         LAB COMPLETE"
-echo "======================================================================${RESET_FORMAT}"
+echo "${BLUE}[1/7] Detecting BigQuery dataset location...${RESET}"
+
+LOCATION="$(
+  bq show \
+    --format=json \
+    data-to-insights:ecommerce 2>/dev/null |
+    python3 -c 'import sys,json; print(json.load(sys.stdin).get("location","US"))' \
+    2>/dev/null || true
+)"
+
+LOCATION="${LOCATION:-US}"
+
+echo "${GREEN}Location   : ${LOCATION}${RESET}"
+
+# ============================================================
+# ENABLE API
+# ============================================================
+echo
+echo "${BLUE}[2/7] Enabling BigQuery API...${RESET}"
+
+gcloud services enable bigquery.googleapis.com --quiet
+
+echo "${GREEN}✓ BigQuery API ready.${RESET}"
+
+# ============================================================
+# DATASET
+# ============================================================
+echo
+echo "${BLUE}[3/7] TASK 1 - Creating ecommerce dataset...${RESET}"
+
+if bq show "${PROJECT_ID}:ecommerce" >/dev/null 2>&1; then
+  echo "${YELLOW}Dataset ecommerce already exists.${RESET}"
+else
+  bq mk \
+    --dataset \
+    --location="$LOCATION" \
+    "${PROJECT_ID}:ecommerce"
+
+  echo "${GREEN}✓ Dataset ecommerce created.${RESET}"
+fi
+
+# ============================================================
+# TASK 1 - MODEL 1
+# ============================================================
+echo
+echo "${MAGENTA}============================================================${RESET}"
+echo "${BLUE}[4/7] TASK 1 - Creating customer_classification_model${RESET}"
+echo "${MAGENTA}============================================================${RESET}"
+
+cat > /tmp/task1.sql <<'SQL'
+CREATE OR REPLACE MODEL `ecommerce.customer_classification_model`
+OPTIONS
+(
+  model_type = 'logistic_reg',
+  labels = ['will_buy_on_return_visit']
+)
+AS
+
+SELECT
+  * EXCEPT(fullVisitorId)
+FROM
+
+(
+  SELECT
+    fullVisitorId,
+    IFNULL(totals.bounces, 0) AS bounces,
+    IFNULL(totals.timeOnSite, 0) AS time_on_site
+  FROM
+    `data-to-insights.ecommerce.web_analytics`
+  WHERE
+    totals.newVisits = 1
+    AND date BETWEEN '20160801' AND '20170430'
+)
+
+JOIN
+
+(
+  SELECT
+    fullvisitorid,
+    IF(
+      COUNTIF(
+        totals.transactions > 0
+        AND totals.newVisits IS NULL
+      ) > 0,
+      1,
+      0
+    ) AS will_buy_on_return_visit
+  FROM
+    `data-to-insights.ecommerce.web_analytics`
+  GROUP BY
+    fullvisitorid
+)
+
+USING (fullVisitorId);
+SQL
+
+bq query \
+  --project_id="$PROJECT_ID" \
+  --use_legacy_sql=false \
+  < /tmp/task1.sql
+
+echo "${GREEN}✓ customer_classification_model created.${RESET}"
+
+# ============================================================
+# TASK 2 - EVALUATE MODEL 1
+# ============================================================
+echo
+echo "${MAGENTA}============================================================${RESET}"
+echo "${BLUE}[5/7] TASK 2 - Evaluating customer_classification_model${RESET}"
+echo "${MAGENTA}============================================================${RESET}"
+
+cat > /tmp/task2.sql <<'SQL'
+SELECT
+  roc_auc,
+  CASE
+    WHEN roc_auc > .9 THEN 'good'
+    WHEN roc_auc > .8 THEN 'fair'
+    WHEN roc_auc > .7 THEN 'decent'
+    WHEN roc_auc > .6 THEN 'not great'
+    ELSE 'poor'
+  END AS model_quality
+FROM
+
+ML.EVALUATE(
+  MODEL `ecommerce.customer_classification_model`,
+  (
+    SELECT
+      * EXCEPT(fullVisitorId)
+    FROM
+
+    (
+      SELECT
+        fullVisitorId,
+        IFNULL(totals.bounces, 0) AS bounces,
+        IFNULL(totals.timeOnSite, 0) AS time_on_site
+      FROM
+        `data-to-insights.ecommerce.web_analytics`
+      WHERE
+        totals.newVisits = 1
+        AND date BETWEEN '20170501' AND '20170630'
+    )
+
+    JOIN
+
+    (
+      SELECT
+        fullvisitorid,
+        IF(
+          COUNTIF(
+            totals.transactions > 0
+            AND totals.newVisits IS NULL
+          ) > 0,
+          1,
+          0
+        ) AS will_buy_on_return_visit
+      FROM
+        `data-to-insights.ecommerce.web_analytics`
+      GROUP BY
+        fullvisitorid
+    )
+
+    USING (fullVisitorId)
+  )
+);
+SQL
+
+bq query \
+  --project_id="$PROJECT_ID" \
+  --use_legacy_sql=false \
+  < /tmp/task2.sql
+
+echo "${GREEN}✓ customer_classification_model evaluated.${RESET}"
+
+# ============================================================
+# TASK 3 - IMPROVED MODEL
+# ============================================================
+echo
+echo "${MAGENTA}============================================================${RESET}"
+echo "${BLUE}[6/7] TASK 3 - Creating improved model${RESET}"
+echo "${MAGENTA}============================================================${RESET}"
+
+cat > /tmp/task3-create.sql <<'SQL'
+CREATE OR REPLACE MODEL
+  `ecommerce.improved_customer_classification_model`
+
+OPTIONS
+(
+  model_type = 'logistic_reg',
+  labels = ['will_buy_on_return_visit']
+)
+
+AS
+
+WITH all_visitor_stats AS
+(
+  SELECT
+    fullvisitorid,
+
+    IF(
+      COUNTIF(
+        totals.transactions > 0
+        AND totals.newVisits IS NULL
+      ) > 0,
+      1,
+      0
+    ) AS will_buy_on_return_visit
+
+  FROM
+    `data-to-insights.ecommerce.web_analytics`
+
+  GROUP BY
+    fullvisitorid
+)
+
+SELECT
+  * EXCEPT(unique_session_id)
+
+FROM
+(
+  SELECT
+    CONCAT(
+      fullvisitorid,
+      CAST(visitId AS STRING)
+    ) AS unique_session_id,
+
+    will_buy_on_return_visit,
+
+    MAX(
+      CAST(
+        h.eCommerceAction.action_type AS INT64
+      )
+    ) AS latest_ecommerce_progress,
+
+    IFNULL(totals.bounces, 0) AS bounces,
+
+    IFNULL(
+      totals.timeOnSite,
+      0
+    ) AS time_on_site,
+
+    IFNULL(
+      totals.pageviews,
+      0
+    ) AS pageviews,
+
+    trafficSource.source,
+    trafficSource.medium,
+    channelGrouping,
+
+    device.deviceCategory,
+
+    IFNULL(
+      geoNetwork.country,
+      ''
+    ) AS country
+
+  FROM
+    `data-to-insights.ecommerce.web_analytics`,
+    UNNEST(hits) AS h
+
+  JOIN
+    all_visitor_stats
+  USING(fullvisitorid)
+
+  WHERE
+    totals.newVisits = 1
+
+    AND date BETWEEN
+      '20160801'
+      AND '20170430'
+
+  GROUP BY
+    unique_session_id,
+    will_buy_on_return_visit,
+    bounces,
+    time_on_site,
+    totals.pageviews,
+    trafficSource.source,
+    trafficSource.medium,
+    channelGrouping,
+    device.deviceCategory,
+    country
+);
+SQL
+
+bq query \
+  --project_id="$PROJECT_ID" \
+  --use_legacy_sql=false \
+  < /tmp/task3-create.sql
+
+echo "${GREEN}✓ improved_customer_classification_model created.${RESET}"
+
+# ============================================================
+# TASK 3 - EVALUATE IMPROVED MODEL
+# ============================================================
+echo
+echo "${CYAN}Evaluating improved_customer_classification_model...${RESET}"
+
+cat > /tmp/task3-evaluate.sql <<'SQL'
+SELECT
+  roc_auc,
+
+  CASE
+    WHEN roc_auc > .9 THEN 'good'
+    WHEN roc_auc > .8 THEN 'fair'
+    WHEN roc_auc > .7 THEN 'decent'
+    WHEN roc_auc > .6 THEN 'not great'
+    ELSE 'poor'
+  END AS model_quality
+
+FROM
+
+ML.EVALUATE(
+  MODEL `ecommerce.improved_customer_classification_model`,
+
+  (
+
+    WITH all_visitor_stats AS
+    (
+      SELECT
+        fullvisitorid,
+
+        IF(
+          COUNTIF(
+            totals.transactions > 0
+            AND totals.newVisits IS NULL
+          ) > 0,
+          1,
+          0
+        ) AS will_buy_on_return_visit
+
+      FROM
+        `data-to-insights.ecommerce.web_analytics`
+
+      GROUP BY
+        fullvisitorid
+    )
+
+    SELECT
+      * EXCEPT(unique_session_id)
+
+    FROM
+    (
+      SELECT
+        CONCAT(
+          fullvisitorid,
+          CAST(visitId AS STRING)
+        ) AS unique_session_id,
+
+        will_buy_on_return_visit,
+
+        MAX(
+          CAST(
+            h.eCommerceAction.action_type AS INT64
+          )
+        ) AS latest_ecommerce_progress,
+
+        IFNULL(totals.bounces, 0) AS bounces,
+
+        IFNULL(
+          totals.timeOnSite,
+          0
+        ) AS time_on_site,
+
+        IFNULL(
+          totals.pageviews,
+          0
+        ) AS pageviews,
+
+        trafficSource.source,
+        trafficSource.medium,
+        channelGrouping,
+
+        device.deviceCategory,
+
+        IFNULL(
+          geoNetwork.country,
+          ''
+        ) AS country
+
+      FROM
+        `data-to-insights.ecommerce.web_analytics`,
+        UNNEST(hits) AS h
+
+      JOIN
+        all_visitor_stats
+      USING(fullvisitorid)
+
+      WHERE
+        totals.newVisits = 1
+
+        AND date BETWEEN
+          '20170501'
+          AND '20170630'
+
+      GROUP BY
+        unique_session_id,
+        will_buy_on_return_visit,
+        bounces,
+        time_on_site,
+        totals.pageviews,
+        trafficSource.source,
+        trafficSource.medium,
+        channelGrouping,
+        device.deviceCategory,
+        country
+    )
+  )
+);
+SQL
+
+bq query \
+  --project_id="$PROJECT_ID" \
+  --use_legacy_sql=false \
+  < /tmp/task3-evaluate.sql
+
+echo "${GREEN}✓ improved_customer_classification_model evaluated.${RESET}"
+
+# ============================================================
+# TASK 4 - FINALIZED MODEL
+# ============================================================
+echo
+echo "${MAGENTA}============================================================${RESET}"
+echo "${BLUE}[7/7] TASK 4 - Creating finalized model + prediction${RESET}"
+echo "${MAGENTA}============================================================${RESET}"
+
+cat > /tmp/task4-create.sql <<'SQL'
+CREATE OR REPLACE MODEL
+  `ecommerce.finalized_classification_model`
+
+OPTIONS
+(
+  model_type = 'logistic_reg',
+  labels = ['will_buy_on_return_visit']
+)
+
+AS
+
+WITH all_visitor_stats AS
+(
+  SELECT
+    fullvisitorid,
+
+    IF(
+      COUNTIF(
+        totals.transactions > 0
+        AND totals.newVisits IS NULL
+      ) > 0,
+      1,
+      0
+    ) AS will_buy_on_return_visit
+
+  FROM
+    `data-to-insights.ecommerce.web_analytics`
+
+  GROUP BY
+    fullvisitorid
+)
+
+SELECT
+  * EXCEPT(unique_session_id)
+
+FROM
+(
+  SELECT
+    CONCAT(
+      fullvisitorid,
+      CAST(visitId AS STRING)
+    ) AS unique_session_id,
+
+    will_buy_on_return_visit,
+
+    MAX(
+      CAST(
+        h.eCommerceAction.action_type AS INT64
+      )
+    ) AS latest_ecommerce_progress,
+
+    IFNULL(
+      totals.bounces,
+      0
+    ) AS bounces,
+
+    IFNULL(
+      totals.timeOnSite,
+      0
+    ) AS time_on_site,
+
+    IFNULL(
+      totals.pageviews,
+      0
+    ) AS pageviews,
+
+    trafficSource.source,
+    trafficSource.medium,
+    channelGrouping,
+
+    device.deviceCategory,
+
+    IFNULL(
+      geoNetwork.country,
+      ''
+    ) AS country
+
+  FROM
+    `data-to-insights.ecommerce.web_analytics`,
+    UNNEST(hits) AS h
+
+  JOIN
+    all_visitor_stats
+  USING(fullvisitorid)
+
+  WHERE
+    totals.newVisits = 1
+
+    AND date BETWEEN
+      '20160801'
+      AND '20170430'
+
+  GROUP BY
+    unique_session_id,
+    will_buy_on_return_visit,
+    bounces,
+    time_on_site,
+    totals.pageviews,
+    trafficSource.source,
+    trafficSource.medium,
+    channelGrouping,
+    device.deviceCategory,
+    country
+);
+SQL
+
+bq query \
+  --project_id="$PROJECT_ID" \
+  --use_legacy_sql=false \
+  < /tmp/task4-create.sql
+
+echo "${GREEN}✓ finalized_classification_model created.${RESET}"
+
+# ============================================================
+# TASK 4 - PREDICT JULY 2017
+# ============================================================
+echo
+echo "${CYAN}Running ML.PREDICT for the final month...${RESET}"
+
+cat > /tmp/task4-predict.sql <<'SQL'
+SELECT
+  *
+
+FROM
+
+ML.PREDICT(
+  MODEL `ecommerce.finalized_classification_model`,
+
+  (
+
+    WITH all_visitor_stats AS
+    (
+      SELECT
+        fullvisitorid,
+
+        IF(
+          COUNTIF(
+            totals.transactions > 0
+            AND totals.newVisits IS NULL
+          ) > 0,
+          1,
+          0
+        ) AS will_buy_on_return_visit
+
+      FROM
+        `data-to-insights.ecommerce.web_analytics`
+
+      GROUP BY
+        fullvisitorid
+    )
+
+    SELECT
+      CONCAT(
+        fullvisitorid,
+        '-',
+        CAST(visitId AS STRING)
+      ) AS unique_session_id,
+
+      will_buy_on_return_visit,
+
+      MAX(
+        CAST(
+          h.eCommerceAction.action_type AS INT64
+        )
+      ) AS latest_ecommerce_progress,
+
+      IFNULL(
+        totals.bounces,
+        0
+      ) AS bounces,
+
+      IFNULL(
+        totals.timeOnSite,
+        0
+      ) AS time_on_site,
+
+      IFNULL(
+        totals.pageviews,
+        0
+      ) AS pageviews,
+
+      trafficSource.source,
+      trafficSource.medium,
+      channelGrouping,
+
+      device.deviceCategory,
+
+      IFNULL(
+        geoNetwork.country,
+        ''
+      ) AS country
+
+    FROM
+      `data-to-insights.ecommerce.web_analytics`,
+      UNNEST(hits) AS h
+
+    JOIN
+      all_visitor_stats
+    USING(fullvisitorid)
+
+    WHERE
+      totals.newVisits = 1
+
+      AND date BETWEEN
+        '20170701'
+        AND '20170801'
+
+    GROUP BY
+      unique_session_id,
+      will_buy_on_return_visit,
+      bounces,
+      time_on_site,
+      totals.pageviews,
+      trafficSource.source,
+      trafficSource.medium,
+      channelGrouping,
+      device.deviceCategory,
+      country
+  )
+)
+
+ORDER BY
+  predicted_will_buy_on_return_visit DESC;
+SQL
+
+bq query \
+  --project_id="$PROJECT_ID" \
+  --use_legacy_sql=false \
+  --max_rows=20 \
+  < /tmp/task4-predict.sql
+
+echo
+echo "${CYAN}${BOLD}"
+echo "============================================================"
+echo "               BIGQUERY ML LAB COMPLETE"
+echo "============================================================"
+echo "${RESET}"
+
+echo "${GREEN}✓ TASK 1 - ecommerce dataset created"
+echo "✓ TASK 1 - customer_classification_model created"
+echo "✓ TASK 2 - customer_classification_model evaluated"
+echo "✓ TASK 3 - improved_customer_classification_model created"
+echo "✓ TASK 3 - improved model evaluated"
+echo "✓ TASK 4 - finalized_classification_model created"
+echo "✓ TASK 4 - ML.PREDICT executed"
+echo "${RESET}"
+
+echo "${YELLOW}Now click Check my progress for Task 1 → Task 4.${RESET}"
+echo
+echo "${CYAN}© ePlus.DEV${RESET}"
+}
+
+(
+  set -euo pipefail
+  main "$@"
+)
+
+STATUS=$?
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  return "$STATUS"
+else
+  exit "$STATUS"
+fi
