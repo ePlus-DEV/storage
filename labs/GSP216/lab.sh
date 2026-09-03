@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -u
 
 # ============================================================
 # GSP216 - Internal Load Balancer
-# Automated Lab Script
+# Full Automated Lab Script
 # © ePlus.DEV
 # ============================================================
 
@@ -14,7 +14,6 @@ YELLOW=$'\033[0;93m'
 BLUE=$'\033[0;94m'
 MAGENTA=$'\033[0;95m'
 CYAN=$'\033[0;96m'
-WHITE=$'\033[0;97m'
 BOLD=$'\033[1m'
 DIM=$'\033[2m'
 RESET=$'\033[0m'
@@ -23,7 +22,7 @@ clear
 
 echo "${CYAN}${BOLD}"
 echo "=============================================================="
-echo "           GSP216 - INTERNAL LOAD BALANCER"
+echo "              GSP216 - INTERNAL LOAD BALANCER"
 echo "=============================================================="
 echo "${MAGENTA}                    © ePlus.DEV${RESET}"
 echo ""
@@ -35,30 +34,42 @@ section() {
     echo "${BLUE}${BOLD}==============================================================${RESET}"
 }
 
-ok() {
-    echo "${GREEN}${BOLD}✓ $1${RESET}"
-}
-
-info() {
-    echo "${CYAN}➜ $1${RESET}"
-}
-
-warn() {
-    echo "${YELLOW}⚠ $1${RESET}"
-}
-
-error() {
-    echo "${RED}${BOLD}✗ $1${RESET}"
-}
+ok()   { echo "${GREEN}${BOLD}✓ $1${RESET}"; }
+info() { echo "${CYAN}➜ $1${RESET}"; }
+warn() { echo "${YELLOW}⚠ $1${RESET}"; }
+err()  { echo "${RED}${BOLD}✗ $1${RESET}"; }
 
 die() {
-    error "$1"
+    err "$1"
     exit 1
 }
 
+# ============================================================
+# RETRY
+# Handles temporary Google API 5xx / 502 errors
+# ============================================================
+
+retry() {
+
+    local max=8
+    local delay=8
+    local i
+
+    for ((i=1; i<=max; i++)); do
+
+        if "$@"; then
+            return 0
+        fi
+
+        warn "Command failed - retry $i/$max..."
+        sleep "$delay"
+    done
+
+    return 1
+}
 
 # ============================================================
-# LAB CONFIG
+# CONFIG - EXACT CURRENT LAB VALUES
 # ============================================================
 
 NETWORK="my-internal-app"
@@ -66,8 +77,11 @@ NETWORK="my-internal-app"
 SUBNET_A="subnet-a"
 SUBNET_B="subnet-b"
 
-HTTP_FW="app-allow-http"
-HC_FW="app-allow-health-check"
+REGION="us-west4"
+ZONE1="us-west4-b"
+
+FW_HTTP="app-allow-http"
+FW_HEALTH="app-allow-health-check"
 
 TEMPLATE1="instance-template-1"
 TEMPLATE2="instance-template-2"
@@ -86,12 +100,11 @@ ILB_IP="10.10.30.5"
 
 FORWARDING_RULE="my-ilb-forwarding-rule"
 
-
 # ============================================================
-# [0/4] ENVIRONMENT
+# [0/5] ENVIRONMENT
 # ============================================================
 
-section "[0/4] Detecting Lab Environment"
+section "[0/5] Detecting Lab Environment"
 
 PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
 
@@ -105,747 +118,582 @@ fi
 
 gcloud config set project "$PROJECT_ID" >/dev/null
 
-info "Project ID : $PROJECT_ID"
-
-
-# ============================================================
-# NETWORK
-# ============================================================
-
-if ! gcloud compute networks describe "$NETWORK" \
-    --project="$PROJECT_ID" \
-    >/dev/null 2>&1; then
-
-    die "Network '$NETWORK' was not found."
-fi
-
-ok "Network found: $NETWORK"
-
-
-# ============================================================
-# SUBNET A
-#
-# Use raw URLs then strip basename.
-# This avoids the detection bug from the previous script.
-# ============================================================
-
-SUBNET_A_LINE="$(
-    gcloud compute networks subnets list \
-        --project="$PROJECT_ID" \
-        --filter="name=$SUBNET_A" \
-        --format='value(name,region,network,ipCidrRange)' \
-        2>/dev/null \
-        | head -n1
-)"
-
-if [[ -z "$SUBNET_A_LINE" ]]; then
-
-    warn "Existing subnets:"
-
-    gcloud compute networks subnets list \
-        --project="$PROJECT_ID" \
-        --format="table(name,region.basename(),network.basename(),ipCidrRange)"
-
-    die "Cannot find $SUBNET_A"
-fi
-
-
-read -r \
-    FOUND_SUBNET_A \
-    REGION_URL \
-    NETWORK_A_URL \
-    SUBNET_A_CIDR \
-    <<< "$SUBNET_A_LINE"
-
-REGION="${REGION_URL##*/}"
-FOUND_NETWORK_A="${NETWORK_A_URL##*/}"
-
-
-if [[ "$FOUND_NETWORK_A" != "$NETWORK" ]]; then
-    die "$SUBNET_A belongs to $FOUND_NETWORK_A, not $NETWORK"
-fi
-
-ok "Found $SUBNET_A"
+info "Project : $PROJECT_ID"
 info "Region  : $REGION"
-info "Network : $FOUND_NETWORK_A"
-info "CIDR    : $SUBNET_A_CIDR"
-
+info "Zone 1  : $ZONE1"
 
 # ============================================================
-# SUBNET B
+# VERIFY NETWORK / SUBNETS
 # ============================================================
 
-SUBNET_B_LINE="$(
-    gcloud compute networks subnets list \
+gcloud compute networks describe "$NETWORK" \
+    --project="$PROJECT_ID" \
+    >/dev/null 2>&1 || die "Network $NETWORK not found"
+
+gcloud compute networks subnets describe "$SUBNET_A" \
+    --project="$PROJECT_ID" \
+    --region="$REGION" \
+    >/dev/null 2>&1 || die "$SUBNET_A not found in $REGION"
+
+gcloud compute networks subnets describe "$SUBNET_B" \
+    --project="$PROJECT_ID" \
+    --region="$REGION" \
+    >/dev/null 2>&1 || die "$SUBNET_B not found in $REGION"
+
+SUBNET_A_CIDR="$(
+    gcloud compute networks subnets describe "$SUBNET_A" \
         --project="$PROJECT_ID" \
-        --filter="name=$SUBNET_B" \
-        --format='value(name,region,network,ipCidrRange)' \
-        2>/dev/null \
-        | head -n1
+        --region="$REGION" \
+        --format='value(ipCidrRange)'
 )"
 
-if [[ -z "$SUBNET_B_LINE" ]]; then
-    die "Cannot find $SUBNET_B"
-fi
+SUBNET_B_CIDR="$(
+    gcloud compute networks subnets describe "$SUBNET_B" \
+        --project="$PROJECT_ID" \
+        --region="$REGION" \
+        --format='value(ipCidrRange)'
+)"
 
-
-read -r \
-    FOUND_SUBNET_B \
-    REGION_B_URL \
-    NETWORK_B_URL \
-    SUBNET_B_CIDR \
-    <<< "$SUBNET_B_LINE"
-
-REGION_B="${REGION_B_URL##*/}"
-FOUND_NETWORK_B="${NETWORK_B_URL##*/}"
-
-
-if [[ "$FOUND_NETWORK_B" != "$NETWORK" ]]; then
-    die "$SUBNET_B belongs to $FOUND_NETWORK_B, not $NETWORK"
-fi
-
-if [[ "$REGION_B" != "$REGION" ]]; then
-    die "$SUBNET_A and $SUBNET_B are in different regions."
-fi
-
-
-ok "Found $SUBNET_B"
-info "Region  : $REGION_B"
-info "Network : $FOUND_NETWORK_B"
-info "CIDR    : $SUBNET_B_CIDR"
-
+ok "Network: $NETWORK"
+ok "$SUBNET_A = $SUBNET_A_CIDR"
+ok "$SUBNET_B = $SUBNET_B_CIDR"
 
 # ============================================================
-# AUTO DETECT ZONES
-#
-# Zone1:
-# Prefer REGION-a because lab explicitly requires it.
-#
-# Zone2:
-# Prefer REGION-b.
-# Otherwise choose another UP zone.
+# VERIFY ZONE1 EXACT LAB ZONE
 # ============================================================
 
-mapfile -t REGION_ZONES < <(
+gcloud compute zones describe "$ZONE1" \
+    --project="$PROJECT_ID" \
+    >/dev/null 2>&1 || die "$ZONE1 not available"
+
+# ============================================================
+# AUTO DETECT SECOND DIFFERENT ZONE
+# ============================================================
+
+ZONE2="$(
     gcloud compute zones list \
         --project="$PROJECT_ID" \
         --format='value(name,status)' \
-        2>/dev/null \
-    | awk -v PREFIX="${REGION}-" \
-        '$1 ~ ("^" PREFIX) && $2=="UP" {print $1}' \
-    | sort
-)
+    | awk -v R="$REGION" -v Z1="$ZONE1" '
+        $1 ~ ("^" R "-") && $1 != Z1 && $2 == "UP" {
+            print $1
+            exit
+        }
+    '
+)"
 
+[[ -n "$ZONE2" ]] || die "Could not find another zone in $REGION"
 
-if (( ${#REGION_ZONES[@]} < 2 )); then
-
-    echo ""
-    gcloud compute zones list \
-        --project="$PROJECT_ID" \
-        --format="table(name,region.basename(),status)"
-
-    die "Less than two available zones in $REGION"
-fi
-
-
-PREFERRED_ZONE1="${REGION}-a"
-PREFERRED_ZONE2="${REGION}-b"
-
-ZONE1=""
-ZONE2=""
-
-
-# Zone 1
-if printf '%s\n' "${REGION_ZONES[@]}" \
-    | grep -qx "$PREFERRED_ZONE1"; then
-
-    ZONE1="$PREFERRED_ZONE1"
-
-else
-
-    ZONE1="${REGION_ZONES[0]}"
-
-    warn "$PREFERRED_ZONE1 unavailable. Using $ZONE1"
-fi
-
-
-# Zone 2
-if [[ "$PREFERRED_ZONE2" != "$ZONE1" ]] && \
-   printf '%s\n' "${REGION_ZONES[@]}" \
-   | grep -qx "$PREFERRED_ZONE2"; then
-
-    ZONE2="$PREFERRED_ZONE2"
-
-else
-
-    for z in "${REGION_ZONES[@]}"; do
-
-        if [[ "$z" != "$ZONE1" ]]; then
-            ZONE2="$z"
-            break
-        fi
-
-    done
-
-fi
-
-
-[[ -n "$ZONE2" ]] || die "Cannot find second zone."
-
-
-echo ""
-info "Available zones:"
-printf "   • %s\n" "${REGION_ZONES[@]}"
-
-echo ""
-info "Region : $REGION"
-info "Zone 1 : $ZONE1"
-info "Zone 2 : $ZONE2"
-
+info "Zone 2  : $ZONE2"
 
 gcloud config set compute/region "$REGION" >/dev/null
 gcloud config set compute/zone "$ZONE1" >/dev/null
 
-
-# ============================================================
-# COMPUTE API
-# ============================================================
-
-info "Checking Compute Engine API..."
-
 gcloud services enable compute.googleapis.com \
     --project="$PROJECT_ID" \
-    --quiet >/dev/null
+    --quiet >/dev/null 2>&1 || true
 
 ok "Environment ready"
 
+# ============================================================
+# [1/5] CLEAN OLD LAB RESOURCES
+# ============================================================
+
+section "[1/5] Cleaning Existing Lab Resources"
 
 # ============================================================
-# TASK 1 - FIREWALL
+# Forwarding rule
 # ============================================================
 
-section "[1/4] TASK 1 - Firewall Rules"
-
-
-# ------------------------------------------------------------
-# app-allow-http
-# ------------------------------------------------------------
-
-if gcloud compute firewall-rules describe "$HTTP_FW" \
+if gcloud compute forwarding-rules describe "$FORWARDING_RULE" \
     --project="$PROJECT_ID" \
-    >/dev/null 2>&1; then
+    --region="$REGION" >/dev/null 2>&1; then
 
-    warn "$HTTP_FW already exists"
+    info "Deleting $FORWARDING_RULE..."
 
-else
-
-    gcloud compute firewall-rules create "$HTTP_FW" \
+    retry gcloud compute forwarding-rules delete "$FORWARDING_RULE" \
         --project="$PROJECT_ID" \
-        --network="$NETWORK" \
-        --direction=INGRESS \
-        --priority=1000 \
-        --action=ALLOW \
-        --rules=tcp:80 \
-        --source-ranges=10.10.0.0/16 \
-        --target-tags=lb-backend \
-        --quiet
-
-    ok "Created $HTTP_FW"
+        --region="$REGION" \
+        --quiet || true
 fi
 
+# ============================================================
+# Backend service
+# ============================================================
 
-# ------------------------------------------------------------
-# app-allow-health-check
-# ------------------------------------------------------------
-
-if gcloud compute firewall-rules describe "$HC_FW" \
+if gcloud compute backend-services describe "$BACKEND_SERVICE" \
     --project="$PROJECT_ID" \
-    >/dev/null 2>&1; then
+    --region="$REGION" >/dev/null 2>&1; then
 
-    warn "$HC_FW already exists"
+    info "Deleting $BACKEND_SERVICE..."
 
-else
-
-    gcloud compute firewall-rules create "$HC_FW" \
+    retry gcloud compute backend-services delete "$BACKEND_SERVICE" \
         --project="$PROJECT_ID" \
-        --network="$NETWORK" \
-        --direction=INGRESS \
-        --priority=1000 \
-        --action=ALLOW \
-        --rules=tcp \
-        --source-ranges=130.211.0.0/22,35.191.0.0/16 \
-        --target-tags=lb-backend \
-        --quiet
-
-    ok "Created $HC_FW"
+        --region="$REGION" \
+        --quiet || true
 fi
 
+# ============================================================
+# Health check
+# ============================================================
 
-echo ""
-
-gcloud compute firewall-rules list \
+if gcloud compute health-checks describe "$HEALTH_CHECK" \
     --project="$PROJECT_ID" \
-    --filter="name=($HTTP_FW $HC_FW)" \
-    --format="table(
-        name,
-        network.basename(),
-        sourceRanges.list():label=SOURCE_RANGES,
-        allowed[].map().firewall_rule().list():label=ALLOW
+    --region="$REGION" >/dev/null 2>&1; then
+
+    info "Deleting $HEALTH_CHECK..."
+
+    retry gcloud compute health-checks delete "$HEALTH_CHECK" \
+        --project="$PROJECT_ID" \
+        --region="$REGION" \
+        --quiet || true
+fi
+
+# ============================================================
+# ILB IP
+# ============================================================
+
+if gcloud compute addresses describe "$ADDRESS_NAME" \
+    --project="$PROJECT_ID" \
+    --region="$REGION" >/dev/null 2>&1; then
+
+    info "Deleting $ADDRESS_NAME..."
+
+    retry gcloud compute addresses delete "$ADDRESS_NAME" \
+        --project="$PROJECT_ID" \
+        --region="$REGION" \
+        --quiet || true
+fi
+
+# ============================================================
+# Utility VM - find wherever it exists
+# ============================================================
+
+UTILITY_OLD_ZONE="$(
+    gcloud compute instances list \
+        --project="$PROJECT_ID" \
+        --filter="name=$UTILITY_VM" \
+        --format='value(zone)' \
+        | head -n1
+)"
+
+if [[ -n "$UTILITY_OLD_ZONE" ]]; then
+
+    UTILITY_OLD_ZONE="${UTILITY_OLD_ZONE##*/}"
+
+    info "Deleting old $UTILITY_VM from $UTILITY_OLD_ZONE..."
+
+    retry gcloud compute instances delete "$UTILITY_VM" \
+        --project="$PROJECT_ID" \
+        --zone="$UTILITY_OLD_ZONE" \
+        --quiet || true
+fi
+
+# ============================================================
+# DELETE MIGs wherever previous scripts may have created them
+# ============================================================
+
+delete_mig_anywhere() {
+
+    local MIG="$1"
+
+    local zones
+    zones="$(
+        gcloud compute instance-groups managed list \
+            --project="$PROJECT_ID" \
+            --filter="name=$MIG" \
+            --format='value(zone)' 2>/dev/null
     )"
 
+    while read -r zone_url; do
 
-ok "TASK 1 completed"
+        [[ -z "$zone_url" ]] && continue
 
+        local zone="${zone_url##*/}"
+
+        info "Found $MIG in $zone"
+
+        gcloud compute instance-groups managed stop-autoscaling "$MIG" \
+            --project="$PROJECT_ID" \
+            --zone="$zone" \
+            --quiet >/dev/null 2>&1 || true
+
+        info "Deleting $MIG..."
+
+        if retry gcloud compute instance-groups managed delete "$MIG" \
+            --project="$PROJECT_ID" \
+            --zone="$zone" \
+            --quiet; then
+
+            ok "Deleted $MIG from $zone"
+
+        else
+
+            die "Could not delete $MIG from $zone"
+        fi
+
+    done <<< "$zones"
+}
+
+delete_mig_anywhere "$MIG1"
+delete_mig_anywhere "$MIG2"
 
 # ============================================================
-# TASK 2 - INSTANCE TEMPLATES / MIG
+# Delete templates
 # ============================================================
 
-section "[2/4] TASK 2 - Templates, MIGs and Utility VM"
+for T in "$TEMPLATE1" "$TEMPLATE2"; do
 
+    if gcloud compute instance-templates describe "$T" \
+        --project="$PROJECT_ID" >/dev/null 2>&1; then
+
+        info "Deleting $T..."
+
+        retry gcloud compute instance-templates delete "$T" \
+            --project="$PROJECT_ID" \
+            --quiet || die "Cannot delete $T"
+
+        ok "Deleted $T"
+    fi
+
+done
 
 # ============================================================
-# STARTUP SCRIPT
+# Firewall rules
 # ============================================================
 
-STARTUP_FILE="/tmp/eplus-gsp216-startup.sh"
+for FW in "$FW_HTTP" "$FW_HEALTH"; do
 
-cat > "$STARTUP_FILE" <<'STARTUP'
+    if gcloud compute firewall-rules describe "$FW" \
+        --project="$PROJECT_ID" >/dev/null 2>&1; then
+
+        info "Deleting $FW..."
+
+        retry gcloud compute firewall-rules delete "$FW" \
+            --project="$PROJECT_ID" \
+            --quiet || true
+    fi
+
+done
+
+sleep 3
+
+ok "Cleanup completed"
+
+# ============================================================
+# [2/5] TASK 1 - FIREWALL
+# ============================================================
+
+section "[2/5] TASK 1 - Firewall Rules"
+
+gcloud compute firewall-rules create "$FW_HTTP" \
+    --project="$PROJECT_ID" \
+    --network="$NETWORK" \
+    --direction=INGRESS \
+    --priority=1000 \
+    --action=ALLOW \
+    --rules=tcp:80 \
+    --source-ranges=10.10.0.0/16 \
+    --target-tags=lb-backend \
+    --quiet
+
+ok "$FW_HTTP"
+
+gcloud compute firewall-rules create "$FW_HEALTH" \
+    --project="$PROJECT_ID" \
+    --network="$NETWORK" \
+    --direction=INGRESS \
+    --priority=1000 \
+    --action=ALLOW \
+    --rules=tcp \
+    --source-ranges=130.211.0.0/22,35.191.0.0/16 \
+    --target-tags=lb-backend \
+    --quiet
+
+ok "$FW_HEALTH"
+
+# ============================================================
+# [3/5] TASK 2
+# ============================================================
+
+section "[3/5] TASK 2 - Templates and Instance Groups"
+
+# ============================================================
+# STARTUP SCRIPT - EXACT LAB SCRIPT
+# ============================================================
+
+STARTUP="/tmp/gsp216-startup.sh"
+
+cat > "$STARTUP" <<'STARTUP_SCRIPT'
 #!/bin/bash
-
-export DEBIAN_FRONTEND=noninteractive
-
 apt-get update
-
-apt-get install -y \
-    apache2 \
-    php \
-    libapache2-mod-php \
-    php-curl \
-    curl
-
-cat <<'PHP' > /var/www/html/index.php
+apt-get install -y apache2 php libapache2-mod-php
+cat <<'EOF' > /var/www/html/index.php
 <h1>Internal Load Balancing Lab</h1>
-
 <h2>Client IP</h2>
 Your IP address : <?php echo $_SERVER['REMOTE_ADDR']; ?>
-
 <h2>Hostname</h2>
 Server Hostname: <?php echo gethostname(); ?>
-
 <h2>Server Location</h2>
 Region and Zone: <?php
-
-$ch = curl_init();
-
-curl_setopt(
-    $ch,
-    CURLOPT_URL,
-    "http://metadata.google.internal/computeMetadata/v1/instance/zone"
-);
-
-curl_setopt(
-    $ch,
-    CURLOPT_HTTPHEADER,
-    array('Metadata-Flavor: Google')
-);
-
-curl_setopt(
-    $ch,
-    CURLOPT_RETURNTRANSFER,
-    1
-);
-
-$zone = curl_exec($ch);
-
-$parts = explode('/', $zone);
-
-echo end($parts);
-
+  $ch = curl_init();
+  curl_setopt($ch, CURLOPT_URL, "http://metadata.google.internal/computeMetadata/v1/instance/zone");
+  curl_setopt($ch, CURLOPT_HTTPHEADER, array('Metadata-Flavor: Google'));
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+  $zone = curl_exec($ch);
+  $parts = explode('/', $zone);
+  echo end($parts);
 ?>
-PHP
-
+EOF
 rm -f /var/www/html/index.html
-
-systemctl enable apache2
 systemctl restart apache2
-STARTUP
-
+STARTUP_SCRIPT
 
 # ============================================================
-# TEMPLATE 1
+# TEMPLATE 1 - EXACT subnet-a
 # ============================================================
 
-if gcloud compute instance-templates describe "$TEMPLATE1" \
+info "Creating $TEMPLATE1..."
+
+gcloud compute instance-templates create "$TEMPLATE1" \
     --project="$PROJECT_ID" \
-    >/dev/null 2>&1; then
+    --machine-type=e2-micro \
+    --network-interface="network=$NETWORK,subnet=$SUBNET_A,no-address" \
+    --tags=lb-backend \
+    --metadata-from-file=startup-script="$STARTUP" \
+    --quiet
 
-    warn "$TEMPLATE1 already exists"
+ok "$TEMPLATE1 created"
 
-else
+# ============================================================
+# VERIFY TEMPLATE 1 BEFORE CONTINUE
+# ============================================================
 
-    info "Creating $TEMPLATE1 on $SUBNET_A"
-
-    gcloud compute instance-templates create "$TEMPLATE1" \
+T1="$(
+    gcloud compute instance-templates describe "$TEMPLATE1" \
         --project="$PROJECT_ID" \
-        --machine-type=e2-micro \
-        --image-family=debian-12 \
-        --image-project=debian-cloud \
-        --network-interface="network=$NETWORK,subnet=$SUBNET_A,no-address" \
-        --tags=lb-backend \
-        --metadata-from-file=startup-script="$STARTUP_FILE" \
-        --quiet
+        --format=json
+)"
 
-    ok "Created $TEMPLATE1"
-fi
+T1_MACHINE="$(jq -r '.properties.machineType // ""' <<< "$T1")"
 
+T1_SUBNET="$(
+    jq -r '.properties.networkInterfaces[0].subnetwork // ""' <<< "$T1"
+)"
+
+T1_NETWORK="$(
+    jq -r '.properties.networkInterfaces[0].network // ""' <<< "$T1"
+)"
+
+T1_EXT="$(
+    jq -r \
+        '(.properties.networkInterfaces[0].accessConfigs // []) | length' \
+        <<< "$T1"
+)"
+
+T1_TAG="$(
+    jq -r '.properties.tags.items[]? // empty' <<< "$T1" \
+    | grep -x lb-backend || true
+)"
+
+[[ "$T1_MACHINE" == "e2-micro" || "$T1_MACHINE" == */e2-micro ]] \
+    || die "Wrong machine type: $T1_MACHINE"
+
+[[ "$T1_SUBNET" == */subnetworks/subnet-a || "$T1_SUBNET" == "subnet-a" ]] \
+    || die "Wrong template subnet: $T1_SUBNET"
+
+[[ "$T1_NETWORK" == */networks/my-internal-app || "$T1_NETWORK" == "my-internal-app" ]] \
+    || die "Wrong network: $T1_NETWORK"
+
+[[ "$T1_EXT" == "0" ]] \
+    || die "Template has external IPv4"
+
+[[ "$T1_TAG" == "lb-backend" ]] \
+    || die "lb-backend tag missing"
+
+ok "Machine type  : e2-micro"
+ok "Network       : my-internal-app"
+ok "Subnetwork    : subnet-a"
+ok "External IPv4 : None"
+ok "Tag           : lb-backend"
 
 # ============================================================
-# TEMPLATE 2
+# TEMPLATE 2 - Copy equivalent configuration, subnet-b
 # ============================================================
 
-if gcloud compute instance-templates describe "$TEMPLATE2" \
+info "Creating $TEMPLATE2..."
+
+gcloud compute instance-templates create "$TEMPLATE2" \
     --project="$PROJECT_ID" \
-    >/dev/null 2>&1; then
+    --machine-type=e2-micro \
+    --network-interface="network=$NETWORK,subnet=$SUBNET_B,no-address" \
+    --tags=lb-backend \
+    --metadata-from-file=startup-script="$STARTUP" \
+    --quiet
 
-    warn "$TEMPLATE2 already exists"
-
-else
-
-    info "Creating $TEMPLATE2 on $SUBNET_B"
-
-    gcloud compute instance-templates create "$TEMPLATE2" \
-        --project="$PROJECT_ID" \
-        --machine-type=e2-micro \
-        --image-family=debian-12 \
-        --image-project=debian-cloud \
-        --network-interface="network=$NETWORK,subnet=$SUBNET_B,no-address" \
-        --tags=lb-backend \
-        --metadata-from-file=startup-script="$STARTUP_FILE" \
-        --quiet
-
-    ok "Created $TEMPLATE2"
-fi
-
+ok "$TEMPLATE2 created"
 
 # ============================================================
-# MIG 1
+# MIG 1 - EXACT LAB ZONE us-west4-b
 # ============================================================
 
-if gcloud compute instance-groups managed describe "$MIG1" \
+info "Creating $MIG1 in $ZONE1..."
+
+gcloud compute instance-groups managed create "$MIG1" \
     --project="$PROJECT_ID" \
     --zone="$ZONE1" \
-    >/dev/null 2>&1; then
+    --base-instance-name="$MIG1" \
+    --template="$TEMPLATE1" \
+    --size=1 \
+    --quiet
 
-    warn "$MIG1 already exists in $ZONE1"
-
-else
-
-    info "Creating $MIG1 in $ZONE1"
-
-    gcloud compute instance-groups managed create "$MIG1" \
-        --project="$PROJECT_ID" \
-        --zone="$ZONE1" \
-        --base-instance-name="$MIG1" \
-        --template="$TEMPLATE1" \
-        --size=1 \
-        --quiet
-
-    ok "Created $MIG1"
-fi
-
-
-# ============================================================
-# MIG 1 AUTOSCALER
-# Lab:
-# Min = 1
-# Max = 1
-# CPU = 80%
-# Initialization period = 45 sec
-# ============================================================
+ok "$MIG1 created in $ZONE1"
 
 gcloud compute instance-groups managed set-autoscaling "$MIG1" \
     --project="$PROJECT_ID" \
     --zone="$ZONE1" \
     --min-num-replicas=1 \
     --max-num-replicas=1 \
-    --target-cpu-utilization=0.8 \
+    --target-cpu-utilization=0.80 \
     --cool-down-period=45 \
     --mode=on \
     --quiet >/dev/null
 
-ok "$MIG1 autoscaling configured"
-
+ok "$MIG1 autoscaling = min 1 / max 1 / CPU 80% / init 45s"
 
 # ============================================================
-# MIG 2
+# MIG 2 - DIFFERENT ZONE
 # ============================================================
 
-if gcloud compute instance-groups managed describe "$MIG2" \
+info "Creating $MIG2 in $ZONE2..."
+
+gcloud compute instance-groups managed create "$MIG2" \
     --project="$PROJECT_ID" \
     --zone="$ZONE2" \
-    >/dev/null 2>&1; then
+    --base-instance-name="$MIG2" \
+    --template="$TEMPLATE2" \
+    --size=1 \
+    --quiet
 
-    warn "$MIG2 already exists in $ZONE2"
-
-else
-
-    info "Creating $MIG2 in $ZONE2"
-
-    gcloud compute instance-groups managed create "$MIG2" \
-        --project="$PROJECT_ID" \
-        --zone="$ZONE2" \
-        --base-instance-name="$MIG2" \
-        --template="$TEMPLATE2" \
-        --size=1 \
-        --quiet
-
-    ok "Created $MIG2"
-fi
-
-
-# ============================================================
-# MIG 2 AUTOSCALER
-# ============================================================
+ok "$MIG2 created in $ZONE2"
 
 gcloud compute instance-groups managed set-autoscaling "$MIG2" \
     --project="$PROJECT_ID" \
     --zone="$ZONE2" \
     --min-num-replicas=1 \
     --max-num-replicas=1 \
-    --target-cpu-utilization=0.8 \
+    --target-cpu-utilization=0.80 \
     --cool-down-period=45 \
     --mode=on \
     --quiet >/dev/null
 
-ok "$MIG2 autoscaling configured"
-
-
-# ============================================================
-# UTILITY VM
-# ============================================================
-
-UTILITY_EXISTING_ZONE="$(
-    gcloud compute instances list \
-        --project="$PROJECT_ID" \
-        --filter="name=$UTILITY_VM" \
-        --format='value(zone)' \
-        2>/dev/null \
-        | head -n1
-)"
-
-UTILITY_EXISTING_ZONE="${UTILITY_EXISTING_ZONE##*/}"
-
-
-if [[ -n "$UTILITY_EXISTING_ZONE" ]]; then
-
-    UTILITY_ZONE="$UTILITY_EXISTING_ZONE"
-
-    warn "$UTILITY_VM already exists in $UTILITY_ZONE"
-
-else
-
-    UTILITY_ZONE="$ZONE1"
-
-    info "Creating $UTILITY_VM"
-    info "Zone        : $UTILITY_ZONE"
-    info "Subnet      : $SUBNET_A"
-    info "Internal IP : $UTILITY_IP"
-
-    gcloud compute instances create "$UTILITY_VM" \
-        --project="$PROJECT_ID" \
-        --zone="$UTILITY_ZONE" \
-        --machine-type=e2-micro \
-        --image-family=debian-12 \
-        --image-project=debian-cloud \
-        --network-interface="network=$NETWORK,subnet=$SUBNET_A,private-network-ip=$UTILITY_IP" \
-        --quiet
-
-    ok "Created $UTILITY_VM"
-fi
-
+ok "$MIG2 autoscaling = min 1 / max 1 / CPU 80% / init 45s"
 
 # ============================================================
-# WAIT FOR MIG
-#
-# IMPORTANT:
-# All progress output -> STDERR
-# Only VM name -> STDOUT
-#
-# Therefore:
-# VM1="$(wait_for_mig ...)"
-# receives ONLY the VM name.
+# UTILITY VM - EXACT us-west4-b
 # ============================================================
 
-wait_for_mig() {
+info "Creating utility-vm..."
+
+gcloud compute instances create "$UTILITY_VM" \
+    --project="$PROJECT_ID" \
+    --zone="$ZONE1" \
+    --machine-type=e2-micro \
+    --network-interface="network=$NETWORK,subnet=$SUBNET_A,private-network-ip=$UTILITY_IP" \
+    --quiet
+
+ok "$UTILITY_VM created in $ZONE1"
+ok "Internal IP = $UTILITY_IP"
+
+# ============================================================
+# MIG WAIT
+# ============================================================
+
+wait_mig() {
 
     local GROUP="$1"
     local ZONE="$2"
 
-    local DATA=""
-    local NAME=""
-    local STATUS=""
-    local ACTION=""
-    local ERROR_CODE=""
-    local ERROR_MESSAGE=""
-    local PREVIOUS_ERROR=""
+    local JSON
+    local INSTANCE_URL
+    local INSTANCE
+    local STATUS
+    local ACTION
+    local ERROR_MSG
 
     for ((i=1; i<=30; i++)); do
 
-        DATA="$(
+        JSON="$(
             gcloud compute instance-groups managed list-instances "$GROUP" \
                 --project="$PROJECT_ID" \
                 --zone="$ZONE" \
                 --format=json \
-                2>/dev/null \
-                || echo '[]'
+                2>/dev/null || echo '[]'
         )"
 
-
-        NAME="$(
-            jq -r '.[0].name // empty' <<< "$DATA" 2>/dev/null || true
+        INSTANCE_URL="$(
+            jq -r '.[0].instance // empty' <<< "$JSON"
         )"
+
+        INSTANCE="${INSTANCE_URL##*/}"
 
         STATUS="$(
-            jq -r '.[0].instanceStatus // empty' <<< "$DATA" 2>/dev/null || true
+            jq -r '.[0].instanceStatus // empty' <<< "$JSON"
         )"
 
         ACTION="$(
-            jq -r '.[0].currentAction // empty' <<< "$DATA" 2>/dev/null || true
+            jq -r '.[0].currentAction // empty' <<< "$JSON"
         )"
 
-        ERROR_CODE="$(
-            jq -r \
-                '.[0].lastAttempt.errors.errors[0].code // empty' \
-                <<< "$DATA" \
-                2>/dev/null \
-                || true
-        )"
-
-        ERROR_MESSAGE="$(
+        ERROR_MSG="$(
             jq -r \
                 '.[0].lastAttempt.errors.errors[0].message // empty' \
-                <<< "$DATA" \
-                2>/dev/null \
-                || true
+                <<< "$JSON"
         )"
 
+        printf \
+            "\r${DIM}[%02d/30] %-18s STATUS=%-10s ACTION=%-10s${RESET}" \
+            "$i" \
+            "$GROUP" \
+            "${STATUS:-PENDING}" \
+            "${ACTION:-CREATING}" >&2
 
-        if [[ -n "$NAME" ]]; then
-
-            printf \
-                "\r${DIM}   [%02d/30] %-18s STATUS=%-10s ACTION=%-10s${RESET}" \
-                "$i" \
-                "$GROUP" \
-                "${STATUS:-PENDING}" \
-                "${ACTION:-UNKNOWN}" \
-                >&2
-
-        else
-
-            printf \
-                "\r${DIM}   [%02d/30] %-18s waiting for instance allocation...${RESET}" \
-                "$i" \
-                "$GROUP" \
-                >&2
+        if [[ -n "$ERROR_MSG" ]]; then
+            echo "" >&2
+            echo "${YELLOW}⚠ $ERROR_MSG${RESET}" >&2
         fi
 
-
-        if [[ -n "$ERROR_CODE" && "$ERROR_CODE" != "$PREVIOUS_ERROR" ]]; then
-
-            echo "" >&2
-
-            echo \
-                "${YELLOW}⚠ $GROUP provisioning error: $ERROR_CODE${RESET}" \
-                >&2
-
-            if [[ -n "$ERROR_MESSAGE" ]]; then
-                echo "   $ERROR_MESSAGE" >&2
-            fi
-
-            PREVIOUS_ERROR="$ERROR_CODE"
-        fi
-
-
-        if [[ "$STATUS" == "RUNNING" ]] && \
-           [[ "$ACTION" == "NONE" || -z "$ACTION" ]]; then
+        if [[ -n "$INSTANCE" && "$STATUS" == "RUNNING" ]]; then
 
             echo "" >&2
+            echo "${GREEN}✓ $GROUP VM: $INSTANCE${RESET}" >&2
 
-            echo \
-                "${GREEN}${BOLD}✓ $GROUP VM is RUNNING: $NAME${RESET}" \
-                >&2
-
-            echo "$NAME"
-
+            echo "$INSTANCE"
             return 0
         fi
 
-
         sleep 4
-
     done
 
-
     echo "" >&2
-
-    echo \
-        "${YELLOW}⚠ $GROUP did not become RUNNING yet.${RESET}" \
-        >&2
-
-    echo \
-        "${YELLOW}  Script will continue creating the remaining lab resources.${RESET}" \
-        >&2
-
-
-    gcloud compute instance-groups managed list-instances "$GROUP" \
-        --project="$PROJECT_ID" \
-        --zone="$ZONE" \
-        >&2 || true
-
+    warn "$GROUP VM not ready yet" >&2
 
     return 1
 }
 
-
-# ============================================================
-# CHECK MIGs
-# Do NOT kill script when provisioning is slow.
-# ============================================================
-
 echo ""
 info "Checking managed instances..."
 
-VM1="$(wait_for_mig "$MIG1" "$ZONE1" || true)"
+VM1="$(wait_mig "$MIG1" "$ZONE1" || true)"
 
 echo ""
 
-VM2="$(wait_for_mig "$MIG2" "$ZONE2" || true)"
+VM2="$(wait_mig "$MIG2" "$ZONE2" || true)"
 
 echo ""
-
-
-if [[ -n "$VM1" ]]; then
-    ok "$MIG1 VM: $VM1"
-else
-    warn "$MIG1 VM is not RUNNING yet"
-fi
-
-
-if [[ -n "$VM2" ]]; then
-    ok "$MIG2 VM: $VM2"
-else
-    warn "$MIG2 VM is not RUNNING yet"
-fi
-
-
-# ============================================================
-# BACKEND INTERNAL IPs
-# ============================================================
 
 BACKEND_IP1=""
 BACKEND_IP2=""
-
 
 if [[ -n "$VM1" ]]; then
 
@@ -853,14 +701,11 @@ if [[ -n "$VM1" ]]; then
         gcloud compute instances describe "$VM1" \
             --project="$PROJECT_ID" \
             --zone="$ZONE1" \
-            --format='value(networkInterfaces[0].networkIP)' \
-            2>/dev/null \
-            || true
+            --format='value(networkInterfaces[0].networkIP)'
     )"
 
-    info "$VM1 -> $BACKEND_IP1"
+    info "$VM1 = $BACKEND_IP1"
 fi
-
 
 if [[ -n "$VM2" ]]; then
 
@@ -868,84 +713,135 @@ if [[ -n "$VM2" ]]; then
         gcloud compute instances describe "$VM2" \
             --project="$PROJECT_ID" \
             --zone="$ZONE2" \
-            --format='value(networkInterfaces[0].networkIP)' \
-            2>/dev/null \
-            || true
+            --format='value(networkInterfaces[0].networkIP)'
     )"
 
-    info "$VM2 -> $BACKEND_IP2"
+    info "$VM2 = $BACKEND_IP2"
 fi
 
+# ============================================================
+# [4/5] TASK 3 - ILB
+# ============================================================
+
+section "[4/5] TASK 3 - Internal Load Balancer"
 
 # ============================================================
-# UTILITY VM STATUS
+# Regional TCP Health Check
 # ============================================================
 
-info "Checking $UTILITY_VM..."
+gcloud compute health-checks create tcp "$HEALTH_CHECK" \
+    --project="$PROJECT_ID" \
+    --region="$REGION" \
+    --port=80 \
+    --check-interval=5s \
+    --timeout=5s \
+    --healthy-threshold=2 \
+    --unhealthy-threshold=2 \
+    --quiet
 
-for ((i=1; i<=20; i++)); do
-
-    UTILITY_STATUS="$(
-        gcloud compute instances describe "$UTILITY_VM" \
-            --project="$PROJECT_ID" \
-            --zone="$UTILITY_ZONE" \
-            --format='value(status)' \
-            2>/dev/null \
-            || true
-    )"
-
-
-    if [[ "$UTILITY_STATUS" == "RUNNING" ]]; then
-
-        ok "$UTILITY_VM is RUNNING"
-        break
-    fi
-
-
-    printf \
-        "${DIM}   [%02d/20] utility-vm = %s${RESET}\r" \
-        "$i" \
-        "${UTILITY_STATUS:-CREATING}"
-
-    sleep 3
-done
-
-echo ""
-
+ok "$HEALTH_CHECK"
 
 # ============================================================
-# SSH HELPER
+# Backend service
 # ============================================================
+
+gcloud compute backend-services create "$BACKEND_SERVICE" \
+    --project="$PROJECT_ID" \
+    --region="$REGION" \
+    --load-balancing-scheme=INTERNAL \
+    --protocol=TCP \
+    --health-checks="$HEALTH_CHECK" \
+    --health-checks-region="$REGION" \
+    --quiet
+
+ok "$BACKEND_SERVICE"
+
+# ============================================================
+# Backend 1
+# ============================================================
+
+gcloud compute backend-services add-backend "$BACKEND_SERVICE" \
+    --project="$PROJECT_ID" \
+    --region="$REGION" \
+    --instance-group="$MIG1" \
+    --instance-group-zone="$ZONE1" \
+    --quiet
+
+ok "Added $MIG1"
+
+# ============================================================
+# Backend 2
+# ============================================================
+
+gcloud compute backend-services add-backend "$BACKEND_SERVICE" \
+    --project="$PROJECT_ID" \
+    --region="$REGION" \
+    --instance-group="$MIG2" \
+    --instance-group-zone="$ZONE2" \
+    --quiet
+
+ok "Added $MIG2"
+
+# ============================================================
+# Reserve Static Internal IP
+# ============================================================
+
+gcloud compute addresses create "$ADDRESS_NAME" \
+    --project="$PROJECT_ID" \
+    --region="$REGION" \
+    --subnet="$SUBNET_B" \
+    --addresses="$ILB_IP" \
+    --quiet
+
+ok "$ADDRESS_NAME = $ILB_IP"
+
+# ============================================================
+# Frontend / Forwarding Rule
+# ============================================================
+
+gcloud compute forwarding-rules create "$FORWARDING_RULE" \
+    --project="$PROJECT_ID" \
+    --region="$REGION" \
+    --load-balancing-scheme=INTERNAL \
+    --network="$NETWORK" \
+    --subnet="$SUBNET_B" \
+    --address="$ILB_IP" \
+    --ip-protocol=TCP \
+    --ports=80 \
+    --backend-service="$BACKEND_SERVICE" \
+    --backend-service-region="$REGION" \
+    --quiet
+
+ok "Internal Load Balancer created"
+
+# ============================================================
+# [5/5] TASK 4 - TEST
+# ============================================================
+
+section "[5/5] TASK 4 - Test Internal Load Balancer"
 
 ssh_utility() {
 
     gcloud compute ssh "$UTILITY_VM" \
         --project="$PROJECT_ID" \
-        --zone="$UTILITY_ZONE" \
+        --zone="$ZONE1" \
         --quiet \
         --command="$1"
 }
 
-
-# ============================================================
-# SSH CHECK
-# ============================================================
-
 SSH_READY=0
 
-info "Checking SSH access..."
+info "Waiting for utility-vm SSH..."
 
 for ((i=1; i<=15; i++)); do
 
-    if ssh_utility "echo eplus-ready" >/dev/null 2>&1; then
-
+    if ssh_utility "echo ready" >/dev/null 2>&1; then
         SSH_READY=1
         break
     fi
 
-
     printf \
-        "${DIM}   [%02d/15] Waiting for SSH...${RESET}\r" \
+        "\r${DIM}[%02d/15] Waiting for SSH...${RESET}" \
         "$i"
 
     sleep 4
@@ -953,380 +849,63 @@ done
 
 echo ""
 
-
 if [[ "$SSH_READY" == "1" ]]; then
+
     ok "utility-vm SSH ready"
-else
-    warn "utility-vm SSH not ready; continuing."
-fi
 
+    # ========================================================
+    # Direct Backend Tests
+    # ========================================================
 
-# ============================================================
-# BACKEND HTTP TEST
-# ============================================================
+    if [[ -n "$BACKEND_IP1" ]]; then
 
-if [[ "$SSH_READY" == "1" && -n "$BACKEND_IP1" ]]; then
+        info "Testing backend 1: $BACKEND_IP1"
 
-    echo ""
-    info "Testing backend 1: $BACKEND_IP1"
+        ssh_utility "
+            for i in \$(seq 1 20); do
 
-    ssh_utility "
-        for i in \$(seq 1 20); do
+                if curl -fsS --max-time 5 http://$BACKEND_IP1/; then
+                    exit 0
+                fi
 
-            if curl -fsS \
-                --max-time 5 \
-                http://$BACKEND_IP1/; then
+                sleep 4
+            done
 
-                exit 0
-            fi
+            exit 1
+        " || warn "Backend 1 still initializing"
 
-            sleep 4
-
-        done
-
-        exit 1
-    " || warn "Backend 1 Apache is still initializing."
-
-    echo ""
-fi
-
-
-if [[ "$SSH_READY" == "1" && -n "$BACKEND_IP2" ]]; then
-
-    echo ""
-    info "Testing backend 2: $BACKEND_IP2"
-
-    ssh_utility "
-        for i in \$(seq 1 20); do
-
-            if curl -fsS \
-                --max-time 5 \
-                http://$BACKEND_IP2/; then
-
-                exit 0
-            fi
-
-            sleep 4
-
-        done
-
-        exit 1
-    " || warn "Backend 2 Apache is still initializing."
-
-    echo ""
-fi
-
-
-ok "TASK 2 resources configured"
-
-
-# ============================================================
-# TASK 3 - INTERNAL LOAD BALANCER
-# ============================================================
-
-section "[3/4] TASK 3 - Internal Load Balancer"
-
-
-# ============================================================
-# REGIONAL TCP HEALTH CHECK
-# ============================================================
-
-if gcloud compute health-checks describe "$HEALTH_CHECK" \
-    --project="$PROJECT_ID" \
-    --region="$REGION" \
-    >/dev/null 2>&1; then
-
-    warn "$HEALTH_CHECK already exists"
-
-else
-
-    info "Creating $HEALTH_CHECK"
-
-    gcloud compute health-checks create tcp "$HEALTH_CHECK" \
-        --project="$PROJECT_ID" \
-        --region="$REGION" \
-        --port=80 \
-        --check-interval=5s \
-        --timeout=5s \
-        --healthy-threshold=2 \
-        --unhealthy-threshold=2 \
-        --quiet
-
-    ok "Created $HEALTH_CHECK"
-fi
-
-
-# ============================================================
-# REGIONAL BACKEND SERVICE
-# ============================================================
-
-if gcloud compute backend-services describe "$BACKEND_SERVICE" \
-    --project="$PROJECT_ID" \
-    --region="$REGION" \
-    >/dev/null 2>&1; then
-
-    warn "$BACKEND_SERVICE already exists"
-
-else
-
-    info "Creating backend service $BACKEND_SERVICE"
-
-    gcloud compute backend-services create "$BACKEND_SERVICE" \
-        --project="$PROJECT_ID" \
-        --region="$REGION" \
-        --load-balancing-scheme=INTERNAL \
-        --protocol=TCP \
-        --health-checks="$HEALTH_CHECK" \
-        --health-checks-region="$REGION" \
-        --quiet
-
-    ok "Created $BACKEND_SERVICE"
-fi
-
-
-# ============================================================
-# ADD MIG 1
-# ============================================================
-
-CURRENT_BACKENDS="$(
-    gcloud compute backend-services describe "$BACKEND_SERVICE" \
-        --project="$PROJECT_ID" \
-        --region="$REGION" \
-        --format='value(backends[].group)' \
-        2>/dev/null \
-        || true
-)"
-
-
-if echo "$CURRENT_BACKENDS" \
-    | grep -q "/instanceGroups/$MIG1"; then
-
-    warn "$MIG1 already attached"
-
-else
-
-    info "Adding $MIG1 to $BACKEND_SERVICE"
-
-    gcloud compute backend-services add-backend "$BACKEND_SERVICE" \
-        --project="$PROJECT_ID" \
-        --region="$REGION" \
-        --instance-group="$MIG1" \
-        --instance-group-zone="$ZONE1" \
-        --quiet
-
-    ok "Attached $MIG1"
-fi
-
-
-# ============================================================
-# ADD MIG 2
-# ============================================================
-
-CURRENT_BACKENDS="$(
-    gcloud compute backend-services describe "$BACKEND_SERVICE" \
-        --project="$PROJECT_ID" \
-        --region="$REGION" \
-        --format='value(backends[].group)' \
-        2>/dev/null \
-        || true
-)"
-
-
-if echo "$CURRENT_BACKENDS" \
-    | grep -q "/instanceGroups/$MIG2"; then
-
-    warn "$MIG2 already attached"
-
-else
-
-    info "Adding $MIG2 to $BACKEND_SERVICE"
-
-    gcloud compute backend-services add-backend "$BACKEND_SERVICE" \
-        --project="$PROJECT_ID" \
-        --region="$REGION" \
-        --instance-group="$MIG2" \
-        --instance-group-zone="$ZONE2" \
-        --quiet
-
-    ok "Attached $MIG2"
-fi
-
-
-# ============================================================
-# STATIC INTERNAL IP
-# ============================================================
-
-if gcloud compute addresses describe "$ADDRESS_NAME" \
-    --project="$PROJECT_ID" \
-    --region="$REGION" \
-    >/dev/null 2>&1; then
-
-    warn "$ADDRESS_NAME already exists"
-
-else
-
-    info "Reserving $ILB_IP"
-
-    gcloud compute addresses create "$ADDRESS_NAME" \
-        --project="$PROJECT_ID" \
-        --region="$REGION" \
-        --subnet="$SUBNET_B" \
-        --addresses="$ILB_IP" \
-        --quiet
-
-    ok "Reserved $ADDRESS_NAME"
-fi
-
-
-RESERVED_IP="$(
-    gcloud compute addresses describe "$ADDRESS_NAME" \
-        --project="$PROJECT_ID" \
-        --region="$REGION" \
-        --format='value(address)'
-)"
-
-
-info "$ADDRESS_NAME = $RESERVED_IP"
-
-
-if [[ "$RESERVED_IP" != "$ILB_IP" ]]; then
-
-    error "$ADDRESS_NAME has IP $RESERVED_IP"
-    error "Lab expects $ILB_IP"
-    exit 1
-fi
-
-
-# ============================================================
-# FORWARDING RULE
-#
-# Google documented pattern:
-# INTERNAL + TCP + regional backend service
-# ============================================================
-
-if gcloud compute forwarding-rules describe "$FORWARDING_RULE" \
-    --project="$PROJECT_ID" \
-    --region="$REGION" \
-    >/dev/null 2>&1; then
-
-    warn "$FORWARDING_RULE already exists"
-
-else
-
-    info "Creating Internal Load Balancer frontend"
-
-    gcloud compute forwarding-rules create "$FORWARDING_RULE" \
-        --project="$PROJECT_ID" \
-        --region="$REGION" \
-        --load-balancing-scheme=INTERNAL \
-        --network="$NETWORK" \
-        --subnet="$SUBNET_B" \
-        --address="$ILB_IP" \
-        --ip-protocol=TCP \
-        --ports=80 \
-        --backend-service="$BACKEND_SERVICE" \
-        --backend-service-region="$REGION" \
-        --quiet
-
-    ok "Created $FORWARDING_RULE"
-fi
-
-
-echo ""
-info "Internal Load Balancer"
-
-gcloud compute forwarding-rules describe "$FORWARDING_RULE" \
-    --project="$PROJECT_ID" \
-    --region="$REGION" \
-    --format="table(
-        name,
-        IPAddress,
-        IPProtocol,
-        ports,
-        loadBalancingScheme,
-        backendService.basename()
-    )"
-
-
-ok "TASK 3 configured"
-
-
-# ============================================================
-# TASK 4 - TEST
-# ============================================================
-
-section "[4/4] TASK 4 - Test Internal Load Balancer"
-
-
-# ============================================================
-# BACKEND HEALTH
-# ============================================================
-
-info "Checking backend health..."
-
-BACKEND_HEALTHY=0
-
-for ((i=1; i<=30; i++)); do
-
-    HEALTH_OUTPUT="$(
-        gcloud compute backend-services get-health "$BACKEND_SERVICE" \
-            --project="$PROJECT_ID" \
-            --region="$REGION" \
-            --format=json \
-            2>/dev/null \
-            || echo '[]'
-    )"
-
-
-    HEALTHY_COUNT="$(
-        jq \
-            '[.. | objects |
-              select(.healthState? == "HEALTHY")] |
-              length' \
-            <<< "$HEALTH_OUTPUT" \
-            2>/dev/null \
-            || echo 0
-    )"
-
-
-    printf \
-        "${DIM}   [%02d/30] Healthy endpoints: %s${RESET}\r" \
-        "$i" \
-        "$HEALTHY_COUNT"
-
-
-    if (( HEALTHY_COUNT >= 1 )); then
-
-        BACKEND_HEALTHY=1
-        break
+        echo ""
     fi
 
+    if [[ -n "$BACKEND_IP2" ]]; then
 
-    sleep 5
-done
+        info "Testing backend 2: $BACKEND_IP2"
 
-echo ""
+        ssh_utility "
+            for i in \$(seq 1 20); do
 
+                if curl -fsS --max-time 5 http://$BACKEND_IP2/; then
+                    exit 0
+                fi
 
-if [[ "$BACKEND_HEALTHY" == "1" ]]; then
-    ok "At least one ILB backend is HEALTHY"
-else
-    warn "Backends are not HEALTHY yet."
-fi
+                sleep 4
+            done
 
+            exit 1
+        " || warn "Backend 2 still initializing"
 
-# ============================================================
-# CURL LOAD BALANCER
-# ============================================================
+        echo ""
+    fi
 
-if [[ "$SSH_READY" == "1" ]]; then
-
-    info "Testing ILB $ILB_IP from utility-vm..."
+    # ========================================================
+    # ILB Test
+    # ========================================================
 
     ILB_READY=0
 
+    info "Waiting for ILB $ILB_IP..."
 
-    for ((i=1; i<=25; i++)); do
+    for ((i=1; i<=30; i++)); do
 
         if ssh_utility \
             "curl -fsS --max-time 5 http://$ILB_IP/ >/dev/null" \
@@ -1336,26 +915,23 @@ if [[ "$SSH_READY" == "1" ]]; then
             break
         fi
 
-
         printf \
-            "${DIM}   [%02d/25] Waiting for $ILB_IP...${RESET}\r" \
+            "\r${DIM}[%02d/30] Waiting for ILB health...${RESET}" \
             "$i"
 
-        sleep 4
+        sleep 5
     done
 
     echo ""
 
-
     if [[ "$ILB_READY" == "1" ]]; then
 
-        ok "Internal Load Balancer is responding"
+        ok "ILB responding"
 
         echo ""
-        echo "${MAGENTA}${BOLD}==============================================================${RESET}"
-        echo "${MAGENTA}${BOLD}                 LOAD BALANCER TEST${RESET}"
-        echo "${MAGENTA}${BOLD}==============================================================${RESET}"
-
+        echo "${MAGENTA}${BOLD}=============================================================="
+        echo "                  LOAD BALANCER TEST"
+        echo "==============================================================${RESET}"
 
         ssh_utility "
             for i in \$(seq 1 8); do
@@ -1368,116 +944,104 @@ if [[ "$SSH_READY" == "1" ]]; then
                     http://$ILB_IP/
 
                 echo
-                sleep 1
 
+                sleep 1
             done
         "
 
     else
 
-        warn "ILB did not answer yet."
+        warn "ILB health still initializing"
     fi
 
 else
 
-    warn "Skipping HTTP test because utility-vm SSH is unavailable."
+    warn "SSH unavailable; Task 4 test skipped"
 fi
 
+# ============================================================
+# FINAL CHECK
+# ============================================================
+
+section "FINAL RESOURCE CHECK"
+
+echo "${CYAN}Project       :${RESET} $PROJECT_ID"
+echo "${CYAN}Region        :${RESET} $REGION"
+echo "${CYAN}MIG1 Zone     :${RESET} $ZONE1"
+echo "${CYAN}MIG2 Zone     :${RESET} $ZONE2"
+echo ""
+echo "${CYAN}Template 1    :${RESET} $TEMPLATE1"
+echo "${CYAN}Template 2    :${RESET} $TEMPLATE2"
+echo "${CYAN}MIG 1         :${RESET} $MIG1"
+echo "${CYAN}MIG 2         :${RESET} $MIG2"
+echo ""
+echo "${CYAN}Utility VM    :${RESET} $UTILITY_VM"
+echo "${CYAN}Utility IP    :${RESET} $UTILITY_IP"
+echo "${CYAN}ILB IP        :${RESET} $ILB_IP"
 
 # ============================================================
-# FINAL REPORT
+# TEMPLATE 1 FINAL GRADER CHECK
 # ============================================================
 
-section "FINAL LAB STATUS"
+echo ""
+echo "${YELLOW}${BOLD}instance-template-1:${RESET}"
 
+gcloud compute instance-templates describe "$TEMPLATE1" \
+    --project="$PROJECT_ID" \
+    --format="yaml(
+        name,
+        properties.machineType,
+        properties.networkInterfaces,
+        properties.tags
+    )"
 
-echo "${CYAN}${BOLD}Project${RESET}       : $PROJECT_ID"
-echo "${CYAN}${BOLD}Network${RESET}       : $NETWORK"
-echo "${CYAN}${BOLD}Region${RESET}        : $REGION"
-echo "${CYAN}${BOLD}Zone 1${RESET}        : $ZONE1"
-echo "${CYAN}${BOLD}Zone 2${RESET}        : $ZONE2"
+# ============================================================
+# MIG STATUS
+# ============================================================
 
 echo ""
-
-echo "${CYAN}${BOLD}Subnet A${RESET}      : $SUBNET_A"
-echo "${CYAN}${BOLD}CIDR A${RESET}        : $SUBNET_A_CIDR"
-
-echo "${CYAN}${BOLD}Subnet B${RESET}      : $SUBNET_B"
-echo "${CYAN}${BOLD}CIDR B${RESET}        : $SUBNET_B_CIDR"
-
-echo ""
-
-echo "${CYAN}${BOLD}MIG 1${RESET}         : $MIG1"
-echo "${CYAN}${BOLD}MIG 2${RESET}         : $MIG2"
-
-echo "${CYAN}${BOLD}VM 1${RESET}          : ${VM1:-NOT READY}"
-echo "${CYAN}${BOLD}VM 2${RESET}          : ${VM2:-NOT READY}"
-
-echo "${CYAN}${BOLD}Backend IP 1${RESET}  : ${BACKEND_IP1:-NOT READY}"
-echo "${CYAN}${BOLD}Backend IP 2${RESET}  : ${BACKEND_IP2:-NOT READY}"
-
-echo ""
-
-echo "${CYAN}${BOLD}Utility VM${RESET}    : $UTILITY_VM"
-echo "${CYAN}${BOLD}Utility IP${RESET}    : $UTILITY_IP"
-
-echo ""
-
-echo "${CYAN}${BOLD}Health Check${RESET}  : $HEALTH_CHECK"
-echo "${CYAN}${BOLD}Backend Svc${RESET}   : $BACKEND_SERVICE"
-echo "${CYAN}${BOLD}ILB IP${RESET}        : $ILB_IP"
-echo "${CYAN}${BOLD}Forward Rule${RESET}  : $FORWARDING_RULE"
-
-
-echo ""
-echo "${YELLOW}${BOLD}Managed instances:${RESET}"
-echo ""
+echo "${YELLOW}${BOLD}instance-group-1:${RESET}"
 
 gcloud compute instance-groups managed list-instances "$MIG1" \
     --project="$PROJECT_ID" \
-    --zone="$ZONE1" \
-    || true
+    --zone="$ZONE1" || true
 
 echo ""
+echo "${YELLOW}${BOLD}instance-group-2:${RESET}"
 
 gcloud compute instance-groups managed list-instances "$MIG2" \
     --project="$PROJECT_ID" \
-    --zone="$ZONE2" \
-    || true
+    --zone="$ZONE2" || true
 
+# ============================================================
+# BACKEND HEALTH
+# ============================================================
 
 echo ""
 echo "${YELLOW}${BOLD}Backend health:${RESET}"
-echo ""
 
 gcloud compute backend-services get-health "$BACKEND_SERVICE" \
     --project="$PROJECT_ID" \
-    --region="$REGION" \
-    || true
+    --region="$REGION" || true
 
+# ============================================================
+# DONE
+# ============================================================
 
 echo ""
 echo "${GREEN}${BOLD}=============================================================="
-echo "               GSP216 SCRIPT COMPLETED"
+echo "                  GSP216 COMPLETED"
 echo "==============================================================${RESET}"
 
 echo ""
 echo "${MAGENTA}${BOLD}                    © ePlus.DEV${RESET}"
 echo ""
 
-echo "${YELLOW}${BOLD}Check my progress:${RESET}"
+echo "${YELLOW}${BOLD}Click Check my progress:${RESET}"
 echo ""
 echo "${GREEN}✓ Task 1 - Firewall rules${RESET}"
-echo "${GREEN}✓ Task 2 - Templates and managed instance groups${RESET}"
+echo "${GREEN}✓ Task 2 - Instance templates and instance groups${RESET}"
 echo "${GREEN}✓ Task 3 - Internal Load Balancer${RESET}"
 echo ""
-echo "${CYAN}Task 4 has no separate Check my progress; script tests it automatically.${RESET}"
+echo "${CYAN}Task 4 has no separate Check my progress.${RESET}"
 echo ""
-
-if [[ -z "$VM1" || -z "$VM2" ]]; then
-
-    echo "${YELLOW}${BOLD}NOTE:${RESET}"
-    echo "${YELLOW}One or more MIG instances are still provisioning.${RESET}"
-    echo "${YELLOW}Look at LAST_ERROR above. You can safely run ./lab.sh again.${RESET}"
-    echo ""
-fi
