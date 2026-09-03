@@ -12,7 +12,7 @@ clear
 
 # ================== INTRO ==================
 echo "${CYAN}${BOLD}=========================================================${RESET}"
-echo "${CYAN}${BOLD}     🚀 ePlus.DEV 🔥${RESET}"
+echo "${CYAN}${BOLD}                 🚀 ePlus.DEV 🔥${RESET}"
 echo "${CYAN}${BOLD}=========================================================${RESET}"
 echo
 
