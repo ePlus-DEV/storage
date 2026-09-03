@@ -1,79 +1,119 @@
 #!/bin/bash
-# Define color variables
 
-BLACK=`tput setaf 0`
-RED=`tput setaf 1`
-GREEN=`tput setaf 2`
-YELLOW=`tput setaf 3`
-BLUE=`tput setaf 4`
-MAGENTA=`tput setaf 5`
-CYAN=`tput setaf 6`
-WHITE=`tput setaf 7`
+# ================== STYLING ==================
+CYAN=$'\033[0;96m'
+GREEN=$'\033[0;92m'
+YELLOW=$'\033[0;93m'
+RED=$'\033[0;91m'
+BOLD=$'\033[1m'
+RESET=$'\033[0m'
 
-BG_BLACK=`tput setab 0`
-BG_RED=`tput setab 1`
-BG_GREEN=`tput setab 2`
-BG_YELLOW=`tput setab 3`
-BG_BLUE=`tput setab 4`
-BG_MAGENTA=`tput setab 5`
-BG_CYAN=`tput setab 6`
-BG_WHITE=`tput setab 7`
+clear
 
-BOLD=`tput bold`
-RESET=`tput sgr0`
+# ================== INTRO ==================
+echo "${CYAN}${BOLD}=========================================================${RESET}"
+echo "${CYAN}${BOLD}     🚀 ePlus.DEV 🔥${RESET}"
+echo "${CYAN}${BOLD}=========================================================${RESET}"
+echo
 
-#----------------------------------------------------start--------------------------------------------------#
+REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null || true)
+ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])" 2>/dev/null || true)
 
-echo "${BG_CYAN}${WHITE}${BOLD}Welcome to ePlus.DEV${RESET}"
+echo -e "${GREEN}✔ Region: ${REGION}${RESET}"
+echo -e "${GREEN}✔ Zone: ${ZONE}${RESET}"
 
-ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+PROJECT_ID=$(gcloud config get-value project)
+echo -e "${GREEN}✔ Project ID: ${PROJECT_ID}${RESET}"
+echo
 
-echo "Zone: ${YELLOW}$ZONE${RESET}"
+# ================== STARTUP SCRIPTS ==================
+cat << 'EOF' > blue-startup.sh
+#!/bin/bash
+apt-get update
+apt-get install nginx-light -y
+echo "<h1>🚀 Blue Server Ready!</h1>" > /var/www/html/index.nginx-debian.html
+EOF
 
-# Create instances
-gcloud compute instances create blue --project=$DEVSHELL_PROJECT_ID --zone=$ZONE --machine-type=e2-medium --network-interface=network-tier=PREMIUM,stack-type=IPV4_ONLY,subnet=default --metadata=enable-oslogin=true --maintenance-policy=MIGRATE --provisioning-model=STANDARD --tags=web-server,http-server --create-disk=auto-delete=yes,boot=yes,device-name=blue,image=projects/debian-cloud/global/images/debian-11-bullseye-v20230509,mode=rw,size=10,type=projects/$DEVSHELL_PROJECT_ID/zones/$ZONE/diskTypes/pd-balanced --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --labels=goog-ec-src=vm_add-gcloud --reservation-affinity=any
+cat << 'EOF' > green-startup.sh
+#!/bin/bash
+apt-get update
+apt-get install nginx-light -y
+echo "<h1>🌱 Green Server Ready!</h1>" > /var/www/html/index.nginx-debian.html
+EOF
 
-gcloud compute instances create green --project=$DEVSHELL_PROJECT_ID --zone=$ZONE --machine-type=e2-medium --network-interface=network-tier=PREMIUM,stack-type=IPV4_ONLY,subnet=default --metadata=enable-oslogin=true --maintenance-policy=MIGRATE --provisioning-model=STANDARD --create-disk=auto-delete=yes,boot=yes,device-name=blue,image=projects/debian-cloud/global/images/debian-11-bullseye-v20230509,mode=rw,size=10,type=projects/$DEVSHELL_PROJECT_ID/zones/$ZONE/diskTypes/pd-balanced --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring --labels=goog-ec-src=vm_add-gcloud --reservation-affinity=any
+# ================== CREATE INSTANCES ==================
+echo -e "${YELLOW}⚡ Creating BLUE server...${RESET}"
+gcloud compute instances create blue \
+    --zone=$ZONE \
+    --machine-type=e2-micro \
+    --tags=web-server \
+    --metadata-from-file=startup-script=blue-startup.sh
 
-# Create firewall rule
-gcloud compute --project=$DEVSHELL_PROJECT_ID firewall-rules create allow-http-web-server --direction=INGRESS --priority=1000 --network=default --action=ALLOW --rules=tcp:80,icmp --source-ranges=0.0.0.0/0 --target-tags=web-server
+echo -e "${YELLOW}⚡ Creating GREEN server...${RESET}"
+gcloud compute instances create green \
+    --zone=$ZONE \
+    --machine-type=e2-micro \
+    --metadata-from-file=startup-script=green-startup.sh
 
-# Create test VM
-gcloud compute instances create test-vm --machine-type=e2-micro --subnet=default --zone=$ZONE
+# ================== FIREWALL ==================
+echo -e "${YELLOW}🔥 Creating Firewall Rule...${RESET}"
+gcloud compute firewall-rules create allow-http-web-server \
+    --network=default \
+    --action=allow \
+    --direction=ingress \
+    --rules=tcp:80,icmp \
+    --source-ranges=0.0.0.0/0 \
+    --target-tags=web-server
 
-# Create service account and grant permissions
-gcloud iam service-accounts create network-admin --description="Service account for Network Admin role" --display-name="Network-admin"
+# ================== TEST VM ==================
+echo -e "${YELLOW}🧪 Creating test VM...${RESET}"
+gcloud compute instances create test-vm \
+    --zone=$ZONE \
+    --machine-type=e2-micro
 
-gcloud projects add-iam-policy-binding $DEVSHELL_PROJECT_ID --member=serviceAccount:network-admin@$DEVSHELL_PROJECT_ID.iam.gserviceaccount.com --role=roles/compute.networkAdmin
+# ================== SERVICE ACCOUNT ==================
+echo -e "${YELLOW}🔐 Creating Service Account...${RESET}"
+gcloud iam service-accounts create Network-admin \
+    --display-name="Network-admin"
 
-gcloud iam service-accounts keys create credentials.json --iam-account=network-admin@$DEVSHELL_PROJECT_ID.iam.gserviceaccount.com
+SA_EMAIL="Network-admin@${PROJECT_ID}.iam.gserviceaccount.com"
 
-# Create and copy blue server setup script
-cat > bluessh.sh <<'EOF_END'
-sudo apt-get install nginx-light -y
-sudo sed -i "14c\<h1>Welcome to the blue server!</h1>" /var/www/html/index.nginx-debian.html
-EOF_END
+echo -e "${YELLOW}🔑 Assigning Network Admin Role...${RESET}"
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/compute.networkAdmin" > /dev/null 2>&1
 
-gcloud compute scp bluessh.sh blue:/tmp --project=$DEVSHELL_PROJECT_ID --zone=$ZONE --quiet
-gcloud compute ssh blue --project=$DEVSHELL_PROJECT_ID --zone=$ZONE --quiet --command="bash /tmp/bluessh.sh" --ssh-flag="-o ConnectTimeout=60"
+echo -e "${YELLOW}📁 Generating credentials.json...${RESET}"
+gcloud iam service-accounts keys create credentials.json \
+    --iam-account=${SA_EMAIL}
 
-# Create and copy green server setup script
-cat > greenssh.sh <<'EOF_END'
-sudo apt-get install nginx-light -y
-sudo sed -i "14c\<h1>Welcome to the green server!</h1>" /var/www/html/index.nginx-debian.html
-EOF_END
+# ================== PAUSE ==================
+echo
+echo "${RED}${BOLD}⚠️ ACTION REQUIRED${RESET}"
+echo "👉 Click 'Check my progress' in lab now!"
+read -p "Press ENTER after completing checkpoints..."
 
-gcloud compute scp greenssh.sh green:/tmp --project=$DEVSHELL_PROJECT_ID --zone=$ZONE --quiet
-gcloud compute ssh green --project=$DEVSHELL_PROJECT_ID --zone=$ZONE --quiet --command="bash /tmp/greenssh.sh"
+# ================== ROLE SWITCH ==================
+echo -e "${YELLOW}🔄 Switching Roles...${RESET}"
 
-echo "${BG_GREEN}${BLACK}${BOLD}Congratulations For Completing The Lab !!!${RESET}"
+gcloud projects remove-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/compute.networkAdmin" > /dev/null 2>&1
 
-#---------------------------------------------------final-message---------------------------------------------------#
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/compute.securityAdmin" > /dev/null 2>&1
 
-echo "${YELLOW}${BOLD}https://eplus.dev${RESET}"
-echo "${MAGENTA}${BOLD}Thank you for learning with us — see you in the next cloud adventure!${RESET}"
+sleep 10
 
-#----------------------------------------------------cleanup---------------------------------------------------#
+# ================== CLEANUP ==================
+echo -e "${YELLOW}🧹 Cleaning Up Firewall...${RESET}"
+gcloud compute firewall-rules delete allow-http-web-server --quiet
 
-# Clean up temporary files
-rm -f bluessh.sh greenssh.sh
+rm blue-startup.sh green-startup.sh
+
+# ================== END ==================
+echo
+echo "${GREEN}${BOLD}=========================================================${RESET}"
+echo "${GREEN}${BOLD}        🎉 LAB COMPLETED SUCCESSFULLY! - ePlus.DEV 🎉${RESET}"
+echo "${GREEN}${BOLD}=========================================================${RESET}"
