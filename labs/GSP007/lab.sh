@@ -1,7 +1,16 @@
 #!/bin/bash
 
-# Enhanced Color Definitions
-BLACK=$'\033[0;90m'
+# ============================================================
+# GSP007 - External Passthrough Network Load Balancer
+# © ePlus.DEV
+# ============================================================
+
+set -uo pipefail
+
+# ============================================================
+# COLORS
+# ============================================================
+
 RED=$'\033[0;91m'
 GREEN=$'\033[0;92m'
 YELLOW=$'\033[0;93m'
@@ -10,191 +19,635 @@ MAGENTA=$'\033[0;95m'
 CYAN=$'\033[0;96m'
 WHITE=$'\033[0;97m'
 
-NO_COLOR=$'\033[0m'
 RESET=$'\033[0m'
 BOLD=$'\033[1m'
 UNDERLINE=$'\033[4m'
 
-# Header Section
-echo "${CYAN}${BOLD}╔════════════════════════════════════════════════════════╗${RESET}"
-echo "${CYAN}${BOLD}        WELCOME TO ePlus.DEV CLOUD TUTORIAL         ${RESET}"
-echo "${CYAN}${BOLD}╚════════════════════════════════════════════════════════╝${RESET}"
-echo
-echo "${MAGENTA}${BOLD}          Expert Tutorial by ePlus.DEV              ${RESET}"
-echo "${YELLOW}For more GCP tutorials, visit: ${UNDERLINE}https://eplus.dev${RESET}"
-echo
-echo "${BLUE}${BOLD}⚡ Initializing Load Balancer Configuration...${RESET}"
+# ============================================================
+# FUNCTIONS
+# ============================================================
+
+line() {
+  echo "${CYAN}============================================================${RESET}"
+}
+
+success() {
+  echo "${GREEN}✓ $1${RESET}"
+}
+
+info() {
+  echo "${CYAN}➜ $1${RESET}"
+}
+
+warn() {
+  echo "${YELLOW}⚠ $1${RESET}"
+}
+
+error() {
+  echo "${RED}✗ $1${RESET}"
+}
+
+section() {
+  echo
+  line
+  echo "${GREEN}${BOLD}$1${RESET}"
+  line
+}
+
+# ============================================================
+# HEADER
+# ============================================================
+
+clear
+
+echo "${CYAN}${BOLD}"
+echo "╔══════════════════════════════════════════════════════════╗"
+echo "║          GSP007 - NETWORK LOAD BALANCER                 ║"
+echo "║                     © ePlus.DEV                         ║"
+echo "╚══════════════════════════════════════════════════════════╝"
+echo "${RESET}"
+
+echo "${MAGENTA}${BOLD}Google Cloud Skills Boost Automation${RESET}"
+echo "${YELLOW}${UNDERLINE}https://eplus.dev${RESET}"
 echo
 
-REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+# ============================================================
+# PROJECT
+# ============================================================
 
-gcloud config set compute/region $REGION
-gcloud config set compute/zone $ZONE
+PROJECT_ID=$(gcloud config get-value project 2>/dev/null || true)
 
-echo "${CYAN}Selected Zone: ${WHITE}${BOLD}$ZONE${RESET}"
-echo "${CYAN}Derived Region: ${WHITE}${BOLD}$REGION${RESET}"
+if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then
+  error "Google Cloud project was not detected."
+  exit 1
+fi
+
+# ============================================================
+# AUTO DETECT REGION / ZONE
+# ============================================================
+
+section "[1/5] DETECT REGION AND ZONE"
+
+info "Detecting lab location automatically..."
+
+# ------------------------------------------------------------
+# 1. Try project metadata
+# ------------------------------------------------------------
+
+REGION=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-region])" \
+  2>/dev/null || true)
+
+ZONE=$(gcloud compute project-info describe \
+  --format="value(commonInstanceMetadata.items[google-compute-default-zone])" \
+  2>/dev/null || true)
+
+# ------------------------------------------------------------
+# 2. Try current gcloud config
+# ------------------------------------------------------------
+
+if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then
+  REGION=$(gcloud config get-value compute/region 2>/dev/null || true)
+fi
+
+if [[ -z "$ZONE" || "$ZONE" == "(unset)" ]]; then
+  ZONE=$(gcloud config get-value compute/zone 2>/dev/null || true)
+fi
+
+# ------------------------------------------------------------
+# 3. If zone exists but region doesn't, derive region
+# ------------------------------------------------------------
+
+if [[ (-z "$REGION" || "$REGION" == "(unset)") && \
+      -n "$ZONE" && "$ZONE" != "(unset)" ]]; then
+
+  REGION=$(gcloud compute zones describe "$ZONE" \
+    --format="value(region.basename())" \
+    2>/dev/null || true)
+fi
+
+# ------------------------------------------------------------
+# 4. If region exists but zone doesn't, find a valid zone
+# ------------------------------------------------------------
+
+if [[ (-z "$ZONE" || "$ZONE" == "(unset)") && \
+      -n "$REGION" && "$REGION" != "(unset)" ]]; then
+
+  ZONE=$(gcloud compute zones list \
+    --filter="region:($REGION) status:UP" \
+    --format="value(name)" \
+    --sort-by=name \
+    --limit=1 \
+    2>/dev/null || true)
+fi
+
+# ------------------------------------------------------------
+# Final validation
+# ------------------------------------------------------------
+
+if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then
+  error "Unable to automatically detect REGION."
+  exit 1
+fi
+
+if [[ -z "$ZONE" || "$ZONE" == "(unset)" ]]; then
+  error "Unable to automatically detect ZONE."
+  exit 1
+fi
+
+# ------------------------------------------------------------
+# Configure gcloud defaults
+# ------------------------------------------------------------
+
+gcloud config set compute/region "$REGION" --quiet >/dev/null
+gcloud config set compute/zone "$ZONE" --quiet >/dev/null
+
+success "Project detected"
+success "Region detected"
+success "Zone detected"
+
 echo
+echo "${WHITE}${BOLD}Lab Configuration${RESET}"
+echo "Project : ${GREEN}${PROJECT_ID}${RESET}"
+echo "Region  : ${GREEN}${REGION}${RESET}"
+echo "Zone    : ${GREEN}${ZONE}${RESET}"
 
-# Web Server Creation
-echo "${GREEN}${BOLD}▬▬▬▬▬▬▬▬▬ WEB SERVER SETUP ▬▬▬▬▬▬▬▬▬${RESET}"
-echo "${YELLOW}Creating web server instances...${RESET}"
+# ============================================================
+# TASK 2 - CREATE WEB SERVERS
+# ============================================================
+
+section "[2/5] CREATE WEB SERVER INSTANCES"
 
 create_web_server() {
-  local server_name=$1
-  echo "${CYAN}Creating instance ${BOLD}$server_name${RESET}..."
-  gcloud compute instances create $server_name \
-    --zone=$ZONE \
-    --tags=network-lb-tag \
-    --machine-type=e2-small \
-    --image-family=debian-11 \
-    --image-project=debian-cloud \
-    --metadata=startup-script='#!/bin/bash
-      apt-get update
-      apt-get install apache2 -y
-      service apache2 restart
-      echo "<h3>Web Server: '"$server_name"'</h3>" | tee /var/www/html/index.html'
-  echo "${GREEN}✅ Instance $server_name created successfully!${RESET}"
-  echo
+
+  local SERVER_NAME="$1"
+
+  # ----------------------------------------------------------
+  # Existing VM
+  # ----------------------------------------------------------
+
+  if gcloud compute instances describe "$SERVER_NAME" \
+      --zone="$ZONE" \
+      >/dev/null 2>&1; then
+
+    success "$SERVER_NAME already exists"
+
+    # Ensure required network tag exists
+    gcloud compute instances add-tags "$SERVER_NAME" \
+      --zone="$ZONE" \
+      --tags=network-lb-tag \
+      --quiet >/dev/null 2>&1 || true
+
+    return
+  fi
+
+  # ----------------------------------------------------------
+  # Startup script
+  # ----------------------------------------------------------
+
+  info "Creating $SERVER_NAME..."
+
+  STARTUP_SCRIPT=$(cat <<EOF
+#!/bin/bash
+
+apt-get update
+apt-get install apache2 -y
+
+systemctl enable apache2
+systemctl restart apache2
+
+cat > /var/www/html/index.html <<HTML
+<h3>Web Server: $SERVER_NAME</h3>
+HTML
+EOF
+)
+
+  # ----------------------------------------------------------
+  # Create VM
+  # ----------------------------------------------------------
+
+  if gcloud compute instances create "$SERVER_NAME" \
+      --zone="$ZONE" \
+      --tags=network-lb-tag \
+      --machine-type=e2-small \
+      --image-family=debian-12 \
+      --image-project=debian-cloud \
+      --metadata=startup-script="$STARTUP_SCRIPT" \
+      --quiet; then
+
+    success "$SERVER_NAME created successfully"
+
+  else
+
+    error "Failed to create $SERVER_NAME"
+    exit 1
+  fi
 }
+
+# ------------------------------------------------------------
+# Create required VMs
+# ------------------------------------------------------------
 
 create_web_server "www1"
 create_web_server "www2"
 create_web_server "www3"
 
-# Firewall Configuration
-echo "${GREEN}${BOLD}▬▬▬▬▬▬▬▬▬ FIREWALL SETUP ▬▬▬▬▬▬▬▬▬${RESET}"
-echo "${YELLOW}Configuring firewall rules...${RESET}"
-gcloud compute firewall-rules create www-firewall-network-lb \
-  --target-tags network-lb-tag \
-  --allow tcp:80
-echo "${GREEN}✅ Firewall rule created successfully!${RESET}"
+# ============================================================
+# FIREWALL
+# ============================================================
+
+echo
+info "Checking HTTP firewall rule..."
+
+if gcloud compute firewall-rules describe www-firewall-network-lb \
+    >/dev/null 2>&1; then
+
+  success "www-firewall-network-lb already exists"
+
+else
+
+  info "Creating www-firewall-network-lb..."
+
+  gcloud compute firewall-rules create www-firewall-network-lb \
+    --target-tags=network-lb-tag \
+    --allow=tcp:80 \
+    --quiet
+
+  success "Firewall rule created"
+fi
+
+# ============================================================
+# SHOW INSTANCES
+# ============================================================
+
+echo
+echo "${WHITE}${BOLD}Web Server Instances${RESET}"
 echo
 
-# Network Load Balancer Setup
-echo "${GREEN}${BOLD}▬▬▬▬▬ NETWORK LOAD BALANCER ▬▬▬▬▬${RESET}"
-echo "${YELLOW}Setting up network load balancer...${RESET}"
+gcloud compute instances list \
+  --filter="name=(www1 www2 www3)" \
+  --format="table(
+    name,
+    zone.basename():label=ZONE,
+    machineType.basename():label=MACHINE_TYPE,
+    status,
+    networkInterfaces[0].networkIP:label=INTERNAL_IP,
+    networkInterfaces[0].accessConfigs[0].natIP:label=EXTERNAL_IP
+  )"
 
-echo "${CYAN}Creating IP address...${RESET}"
-gcloud compute addresses create network-lb-ip-1 --region $REGION
+# ============================================================
+# WAIT FOR APACHE
+# ============================================================
 
-echo "${CYAN}Creating health check...${RESET}"
-gcloud compute http-health-checks create basic-check
+echo
+info "Waiting for Apache startup..."
 
-echo "${CYAN}Creating target pool...${RESET}"
-gcloud compute target-pools create www-pool \
-  --region $REGION \
-  --http-health-check basic-check
+for SERVER in www1 www2 www3; do
 
-echo "${CYAN}Adding instances to pool...${RESET}"
-gcloud compute target-pools add-instances www-pool \
-  --instances www1,www2,www3
+  SERVER_IP=$(gcloud compute instances describe "$SERVER" \
+    --zone="$ZONE" \
+    --format="value(networkInterfaces[0].accessConfigs[0].natIP)" \
+    2>/dev/null)
 
-echo "${CYAN}Creating forwarding rule...${RESET}"
-gcloud compute forwarding-rules create www-rule \
-  --region $REGION \
-  --ports 80 \
-  --address network-lb-ip-1 \
-  --target-pool www-pool
+  echo
+  info "Testing $SERVER → $SERVER_IP"
 
-IPADDRESS=$(gcloud compute forwarding-rules describe www-rule --region $REGION --format="json" | jq -r .IPAddress)
-echo "${GREEN}✅ Network load balancer configured successfully!${RESET}"
-echo "${CYAN}Load Balancer IP: ${WHITE}${BOLD}$IPADDRESS${RESET}"
+  READY=false
+
+  for attempt in {1..24}; do
+
+    RESPONSE=$(curl -s \
+      --connect-timeout 3 \
+      --max-time 5 \
+      "http://${SERVER_IP}" \
+      2>/dev/null || true)
+
+    if [[ "$RESPONSE" == *"Web Server:"* ]]; then
+
+      echo "   $RESPONSE"
+      success "$SERVER is ready"
+
+      READY=true
+      break
+    fi
+
+    printf "${YELLOW}   Apache startup: %02d/24\r${RESET}" "$attempt"
+
+    sleep 5
+  done
+
+  echo
+
+  if [[ "$READY" != true ]]; then
+    warn "$SERVER exists but Apache may still be initializing."
+  fi
+done
+
+# ============================================================
+# TASK 3 - LOAD BALANCING SERVICE
+# ============================================================
+
+section "[3/5] CONFIGURE LOAD BALANCING SERVICE"
+
+# ============================================================
+# STATIC REGIONAL EXTERNAL IP
+# ============================================================
+
+if gcloud compute addresses describe network-lb-ip-1 \
+    --region="$REGION" \
+    >/dev/null 2>&1; then
+
+  success "network-lb-ip-1 already exists"
+
+else
+
+  info "Creating regional static external IP..."
+
+  gcloud compute addresses create network-lb-ip-1 \
+    --region="$REGION" \
+    --quiet
+
+  success "Static IP created"
+fi
+
+STATIC_IP=$(gcloud compute addresses describe network-lb-ip-1 \
+  --region="$REGION" \
+  --format="value(address)")
+
+echo
+echo "Static IP : ${GREEN}${BOLD}${STATIC_IP}${RESET}"
+
+# ============================================================
+# LEGACY HTTP HEALTH CHECK
+# ============================================================
+
+echo
+info "Checking legacy health check..."
+
+if gcloud compute http-health-checks describe basic-check \
+    >/dev/null 2>&1; then
+
+  success "basic-check already exists"
+
+else
+
+  info "Creating basic-check..."
+
+  gcloud compute http-health-checks create basic-check \
+    --quiet
+
+  success "Health check created"
+fi
+
+# ============================================================
+# TASK 4 - TARGET POOL
+# ============================================================
+
+section "[4/5] CREATE TARGET POOL AND FORWARDING RULE"
+
+# ============================================================
+# TARGET POOL
+# ============================================================
+
+if gcloud compute target-pools describe www-pool \
+    --region="$REGION" \
+    >/dev/null 2>&1; then
+
+  success "www-pool already exists"
+
+else
+
+  info "Creating target pool..."
+
+  gcloud compute target-pools create www-pool \
+    --region="$REGION" \
+    --http-health-check=basic-check \
+    --quiet
+
+  success "Target pool created"
+fi
+
+# ============================================================
+# ENSURE HEALTH CHECK ATTACHED
+# ============================================================
+
+POOL_HEALTH=$(gcloud compute target-pools describe www-pool \
+  --region="$REGION" \
+  --format="value(healthChecks)" \
+  2>/dev/null || true)
+
+if [[ "$POOL_HEALTH" != *"basic-check"* ]]; then
+
+  info "Attaching basic-check to www-pool..."
+
+  gcloud compute target-pools add-health-checks www-pool \
+    --region="$REGION" \
+    --http-health-check=basic-check \
+    --quiet >/dev/null 2>&1 || true
+fi
+
+# ============================================================
+# ADD INSTANCES
+# ============================================================
+
+echo
+info "Checking target pool instances..."
+
+POOL_INFO=$(gcloud compute target-pools describe www-pool \
+  --region="$REGION" \
+  --format="value(instances)" \
+  2>/dev/null || true)
+
+for SERVER in www1 www2 www3; do
+
+  if echo "$POOL_INFO" | grep -q "/instances/${SERVER}"; then
+
+    success "$SERVER already in www-pool"
+
+  else
+
+    info "Adding $SERVER to www-pool..."
+
+    if gcloud compute target-pools add-instances www-pool \
+      --region="$REGION" \
+      --instances="$SERVER" \
+      --instances-zone="$ZONE" \
+      --quiet; then
+
+      success "$SERVER added"
+
+    else
+
+      error "Failed to add $SERVER to target pool"
+      exit 1
+    fi
+  fi
+
+done
+
+# ============================================================
+# FORWARDING RULE
+# ============================================================
+
+echo
+info "Checking forwarding rule..."
+
+if gcloud compute forwarding-rules describe www-rule \
+    --region="$REGION" \
+    >/dev/null 2>&1; then
+
+  success "www-rule already exists"
+
+else
+
+  info "Creating forwarding rule..."
+
+  gcloud compute forwarding-rules create www-rule \
+    --region="$REGION" \
+    --ports=80 \
+    --address=network-lb-ip-1 \
+    --target-pool=www-pool \
+    --quiet
+
+  success "Forwarding rule created"
+fi
+
+# ============================================================
+# TASK 5 - TEST LOAD BALANCER
+# ============================================================
+
+section "[5/5] TEST NETWORK LOAD BALANCER"
+
+IPADDRESS=$(gcloud compute forwarding-rules describe www-rule \
+  --region="$REGION" \
+  --format="value(IPAddress)" \
+  2>/dev/null)
+
+echo
+echo "${WHITE}${BOLD}Load Balancer IP${RESET}"
+echo
+echo "    ${GREEN}${BOLD}${IPADDRESS}${RESET}"
 echo
 
-# HTTP Load Balancer Setup
-echo "${GREEN}${BOLD}▬▬▬▬▬ HTTP LOAD BALANCER ▬▬▬▬▬${RESET}"
-echo "${YELLOW}Setting up HTTP load balancer...${RESET}"
+# ============================================================
+# WAIT UNTIL NLB RESPONDS
+# ============================================================
 
-echo "${CYAN}Creating instance template...${RESET}"
-gcloud compute instance-templates create lb-backend-template \
-  --region=$REGION \
-  --network=default \
-  --subnet=default \
-  --tags=allow-health-check \
-  --machine-type=e2-medium \
-  --image-family=debian-11 \
-  --image-project=debian-cloud \
-  --metadata=startup-script='#!/bin/bash
-    apt-get update
-    apt-get install apache2 -y
-    a2ensite default-ssl
-    a2enmod ssl
-    vm_hostname="$(curl -H "Metadata-Flavor:Google" \
-    http://169.254.169.254/computeMetadata/v1/instance/name)"
-    echo "Page served from: $vm_hostname" | \
-    tee /var/www/html/index.html
-    systemctl restart apache2'
-echo "${GREEN}✅ Instance template created successfully!${RESET}"
+info "Waiting for healthy load balancer backends..."
+
+LB_READY=false
+
+for attempt in {1..24}; do
+
+  RESPONSE=$(curl -s \
+    --connect-timeout 3 \
+    --max-time 5 \
+    "http://${IPADDRESS}" \
+    2>/dev/null || true)
+
+  if [[ "$RESPONSE" == *"Web Server:"* ]]; then
+
+    echo
+    success "Network Load Balancer is responding"
+    echo "   $RESPONSE"
+
+    LB_READY=true
+    break
+  fi
+
+  printf "${YELLOW}Health check propagation: %02d/24\r${RESET}" "$attempt"
+
+  sleep 5
+done
+
 echo
 
-echo "${CYAN}Creating managed instance group...${RESET}"
-gcloud compute instance-groups managed create lb-backend-group \
-  --template=lb-backend-template \
-  --size=2 \
-  --zone=$ZONE
-echo "${GREEN}✅ Managed instance group created successfully!${RESET}"
+# ============================================================
+# TRAFFIC DISTRIBUTION TEST
+# ============================================================
+
+if [[ "$LB_READY" == true ]]; then
+
+  echo
+  echo "${WHITE}${BOLD}Traffic Distribution Test${RESET}"
+  echo
+
+  for i in {1..12}; do
+
+    RESPONSE=$(curl -s \
+      --connect-timeout 3 \
+      --max-time 5 \
+      "http://${IPADDRESS}" \
+      2>/dev/null || true)
+
+    printf "Request %02d → %s\n" "$i" "$RESPONSE"
+
+    sleep 1
+  done
+
+else
+
+  warn "Load balancer resources are ready."
+  warn "Google Cloud health checks may still be propagating."
+fi
+
+# ============================================================
+# FINAL CHECK
+# ============================================================
+
+section "FINAL RESOURCE STATUS"
+
+echo "${WHITE}${BOLD}VM INSTANCES${RESET}"
 echo
 
-echo "${CYAN}Configuring health check firewall...${RESET}"
-gcloud compute firewall-rules create fw-allow-health-check \
-  --network=default \
-  --action=allow \
-  --direction=ingress \
-  --source-ranges=130.211.0.0/22,35.191.0.0/16 \
-  --target-tags=allow-health-check \
-  --rules=tcp:80
-echo "${GREEN}✅ Firewall rule created successfully!${RESET}"
+gcloud compute instances list \
+  --filter="name=(www1 www2 www3)" \
+  --format="table(
+    name,
+    zone.basename():label=ZONE,
+    machineType.basename():label=MACHINE,
+    status
+  )"
+
+echo
+echo "${WHITE}${BOLD}NETWORK LOAD BALANCER${RESET}"
 echo
 
-echo "${CYAN}Creating global IP address...${RESET}"
-gcloud compute addresses create lb-ipv4-1 --ip-version=IPV4 --global
+echo "Project         : ${GREEN}$PROJECT_ID${RESET}"
+echo "Region          : ${GREEN}$REGION${RESET}"
+echo "Zone            : ${GREEN}$ZONE${RESET}"
+echo "Static IP       : ${GREEN}$STATIC_IP${RESET}"
+echo "Health Check    : ${GREEN}basic-check${RESET}"
+echo "Target Pool     : ${GREEN}www-pool${RESET}"
+echo "Forwarding Rule : ${GREEN}www-rule${RESET}"
+echo "Load Balancer IP: ${GREEN}${BOLD}$IPADDRESS${RESET}"
 
-echo "${CYAN}Creating health check...${RESET}"
-gcloud compute health-checks create http http-basic-check --port 80
+# ============================================================
+# TARGET POOL HEALTH
+# ============================================================
 
-echo "${CYAN}Creating backend service...${RESET}"
-gcloud compute backend-services create web-backend-service \
-  --protocol=HTTP \
-  --port-name=http \
-  --health-checks=http-basic-check \
-  --global
-
-echo "${CYAN}Adding backend to service...${RESET}"
-gcloud compute backend-services add-backend web-backend-service \
-  --instance-group=lb-backend-group \
-  --instance-group-zone=$ZONE \
-  --global
-
-echo "${CYAN}Creating URL map...${RESET}"
-gcloud compute url-maps create web-map-http --default-service web-backend-service
-
-echo "${CYAN}Creating target HTTP proxy...${RESET}"
-gcloud compute target-http-proxies create http-lb-proxy --url-map web-map-http
-
-echo "${CYAN}Creating forwarding rule...${RESET}"
-gcloud compute forwarding-rules create http-content-rule \
-  --address=lb-ipv4-1 \
-  --global \
-  --target-http-proxy=http-lb-proxy \
-  --ports=80
-echo "${GREEN}✅ HTTP load balancer configured successfully!${RESET}"
+echo
+echo "${WHITE}${BOLD}Target Pool Health${RESET}"
 echo
 
-# Cleanup and Completion
-echo "${GREEN}${BOLD}▬▬▬▬▬▬▬▬ CLEANUP ▬▬▬▬▬▬▬▬${RESET}"
-echo "${YELLOW}Removing script for security...${RESET}"
-rm -- "$0"
-echo "${GREEN}✅ Script removed successfully!${RESET}"
-echo
+gcloud compute target-pools get-health www-pool \
+  --region="$REGION" \
+  2>/dev/null || true
 
-# Completion Message
-echo "${GREEN}${BOLD}╔════════════════════════════════════════════════════════╗${RESET}"
-echo "${GREEN}${BOLD}          LOAD BALANCER SETUP COMPLETED!                  ${RESET}"
-echo "${GREEN}${BOLD}╚════════════════════════════════════════════════════════╝${RESET}"
+# ============================================================
+# COMPLETE
+# ============================================================
+
 echo
-echo "${RED}${BOLD}🙏 Special thanks to ePlus.DEV for this tutorial!${RESET}"
-echo "${YELLOW}${BOLD}📺 Subscribe for more GCP content:${RESET}"
-echo "${BLUE}${UNDERLINE}https://eplus.dev${RESET}"
+echo "${GREEN}${BOLD}"
+echo "╔══════════════════════════════════════════════════════════╗"
+echo "║                 GSP007 COMPLETED                        ║"
+echo "║                     © ePlus.DEV                         ║"
+echo "╚══════════════════════════════════════════════════════════╝"
+echo "${RESET}"
+
+echo "${CYAN}Load Balancer:${RESET}"
+echo "${BLUE}${UNDERLINE}http://${IPADDRESS}${RESET}"
 echo
-echo "${MAGENTA}${BOLD}🚀 Happy cloud computing with Google Cloud!${RESET}"
+echo "${YELLOW}${BOLD}Click \"Check my progress\" in Google Cloud Skills Boost.${RESET}"
+echo
