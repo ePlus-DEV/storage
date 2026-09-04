@@ -359,8 +359,12 @@ echo "${CYAN_TEXT}${BOLD_TEXT}==================================================
 echo "${CYAN_TEXT}${BOLD_TEXT} TASK 4B - CREATE SHOT ANGLE FUNCTION${RESET_FORMAT}"
 echo "${CYAN_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
 
-bq query --use_legacy_sql=false "
-CREATE OR REPLACE FUNCTION \`soccer.${FUNC_2}\`(x INT64, y INT64)
+bq query \
+--project_id="$PROJECT_ID" \
+--use_legacy_sql=false \
+"
+CREATE OR REPLACE FUNCTION
+\`${PROJECT_ID}.soccer.${ANGLE_FUNC}\`(x INT64, y INT64)
 RETURNS FLOAT64
 AS (
  SAFE.ACOS(
