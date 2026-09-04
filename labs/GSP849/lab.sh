@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ============================================================
-# ePlus.DEV - BigQuery Soccer Data Analysis
+# ePlus.DEV - BigQuery Soccer Data Analysis Lab
 # ============================================================
 
 # ---------- COLORS ----------
@@ -48,34 +48,47 @@ echo "${BLUE}${BOLD}Checking soccer dataset...${RESET}"
 
 if ! bq show "${PROJECT_ID}:soccer" >/dev/null 2>&1; then
     echo "${RED}✗ Dataset soccer was not found.${RESET}"
-    echo
-    echo "${YELLOW}Make sure you are using the Qwiklabs student project.${RESET}"
+    echo "${YELLOW}Make sure you are using the correct Qwiklabs project.${RESET}"
     exit 1
 fi
 
 echo "${GREEN}✓ Dataset soccer found.${RESET}"
 
 # ============================================================
-# DETECT DATASET LOCATION
+# DETECT BIGQUERY LOCATION
 # ============================================================
 
 LOCATION=$(bq show \
     --format=prettyjson \
     "${PROJECT_ID}:soccer" 2>/dev/null |
-    python3 -c 'import json,sys; print(json.load(sys.stdin).get("location",""))' \
-    2>/dev/null)
+    python3 -c '
+import json,sys
+try:
+    print(json.load(sys.stdin).get("location",""))
+except:
+    print("")
+' 2>/dev/null)
 
 if [[ -n "$LOCATION" ]]; then
     echo "${GREEN}✓ Location   : ${WHITE}${LOCATION}${RESET}"
+else
+    echo "${YELLOW}! Could not detect dataset location.${RESET}"
 fi
 
 # ============================================================
-# FUNCTION - RUN QUERY
+# RUN QUERY FUNCTION
 # ============================================================
 
-run_bq_query() {
+run_query() {
 
-    local SQL="$1"
+    local TASK="$1"
+    local SQL="$2"
+
+    echo
+    echo "${CYAN}${BOLD}============================================================${RESET}"
+    echo "${CYAN}${BOLD}${TASK}${RESET}"
+    echo "${CYAN}${BOLD}============================================================${RESET}"
+    echo
 
     if [[ -n "$LOCATION" ]]; then
 
@@ -94,64 +107,19 @@ run_bq_query() {
 
     fi
 
-    RESULT=$?
-
-    if [[ $RESULT -ne 0 ]]; then
+    if [[ $? -ne 0 ]]; then
         echo
-        echo "${RED}${BOLD}✗ Query failed.${RESET}"
+        echo "${RED}${BOLD}✗ ${TASK} failed.${RESET}"
         exit 1
     fi
+
+    echo
+    echo "${GREEN}${BOLD}✓ ${TASK} completed successfully.${RESET}"
 }
 
 # ============================================================
-# FUNCTION - WAIT FOR CHECK
+# [1/3] TASK 2 - MATCHES WITH THE MOST GOALS
 # ============================================================
-
-wait_for_check() {
-
-    local TASK="$1"
-
-    echo
-    echo "${GREEN}${BOLD}✓ ${TASK} query completed.${RESET}"
-    echo
-    echo "${YELLOW}${BOLD}============================================================${RESET}"
-    echo "${YELLOW}${BOLD}IMPORTANT:${RESET}"
-    echo
-    echo "${WHITE}1. Go back to Google Skills Boost.${RESET}"
-    echo "${WHITE}2. Click ${GREEN}${BOLD}Check my progress${RESET}${WHITE} for ${TASK}.${RESET}"
-    echo "${WHITE}3. Wait until the task shows completed.${RESET}"
-    echo
-    echo "${YELLOW}DO NOT continue before checking the task.${RESET}"
-    echo "${YELLOW}${BOLD}============================================================${RESET}"
-    echo
-
-    while true; do
-
-        read -r -p "After ${TASK} is completed, enter Y to continue: " ANSWER
-
-        case "$ANSWER" in
-            [Yy])
-                echo
-                break
-                ;;
-            *)
-                echo "${YELLOW}Please check the task first, then enter Y.${RESET}"
-                ;;
-        esac
-
-    done
-}
-
-# ============================================================
-# TASK 2
-# Matches with the most goals
-# ============================================================
-
-echo
-echo "${CYAN}${BOLD}============================================================${RESET}"
-echo "${CYAN}${BOLD} TASK 2 - MATCHES WITH THE MOST GOALS${RESET}"
-echo "${CYAN}${BOLD}============================================================${RESET}"
-echo
 
 TASK2_SQL=$(cat <<'SQL'
 SELECT
@@ -171,23 +139,11 @@ ORDER BY
 SQL
 )
 
-echo "${YELLOW}Running the exact Task 2 lab query...${RESET}"
-echo
-
-run_bq_query "$TASK2_SQL"
-
-wait_for_check "TASK 2"
+run_query "[1/3] TASK 2 - MATCHES WITH THE MOST GOALS" "$TASK2_SQL"
 
 # ============================================================
-# TASK 3
-# Players with the most passes
+# [2/3] TASK 3 - PLAYERS WITH THE MOST PASSES
 # ============================================================
-
-echo
-echo "${CYAN}${BOLD}============================================================${RESET}"
-echo "${CYAN}${BOLD} TASK 3 - PLAYERS WITH THE MOST PASSES${RESET}"
-echo "${CYAN}${BOLD}============================================================${RESET}"
-echo
 
 TASK3_SQL=$(cat <<'SQL'
 SELECT
@@ -215,23 +171,11 @@ LIMIT 10
 SQL
 )
 
-echo "${YELLOW}Running the exact Task 3 lab query...${RESET}"
-echo
-
-run_bq_query "$TASK3_SQL"
-
-wait_for_check "TASK 3"
+run_query "[2/3] TASK 3 - PLAYERS WITH THE MOST PASSES" "$TASK3_SQL"
 
 # ============================================================
-# TASK 4
-# Penalty kick success rate
+# [3/3] TASK 4 - PENALTY KICK SUCCESS RATE
 # ============================================================
-
-echo
-echo "${CYAN}${BOLD}============================================================${RESET}"
-echo "${CYAN}${BOLD} TASK 4 - PENALTY KICK SUCCESS RATE${RESET}"
-echo "${CYAN}${BOLD}============================================================${RESET}"
-echo
 
 TASK4_SQL=$(cat <<'SQL'
 SELECT
@@ -267,24 +211,7 @@ ORDER BY
 SQL
 )
 
-echo "${YELLOW}Running the exact Task 4 lab query...${RESET}"
-echo
-
-run_bq_query "$TASK4_SQL"
-
-# ============================================================
-# TASK 4 CHECK
-# ============================================================
-
-echo
-echo "${GREEN}${BOLD}✓ TASK 4 query completed.${RESET}"
-echo
-echo "${YELLOW}${BOLD}============================================================${RESET}"
-echo "${WHITE}Go back to Google Skills Boost and click:${RESET}"
-echo
-echo "${GREEN}${BOLD}     Check my progress - TASK 4${RESET}"
-echo
-echo "${YELLOW}${BOLD}============================================================${RESET}"
+run_query "[3/3] TASK 4 - PENALTY KICK SUCCESS RATE" "$TASK4_SQL"
 
 # ============================================================
 # COMPLETE
@@ -293,8 +220,16 @@ echo "${YELLOW}${BOLD}==========================================================
 echo
 echo
 echo "${GREEN}${BOLD}╔════════════════════════════════════════════════════════════╗${RESET}"
-echo "${GREEN}${BOLD}              ALL REQUIRED QUERIES COMPLETED                ${RESET}"
+echo "${GREEN}${BOLD}              ALL LAB TASKS COMPLETED ✓                    ${RESET}"
 echo "${GREEN}${BOLD}╚════════════════════════════════════════════════════════════╝${RESET}"
+echo
+echo "${WHITE}${BOLD}Completed processes:${RESET}"
+echo
+echo "${GREEN}✓ [1/3] Task 2 - totalGoals DESC, date DESC${RESET}"
+echo "${GREEN}✓ [2/3] Task 3 - numPasses DESC${RESET}"
+echo "${GREEN}✓ [3/3] Task 4 - PKSuccessRate DESC${RESET}"
+echo
+echo "${YELLOW}${BOLD}Now return to Google Skills Boost and click Check my progress.${RESET}"
 echo
 echo "${MAGENTA}${BOLD}                     © ePlus.DEV${RESET}"
 echo
