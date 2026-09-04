@@ -1,23 +1,16 @@
 #!/bin/bash
 
 # ============================================================
-# GSP859
-# Migrating Amazon RDS for MySQL -> Cloud SQL for MySQL
-# Database Migration Service
+# GSP859 - VERSION MISMATCH AUTO REPAIR
+#
+# RDS MySQL 8.4 -> Cloud SQL MySQL 8.4
 #
 # ePlus.DEV Cloud Tutorial
 # ============================================================
 
-# IMPORTANT:
-# - NO "set -e"
-# - NO "exit"
-# - Safe to paste directly into Cloud Shell
-# - Errors return to terminal instead of closing terminal
-# ============================================================
-
-# ------------------------------------------------------------
-# COLORS
-# ------------------------------------------------------------
+# NO set -e
+# NO exit
+# Terminal remains open
 
 RED=$'\033[0;91m'
 GREEN=$'\033[0;92m'
@@ -29,13 +22,9 @@ WHITE=$'\033[0;97m'
 RESET=$'\033[0m'
 BOLD=$'\033[1m'
 
-# ------------------------------------------------------------
-# LAB CONSTANTS
-# ------------------------------------------------------------
 
 SOURCE_PROFILE="mysql-rds-source"
 DEST_PROFILE="mysql-cloudsql-destination"
-
 MIGRATION_JOB="rds-to-cloudsql"
 DEST_INSTANCE="mysql-cloudsql"
 
@@ -46,9 +35,10 @@ SOURCE_DB_PORT="3306"
 DEST_DB_USER="root"
 DEST_DB_PASSWORD="supersecret"
 
-# ------------------------------------------------------------
+
+# ============================================================
 # DISPLAY
-# ------------------------------------------------------------
+# ============================================================
 
 header() {
 
@@ -59,9 +49,10 @@ header() {
     echo "${CYAN}${BOLD}        WELCOME TO ePlus.DEV CLOUD TUTORIAL                 ${RESET}"
     echo "${CYAN}${BOLD}╚════════════════════════════════════════════════════════════╝${RESET}"
     echo
-    echo "${MAGENTA}${BOLD} GSP859 - Amazon RDS MySQL → Cloud SQL MySQL${RESET}"
+    echo "${MAGENTA}${BOLD} GSP859 - MySQL 8.4 Version Repair + Migration${RESET}"
     echo
 }
+
 
 step() {
 
@@ -71,35 +62,41 @@ step() {
     echo "${BLUE}${BOLD}============================================================${RESET}"
 }
 
+
 info() {
     echo "${CYAN}➜ $1${RESET}"
 }
+
 
 ok() {
     echo "${GREEN}${BOLD}✓ $1${RESET}"
 }
 
+
 warn() {
     echo "${YELLOW}${BOLD}⚠ $1${RESET}"
 }
 
-error() {
+
+err() {
     echo "${RED}${BOLD}✗ $1${RESET}"
 }
 
-# ------------------------------------------------------------
-# HELPERS
-# ------------------------------------------------------------
 
 trim() {
 
-    local value="$1"
+    local v="$1"
 
-    value="${value#"${value%%[![:space:]]*}"}"
-    value="${value%"${value##*[![:space:]]}"}"
+    v="${v#"${v%%[![:space:]]*}"}"
+    v="${v%"${v##*[![:space:]]}"}"
 
-    printf '%s' "$value"
+    printf '%s' "$v"
 }
+
+
+# ============================================================
+# DMS HELPERS
+# ============================================================
 
 get_job_state() {
 
@@ -111,6 +108,7 @@ get_job_state() {
         2>/dev/null
 }
 
+
 get_job_phase() {
 
     gcloud database-migration migration-jobs describe \
@@ -120,6 +118,35 @@ get_job_phase() {
         --format="value(phase)" \
         2>/dev/null
 }
+
+
+job_exists() {
+
+    gcloud database-migration migration-jobs describe \
+        "$MIGRATION_JOB" \
+        --region="$REGION" \
+        --project="$PROJECT_ID" \
+        >/dev/null 2>&1
+}
+
+
+get_outgoing_ips() {
+
+    gcloud sql instances describe \
+        "$DEST_INSTANCE" \
+        --project="$PROJECT_ID" \
+        --format=json \
+        2>/dev/null |
+        jq -r '
+            .ipAddresses[]?
+            | select(.type == "OUTGOING")
+            | .ipAddress
+        ' |
+        grep -E \
+            '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' |
+        sort -u
+}
+
 
 show_job_error() {
 
@@ -135,28 +162,35 @@ show_job_error() {
     echo
 }
 
-# ------------------------------------------------------------
+
+# ============================================================
 # WAIT DMS OPERATION
-# ------------------------------------------------------------
+# ============================================================
 
-wait_operation() {
+wait_dms_operation() {
 
-    local OP="$1"
+    local OP_NAME="$1"
     local OP_ID
     local JSON
     local DONE
-    local ERR
+    local ERROR_MESSAGE
     local COUNT=0
 
-    if [[ -z "$OP" ]]; then
-        warn "Operation ID was not returned."
+
+    if [[ -z "$OP_NAME" ]]; then
+
+        warn "No operation ID returned."
+
         sleep 5
+
         return 0
     fi
 
-    OP_ID="${OP##*/}"
+
+    OP_ID="${OP_NAME##*/}"
 
     info "Operation: $OP_ID"
+
 
     while true; do
 
@@ -169,31 +203,45 @@ wait_operation() {
                 2>/dev/null
         )
 
+
         if [[ $? -ne 0 || -z "$JSON" ]]; then
 
             COUNT=$((COUNT + 1))
 
-            if [[ "$COUNT" -gt 120 ]]; then
-                error "Timed out waiting for operation."
+            if [[ "$COUNT" -ge 180 ]]; then
+
+                echo
+                err "Timed out waiting for DMS operation."
+
                 return 1
             fi
 
             printf "."
+
             sleep 5
+
             continue
         fi
 
-        DONE=$(echo "$JSON" | jq -r '.done // false')
+
+        DONE=$(
+            echo "$JSON" |
+                jq -r '.done // false'
+        )
+
 
         if [[ "$DONE" == "true" ]]; then
 
-            ERR=$(echo "$JSON" | jq -r '.error.message // empty')
-
             echo
 
-            if [[ -n "$ERR" ]]; then
+            ERROR_MESSAGE=$(
+                echo "$JSON" |
+                    jq -r '.error.message // empty'
+            )
 
-                error "$ERR"
+            if [[ -n "$ERROR_MESSAGE" ]]; then
+
+                err "$ERROR_MESSAGE"
 
                 return 1
             fi
@@ -203,48 +251,97 @@ wait_operation() {
             return 0
         fi
 
+
         printf "."
 
         sleep 5
     done
 }
 
-# ------------------------------------------------------------
-# DMS ACTION
-# ------------------------------------------------------------
 
 run_dms_action() {
 
     local ACTION="$1"
-    local OP
+    local OP_NAME
+    local RC
+
 
     info "Running DMS action: $ACTION"
 
-    OP=$(
+
+    OP_NAME=$(
         gcloud database-migration migration-jobs "$ACTION" \
             "$MIGRATION_JOB" \
             --region="$REGION" \
             --project="$PROJECT_ID" \
             --quiet \
             --format="value(name)" \
-            2>/tmp/dms_action_error.log
+            2>/tmp/gsp859_dms.log
     )
 
-    if [[ $? -ne 0 ]]; then
+    RC=$?
+
+
+    if [[ "$RC" -ne 0 ]]; then
 
         echo
-        cat /tmp/dms_action_error.log
+        cat /tmp/gsp859_dms.log 2>/dev/null
         echo
 
-        error "DMS action '$ACTION' failed."
-
-        return 1
+        return "$RC"
     fi
 
-    wait_operation "$OP"
+
+    wait_dms_operation "$OP_NAME"
 
     return $?
 }
+
+
+# ============================================================
+# WAIT CLOUD SQL
+# ============================================================
+
+wait_cloudsql() {
+
+    local COUNT=0
+    local STATE
+
+
+    while true; do
+
+        STATE=$(
+            gcloud sql instances describe \
+                "$DEST_INSTANCE" \
+                --project="$PROJECT_ID" \
+                --format="value(state)" \
+                2>/dev/null
+        )
+
+
+        COUNT=$((COUNT + 1))
+
+        info "Cloud SQL state: ${STATE:-UNKNOWN}"
+
+
+        if [[ "$STATE" == "RUNNABLE" ]]; then
+
+            return 0
+        fi
+
+
+        if [[ "$COUNT" -ge 120 ]]; then
+
+            err "Cloud SQL did not become RUNNABLE."
+
+            return 1
+        fi
+
+
+        sleep 5
+    done
+}
+
 
 # ============================================================
 # MAIN
@@ -254,152 +351,67 @@ main() {
 
     header
 
+
     # ========================================================
-    # STEP 1 - USER INPUT
+    # STEP 1 - INPUT
     # ========================================================
 
-    step "STEP 1 - Enter Lab Details"
+    step "STEP 1 - Enter AWS Lab Details"
+
 
     echo
-    echo "${YELLOW}Copy from the Lab Details panel:${RESET}"
-    echo
-    echo "  AWS RDS Database - Source"
-    echo "  AWS RDS Database Security Group"
-    echo "  AWS Access Key ID"
-    echo "  AWS Secret Access Key"
-    echo
-    echo "${GREEN}All pasted values will be VISIBLE.${RESET}"
+    echo "${GREEN}All pasted values are visible.${RESET}"
     echo
 
-    read -r -p "AWS RDS Database - Source        : " RDS_HOST
 
-    read -r -p "AWS RDS Database Security Group : " AWS_SECURITY_GROUP
+    read -r -p \
+        "AWS RDS Database - Source        : " \
+        RDS_HOST
 
-    read -r -p "AWS Access Key ID               : " AWS_ACCESS_KEY_ID
 
-    read -r -p "AWS Secret Access Key           : " AWS_SECRET_ACCESS_KEY
+    read -r -p \
+        "AWS RDS Database Security Group : " \
+        AWS_SECURITY_GROUP
 
-    echo
+
+    read -r -p \
+        "AWS Access Key ID               : " \
+        AWS_ACCESS_KEY_ID
+
+
+    read -r -p \
+        "AWS Secret Access Key           : " \
+        AWS_SECRET_ACCESS_KEY
+
 
     RDS_HOST=$(trim "$RDS_HOST")
+
     AWS_SECURITY_GROUP=$(trim "$AWS_SECURITY_GROUP")
+
     AWS_ACCESS_KEY_ID=$(trim "$AWS_ACCESS_KEY_ID")
+
     AWS_SECRET_ACCESS_KEY=$(trim "$AWS_SECRET_ACCESS_KEY")
 
-    RDS_HOST="${RDS_HOST%.}"
-
-    if [[ -z "$RDS_HOST" ]]; then
-        error "RDS Source cannot be empty."
-        return 1
-    fi
-
-    if [[ -z "$AWS_SECURITY_GROUP" ]]; then
-        error "Security Group cannot be empty."
-        return 1
-    fi
-
-    if [[ -z "$AWS_ACCESS_KEY_ID" ]]; then
-        error "AWS Access Key ID cannot be empty."
-        return 1
-    fi
-
-    if [[ -z "$AWS_SECRET_ACCESS_KEY" ]]; then
-        error "AWS Secret Access Key cannot be empty."
-        return 1
-    fi
-
-    if [[ "$AWS_SECURITY_GROUP" != sg-* ]]; then
-        warn "Security Group normally starts with sg-"
-    fi
 
     export AWS_ACCESS_KEY_ID
     export AWS_SECRET_ACCESS_KEY
+    export AWS_DEFAULT_REGION="us-east-1"
 
-    unset AWS_SESSION_TOKEN
+    unset AWS_SESSION_TOKEN 2>/dev/null
 
-    echo
-    ok "Input received."
-
-    info "RDS Source     : $RDS_HOST"
-    info "Security Group : $AWS_SECURITY_GROUP"
-    info "Access Key     : $AWS_ACCESS_KEY_ID"
-    info "Secret Key     : $AWS_SECRET_ACCESS_KEY"
 
     # ========================================================
-    # STEP 2 - PROJECT
+    # STEP 2 - ENVIRONMENT
     # ========================================================
 
-    step "STEP 2 - Detect Google Cloud project"
+    step "STEP 2 - Detect environment"
+
 
     PROJECT_ID=$(
-        gcloud config get-value project 2>/dev/null
+        gcloud config get-value project \
+            2>/dev/null
     )
 
-    if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then
-
-        PROJECT_ID=$(
-            gcloud projects list \
-                --filter="lifecycleState=ACTIVE" \
-                --format="value(projectId)" \
-                --limit=1 \
-                2>/dev/null
-        )
-
-        if [[ -z "$PROJECT_ID" ]]; then
-
-            error "Unable to detect Project ID."
-
-            return 1
-        fi
-
-        gcloud config set project "$PROJECT_ID" >/dev/null 2>&1
-    fi
-
-    ok "Project: $PROJECT_ID"
-
-    # ========================================================
-    # STEP 3 - CLOUD SQL
-    # ========================================================
-
-    step "STEP 3 - Detect Cloud SQL instance"
-
-    gcloud sql instances describe \
-        "$DEST_INSTANCE" \
-        --project="$PROJECT_ID" \
-        >/dev/null 2>&1
-
-    if [[ $? -ne 0 ]]; then
-
-        warn "mysql-cloudsql not found by exact name."
-
-        mapfile -t SQL_INSTANCES < <(
-            gcloud sql instances list \
-                --project="$PROJECT_ID" \
-                --format="value(name)" \
-                2>/dev/null
-        )
-
-        if [[ "${#SQL_INSTANCES[@]}" -eq 1 ]]; then
-
-            DEST_INSTANCE="${SQL_INSTANCES[0]}"
-
-            warn "Using detected instance: $DEST_INSTANCE"
-
-        else
-
-            echo
-
-            gcloud sql instances list \
-                --project="$PROJECT_ID" \
-                --format="table(name,region,databaseVersion)"
-
-            echo
-
-            error "Cannot automatically identify Cloud SQL instance."
-
-            return 1
-        fi
-    fi
 
     REGION=$(
         gcloud sql instances describe \
@@ -409,261 +421,515 @@ main() {
             2>/dev/null
     )
 
-    if [[ -z "$REGION" ]]; then
 
-        error "Unable to detect Cloud SQL region."
+    if [[ -z "$PROJECT_ID" ||
+          -z "$REGION" ]]; then
+
+        err "Unable to detect project or region."
 
         return 1
     fi
 
-    ok "Cloud SQL : $DEST_INSTANCE"
-    ok "Region    : $REGION"
+
+    ok "Project : $PROJECT_ID"
+
+    ok "Region  : $REGION"
+
 
     # ========================================================
-    # STEP 4 - API
+    # STEP 3 - VERIFY THE ACTUAL VERSION PROBLEM
     # ========================================================
 
-    step "STEP 4 - Enable required APIs"
+    step "STEP 3 - Verify source and destination versions"
 
-    gcloud services enable \
-        datamigration.googleapis.com \
-        sqladmin.googleapis.com \
-        compute.googleapis.com \
-        --project="$PROJECT_ID" \
-        --quiet
 
-    if [[ $? -ne 0 ]]; then
+    SOURCE_VERSION=$(
+        aws rds describe-db-instances \
+            --region=us-east-1 \
+            --query \
+            "DBInstances[?Endpoint.Address=='$RDS_HOST'].EngineVersion | [0]" \
+            --output=text \
+            2>/dev/null
+    )
 
-        warn "One or more APIs may already be enabled."
+
+    DEST_JSON=$(
+        gcloud sql instances describe \
+            "$DEST_INSTANCE" \
+            --project="$PROJECT_ID" \
+            --format=json
+    )
+
+
+    DEST_MAJOR=$(
+        echo "$DEST_JSON" |
+            jq -r '.databaseVersion'
+    )
+
+
+    DEST_INSTALLED=$(
+        echo "$DEST_JSON" |
+            jq -r '.databaseInstalledVersion // .databaseVersion'
+    )
+
+
+    INSTANCE_TYPE=$(
+        echo "$DEST_JSON" |
+            jq -r '.instanceType'
+    )
+
+
+    echo
+    echo "Amazon RDS              : $SOURCE_VERSION"
+    echo "Cloud SQL configured    : $DEST_MAJOR"
+    echo "Cloud SQL installed     : $DEST_INSTALLED"
+    echo "Cloud SQL instance type : $INSTANCE_TYPE"
+    echo
+
+
+    if [[ "$SOURCE_VERSION" != 8.4* ]]; then
+
+        warn "Source isn't MySQL 8.4."
+
+        warn "This repair script was written for the current GSP859 mismatch."
+    fi
+
+
+    # ========================================================
+    # STEP 4 - STOP FAILED/RUNNING MIGRATION JOB
+    # ========================================================
+
+    step "STEP 4 - Remove incompatible migration job"
+
+
+    if job_exists; then
+
+        STATE=$(get_job_state)
+
+        info "Current migration state: $STATE"
+
+
+        case "$STATE" in
+
+            RUNNING|STARTING|RESTARTING|RESUMING)
+
+                warn "Stopping current migration job..."
+
+                run_dms_action "stop"
+
+                sleep 5
+
+                ;;
+
+        esac
+
+
+        info "Deleting incompatible migration job..."
+
+        echo "${YELLOW}Destination Cloud SQL will NOT be force-deleted.${RESET}"
+
+
+        gcloud database-migration migration-jobs delete \
+            "$MIGRATION_JOB" \
+            --region="$REGION" \
+            --project="$PROJECT_ID" \
+            --quiet \
+            >/tmp/gsp859_delete_job.log \
+            2>&1
+
+
+        DELETE_RC=$?
+
+
+        if [[ "$DELETE_RC" -ne 0 ]]; then
+
+            cat /tmp/gsp859_delete_job.log
+
+            err "Failed to delete migration job."
+
+            return 1
+        fi
+
+
+        for i in $(seq 1 60); do
+
+            if ! job_exists; then
+                break
+            fi
+
+            info "Waiting for migration job deletion..."
+
+            sleep 3
+        done
+
+
+        ok "Old incompatible migration job removed."
 
     else
 
-        ok "APIs enabled."
+        ok "Old migration job already removed."
     fi
 
-    sleep 5
 
     # ========================================================
-    # STEP 5 - TOOLS
+    # STEP 5 - PROMOTE EXTERNAL REPLICA BACK TO STANDALONE
     # ========================================================
 
-    step "STEP 5 - Prepare utilities"
+    step "STEP 5 - Restore mysql-cloudsql to standalone instance"
 
-    if ! command -v jq >/dev/null 2>&1; then
 
-        info "Installing jq..."
-
-        sudo apt-get update -qq
-        sudo apt-get install -y jq
-
-        if [[ $? -ne 0 ]]; then
-
-            error "Unable to install jq."
-
-            return 1
-        fi
-    fi
-
-    ok "jq ready."
-
-    if ! command -v dig >/dev/null 2>&1; then
-
-        info "Installing dnsutils..."
-
-        sudo apt-get update -qq
-        sudo apt-get install -y dnsutils
-
-        if [[ $? -ne 0 ]]; then
-
-            error "Unable to install dnsutils."
-
-            return 1
-        fi
-    fi
-
-    ok "dig ready."
-
-    # ========================================================
-    # STEP 6 - AWS CLI
-    # ========================================================
-
-    step "STEP 6 - Prepare AWS CLI"
-
-    if ! command -v aws >/dev/null 2>&1; then
-
-        info "Installing AWS CLI v2..."
-
-        rm -rf /tmp/aws /tmp/awscliv2.zip
-
-        curl -sS \
-            "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" \
-            -o /tmp/awscliv2.zip
-
-        if [[ $? -ne 0 ]]; then
-
-            error "Unable to download AWS CLI."
-
-            return 1
-        fi
-
-        if ! command -v unzip >/dev/null 2>&1; then
-
-            sudo apt-get update -qq
-            sudo apt-get install -y unzip
-        fi
-
-        unzip -q /tmp/awscliv2.zip -d /tmp
-
-        sudo /tmp/aws/install --update
-
-        if [[ $? -ne 0 ]]; then
-
-            error "Unable to install AWS CLI."
-
-            return 1
-        fi
-
-        rm -rf /tmp/aws /tmp/awscliv2.zip
-    fi
-
-    ok "AWS CLI ready."
-
-    # ========================================================
-    # STEP 7 - AWS REGION
-    # ========================================================
-
-    step "STEP 7 - Detect AWS region"
-
-    AWS_REGION=$(
-        echo "$RDS_HOST" |
-        grep -oE \
-            '[a-z]{2}-[a-z]+-[0-9]+\.rds\.amazonaws\.com' |
-        head -n1 |
-        cut -d. -f1
+    INSTANCE_TYPE=$(
+        gcloud sql instances describe \
+            "$DEST_INSTANCE" \
+            --project="$PROJECT_ID" \
+            --format="value(instanceType)" \
+            2>/dev/null
     )
 
-    if [[ -z "$AWS_REGION" ]]; then
 
-        AWS_REGION="us-east-1"
+    info "Current instance type: $INSTANCE_TYPE"
 
-        warn "Cannot detect AWS region from hostname."
-        warn "Using lab default: $AWS_REGION"
-    fi
 
-    export AWS_DEFAULT_REGION="$AWS_REGION"
+    if [[ "$INSTANCE_TYPE" == "READ_REPLICA_INSTANCE" ]]; then
 
-    ok "AWS Region: $AWS_REGION"
 
-    # ========================================================
-    # STEP 8 - AWS AUTH
-    # ========================================================
+        info "Promoting replica to standalone Cloud SQL instance..."
 
-    step "STEP 8 - Verify AWS credentials"
 
-    AWS_IDENTITY=$(
-        aws sts get-caller-identity \
-            --region="$AWS_REGION" \
-            --query="Account" \
-            --output=text \
-            2>/tmp/aws_error.log
-    )
+        gcloud sql instances promote-replica \
+            "$DEST_INSTANCE" \
+            --project="$PROJECT_ID" \
+            --quiet
 
-    if [[ $? -ne 0 ]]; then
 
-        echo
-        cat /tmp/aws_error.log
-        echo
+        if [[ $? -ne 0 ]]; then
 
-        error "AWS credential verification failed."
-        echo
-        warn "Terminal remains open."
-        warn "Run the script again and paste the credentials again."
+            err "Failed to promote mysql-cloudsql."
 
-        return 1
-    fi
-
-    ok "AWS authentication successful."
-    info "AWS Account: $AWS_IDENTITY"
-
-    # ========================================================
-    # STEP 9 - SECURITY GROUP
-    # ========================================================
-
-    step "STEP 9 - Verify AWS Security Group"
-
-    aws ec2 describe-security-groups \
-        --region="$AWS_REGION" \
-        --group-ids="$AWS_SECURITY_GROUP" \
-        >/dev/null 2>/tmp/sg_error.log
-
-    if [[ $? -ne 0 ]]; then
-
-        echo
-        cat /tmp/sg_error.log
-        echo
-
-        error "Security Group not found."
-
-        return 1
-    fi
-
-    ok "Security Group: $AWS_SECURITY_GROUP"
-
-    # ========================================================
-    # STEP 10 - RDS IP
-    # ========================================================
-
-    step "STEP 10 - Resolve Amazon RDS IP"
-
-    RDS_IP=""
-
-    for i in $(seq 1 60); do
-
-        RDS_IP=$(
-            dig +short A "$RDS_HOST" |
-            grep -E \
-                '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' |
-            tail -n1
-        )
-
-        if [[ -n "$RDS_IP" ]]; then
-            break
+            return 1
         fi
 
-        info "Waiting for RDS DNS... $i/60"
 
-        sleep 10
+        wait_cloudsql || return 1
+
+
+        ok "mysql-cloudsql is standalone again."
+
+
+    else
+
+
+        ok "mysql-cloudsql is already standalone."
+    fi
+
+
+    # ========================================================
+    # STEP 6 - CLEAN PARTIAL DATABASES
+    # ========================================================
+
+    step "STEP 6 - Remove partial migration data if present"
+
+
+    for DB in customers_data sales_data; do
+
+
+        if gcloud sql databases describe \
+            "$DB" \
+            --instance="$DEST_INSTANCE" \
+            --project="$PROJECT_ID" \
+            >/dev/null 2>&1; then
+
+
+            info "Deleting partial database: $DB"
+
+
+            gcloud sql databases delete \
+                "$DB" \
+                --instance="$DEST_INSTANCE" \
+                --project="$PROJECT_ID" \
+                --quiet \
+                >/dev/null 2>&1
+
+
+            if [[ $? -eq 0 ]]; then
+
+                ok "$DB removed."
+
+            else
+
+                warn "Could not remove $DB."
+            fi
+        fi
     done
 
-    if [[ -z "$RDS_IP" ]]; then
 
-        error "Unable to resolve RDS IP."
+    # ========================================================
+    # STEP 7 - CHECK CURRENT MINOR VERSION
+    # ========================================================
+
+    step "STEP 7 - Check Cloud SQL MySQL 8.0 minor version"
+
+
+    SQL_JSON=$(
+        gcloud sql instances describe \
+            "$DEST_INSTANCE" \
+            --project="$PROJECT_ID" \
+            --format=json
+    )
+
+
+    INSTALLED_VERSION=$(
+        echo "$SQL_JSON" |
+            jq -r '.databaseInstalledVersion // .databaseVersion'
+    )
+
+
+    echo
+
+    info "Installed version: $INSTALLED_VERSION"
+
+
+    MINOR_NUMBER=$(
+        echo "$INSTALLED_VERSION" |
+            sed -nE \
+            's/^MYSQL_8_0_([0-9]+).*$/\1/p'
+    )
+
+
+    if [[ -z "$MINOR_NUMBER" ]]; then
+
+        MINOR_NUMBER=0
+    fi
+
+
+    # ========================================================
+    # STEP 8 - UPGRADE MINOR VERSION TO >= 8.0.37
+    # ========================================================
+
+    step "STEP 8 - Upgrade MySQL 8.0 minor version if required"
+
+
+    if [[ "$MINOR_NUMBER" -ge 37 ]]; then
+
+
+        ok "Current minor version is already >= 8.0.37."
+
+
+    else
+
+
+        mapfile -t MINOR_TARGETS < <(
+
+            echo "$SQL_JSON" |
+
+            jq -r \
+                '.upgradableDatabaseVersions[]?.name' |
+
+            grep -E \
+                '^MYSQL_8_0_[0-9]+$' |
+
+            sort -V
+        )
+
+
+        if [[ "${#MINOR_TARGETS[@]}" -eq 0 ]]; then
+
+            err "No MySQL 8.0 minor upgrade target found."
+
+            return 1
+        fi
+
+
+        MINOR_TARGET="${MINOR_TARGETS[-1]}"
+
+
+        TARGET_MINOR_NUMBER=$(
+            echo "$MINOR_TARGET" |
+                sed -nE \
+                's/^MYSQL_8_0_([0-9]+)$/\1/p'
+        )
+
+
+        if [[ "$TARGET_MINOR_NUMBER" -lt 37 ]]; then
+
+            err "Latest available minor version is below 8.0.37."
+
+            return 1
+        fi
+
+
+        info "Minor upgrade target: $MINOR_TARGET"
+
+
+        gcloud sql instances patch \
+            "$DEST_INSTANCE" \
+            --project="$PROJECT_ID" \
+            --database-version="$MINOR_TARGET" \
+            --quiet
+
+
+        if [[ $? -ne 0 ]]; then
+
+            err "Minor version upgrade failed."
+
+            return 1
+        fi
+
+
+        wait_cloudsql || return 1
+
+
+        ok "Minor version upgrade completed."
+    fi
+
+
+    # ========================================================
+    # STEP 9 - UPGRADE MAJOR VERSION 8.0 -> 8.4
+    # ========================================================
+
+    step "STEP 9 - Upgrade Cloud SQL to MySQL 8.4"
+
+
+    SQL_JSON=$(
+        gcloud sql instances describe \
+            "$DEST_INSTANCE" \
+            --project="$PROJECT_ID" \
+            --format=json
+    )
+
+
+    INSTALLED_VERSION=$(
+        echo "$SQL_JSON" |
+            jq -r '.databaseInstalledVersion // .databaseVersion'
+    )
+
+
+    info "Current installed version: $INSTALLED_VERSION"
+
+
+    if [[ "$INSTALLED_VERSION" == MYSQL_8_4* ]]; then
+
+
+        ok "Cloud SQL is already MySQL 8.4."
+
+
+    else
+
+
+        echo
+        info "Available upgrade versions:"
+
+
+        echo "$SQL_JSON" |
+            jq -r \
+                '.upgradableDatabaseVersions[]?
+                 | "\(.majorVersion) -> \(.name)"' |
+            sed 's/^/  /'
+
+
+        echo
+
+
+        info "Upgrading MYSQL_8_0 → MYSQL_8_4..."
+
+
+        gcloud sql instances patch \
+            "$DEST_INSTANCE" \
+            --project="$PROJECT_ID" \
+            --database-version=MYSQL_8_4 \
+            --quiet
+
+
+        if [[ $? -ne 0 ]]; then
+
+            echo
+
+            err "MySQL 8.4 major upgrade failed."
+
+            echo
+
+            gcloud sql instances describe \
+                "$DEST_INSTANCE" \
+                --project="$PROJECT_ID" \
+                --format="yaml(databaseVersion,databaseInstalledVersion,instanceType,upgradableDatabaseVersions)"
+
+            return 1
+        fi
+
+
+        wait_cloudsql || return 1
+
+
+        ok "Cloud SQL upgraded to MySQL 8.4."
+    fi
+
+
+    # ========================================================
+    # STEP 10 - CONFIRM VERSION
+    # ========================================================
+
+    step "STEP 10 - Confirm compatible versions"
+
+
+    DEST_VERSION=$(
+        gcloud sql instances describe \
+            "$DEST_INSTANCE" \
+            --project="$PROJECT_ID" \
+            --format="value(databaseInstalledVersion)" \
+            2>/dev/null
+    )
+
+
+    echo
+    echo "Amazon RDS : $SOURCE_VERSION"
+    echo "Cloud SQL  : $DEST_VERSION"
+    echo
+
+
+    if [[ "$DEST_VERSION" != MYSQL_8_4* ]]; then
+
+        err "Cloud SQL is still not MySQL 8.4."
 
         return 1
     fi
 
-    ok "RDS Host : $RDS_HOST"
-    ok "RDS IP   : $RDS_IP"
+
+    ok "Source and destination versions are now compatible."
+
 
     # ========================================================
     # STEP 11 - SOURCE PROFILE
     # ========================================================
 
-    step "STEP 11 - Create source connection profile"
+    step "STEP 11 - Verify source connection profile"
 
-    gcloud database-migration connection-profiles describe \
+
+    if gcloud database-migration connection-profiles describe \
         "$SOURCE_PROFILE" \
         --region="$REGION" \
         --project="$PROJECT_ID" \
-        >/dev/null 2>&1
+        >/dev/null 2>&1; then
 
-    if [[ $? -eq 0 ]]; then
 
-        ok "$SOURCE_PROFILE already exists."
+        ok "$SOURCE_PROFILE still exists."
+
 
     else
 
-        gcloud database-migration connection-profiles create mysql \
+
+        warn "Source profile is missing. Recreating..."
+
+
+        RDS_IP=$(
+            dig +short A "$RDS_HOST" |
+                grep -E \
+                    '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' |
+                tail -n1
+        )
+
+
+        gcloud database-migration \
+            connection-profiles create mysql \
             "$SOURCE_PROFILE" \
             --project="$PROJECT_ID" \
             --region="$REGION" \
@@ -675,166 +941,187 @@ main() {
             --provider=RDS \
             --role=SOURCE \
             --ssl-type=NONE \
-            --static-ip-connectivity \
             --no-async \
             --quiet
 
+
         if [[ $? -ne 0 ]]; then
 
-            error "Failed to create source connection profile."
+            err "Failed to recreate source profile."
 
             return 1
         fi
 
-        ok "Created $SOURCE_PROFILE"
+
+        ok "Source profile recreated."
     fi
+
 
     # ========================================================
     # STEP 12 - DEST PROFILE
     # ========================================================
 
-    step "STEP 12 - Create destination connection profile"
+    step "STEP 12 - Recreate Cloud SQL destination profile"
 
-    gcloud database-migration connection-profiles describe \
+
+    if gcloud database-migration connection-profiles describe \
         "$DEST_PROFILE" \
         --region="$REGION" \
         --project="$PROJECT_ID" \
-        >/dev/null 2>&1
+        >/dev/null 2>&1; then
 
-    if [[ $? -eq 0 ]]; then
 
-        ok "$DEST_PROFILE already exists."
+        warn "Removing stale destination profile..."
 
-    else
 
-        gcloud database-migration connection-profiles create mysql \
+        gcloud database-migration connection-profiles delete \
             "$DEST_PROFILE" \
-            --project="$PROJECT_ID" \
             --region="$REGION" \
-            --display-name="$DEST_PROFILE" \
-            --cloudsql-instance="$DEST_INSTANCE" \
-            --provider=CLOUDSQL \
-            --role=DESTINATION \
-            --no-async \
-            --quiet
-
-        if [[ $? -ne 0 ]]; then
-
-            error "Failed to create destination profile."
-
-            return 1
-        fi
-
-        ok "Created $DEST_PROFILE"
+            --project="$PROJECT_ID" \
+            --quiet \
+            >/dev/null 2>&1
     fi
 
-    # ========================================================
-    # STEP 13 - MIGRATION JOB
-    # ========================================================
 
-    step "STEP 13 - Create one-time migration job"
-
-    gcloud database-migration migration-jobs describe \
-        "$MIGRATION_JOB" \
-        --region="$REGION" \
+    gcloud database-migration \
+        connection-profiles create mysql \
+        "$DEST_PROFILE" \
         --project="$PROJECT_ID" \
-        >/dev/null 2>&1
+        --region="$REGION" \
+        --display-name="$DEST_PROFILE" \
+        --cloudsql-instance="$DEST_INSTANCE" \
+        --provider=CLOUDSQL \
+        --role=DESTINATION \
+        --no-async \
+        --quiet
 
-    if [[ $? -eq 0 ]]; then
 
-        ok "$MIGRATION_JOB already exists."
+    if [[ $? -ne 0 ]]; then
 
-    else
-
-        gcloud database-migration migration-jobs create \
-            "$MIGRATION_JOB" \
-            --project="$PROJECT_ID" \
-            --region="$REGION" \
-            --display-name="$MIGRATION_JOB" \
-            --source="$SOURCE_PROFILE" \
-            --destination="$DEST_PROFILE" \
-            --type=ONE_TIME \
-            --no-async \
-            --quiet
-
-        if [[ $? -ne 0 ]]; then
-
-            error "Failed to create migration job."
-
-            return 1
-        fi
-
-        ok "Created $MIGRATION_JOB"
-    fi
-
-    # ========================================================
-    # STEP 14 - STATIC IPS
-    # ========================================================
-
-    step "STEP 14 - Fetch Destination outgoing IP addresses"
-
-    STATIC_OUTPUT=$(
-        gcloud database-migration connection-profiles \
-            fetch-static-ips "$REGION" \
-            --project="$PROJECT_ID" \
-            --format="value(staticIps)" \
-            2>/dev/null
-    )
-
-    mapfile -t STATIC_IPS < <(
-        echo "$STATIC_OUTPUT" |
-        tr ';,' '\n' |
-        grep -oE \
-            '[0-9]{1,3}(\.[0-9]{1,3}){3}' |
-        sort -u
-    )
-
-    if [[ "${#STATIC_IPS[@]}" -eq 0 ]]; then
-
-        # JSON fallback
-
-        STATIC_JSON=$(
-            gcloud database-migration connection-profiles \
-                fetch-static-ips "$REGION" \
-                --project="$PROJECT_ID" \
-                --format=json \
-                2>/dev/null
-        )
-
-        mapfile -t STATIC_IPS < <(
-            echo "$STATIC_JSON" |
-            grep -oE \
-                '[0-9]{1,3}(\.[0-9]{1,3}){3}' |
-            sort -u
-        )
-    fi
-
-    if [[ "${#STATIC_IPS[@]}" -eq 0 ]]; then
-
-        error "No DMS outgoing IP addresses found."
+        err "Failed to create destination profile."
 
         return 1
     fi
 
+
+    ok "Destination profile created."
+
+
+    # ========================================================
+    # STEP 13 - CREATE MIGRATION JOB
+    # ========================================================
+
+    step "STEP 13 - Recreate one-time migration job"
+
+
+    gcloud database-migration migration-jobs create \
+        "$MIGRATION_JOB" \
+        --project="$PROJECT_ID" \
+        --region="$REGION" \
+        --display-name="$MIGRATION_JOB" \
+        --source="$SOURCE_PROFILE" \
+        --destination="$DEST_PROFILE" \
+        --type=ONE_TIME \
+        --static-ip \
+        --all-databases \
+        --no-async \
+        --quiet
+
+
+    if [[ $? -ne 0 ]]; then
+
+        err "Failed to recreate migration job."
+
+        return 1
+    fi
+
+
+    ok "Migration job recreated."
+
+
+    # ========================================================
+    # STEP 14 - DEMOTE DESTINATION
+    # ========================================================
+
+    step "STEP 14 - Demote destination for migration"
+
+
+    run_dms_action \
+        "demote-destination"
+
+
+    if [[ $? -ne 0 ]]; then
+
+        show_job_error
+
+        err "Destination demotion failed."
+
+        return 1
+    fi
+
+
+    # ========================================================
+    # STEP 15 - WAIT OUTGOING IPS
+    # ========================================================
+
+    step "STEP 15 - Get new Destination outgoing IP addresses"
+
+
+    OUTGOING_IPS=()
+
+
+    for i in $(seq 1 120); do
+
+
+        mapfile -t OUTGOING_IPS < <(
+            get_outgoing_ips
+        )
+
+
+        if [[ "${#OUTGOING_IPS[@]}" -gt 0 ]]; then
+
+            break
+        fi
+
+
+        info "Waiting for outgoing IP... $i/120"
+
+        sleep 5
+    done
+
+
+    if [[ "${#OUTGOING_IPS[@]}" -eq 0 ]]; then
+
+        err "No outgoing IP generated."
+
+        return 1
+    fi
+
+
     echo
 
-    for IP in "${STATIC_IPS[@]}"; do
+    for IP in "${OUTGOING_IPS[@]}"; do
+
         echo "${GREEN}  → $IP${RESET}"
     done
 
+
     # ========================================================
-    # STEP 15 - AWS ALLOWLIST
+    # STEP 16 - UPDATE AWS ALLOWLIST
     # ========================================================
 
-    step "STEP 15 - Configure AWS RDS IP allowlist"
+    step "STEP 16 - Update AWS RDS IP allowlist"
 
-    for IP in "${STATIC_IPS[@]}"; do
 
-        info "TCP 3306 <- $IP/32"
+    for IP in "${OUTGOING_IPS[@]}"; do
 
-        AWS_RESULT=$(
+
+        info "Allow TCP 3306 from $IP/32"
+
+
+        RESULT=$(
             aws ec2 authorize-security-group-ingress \
-                --region="$AWS_REGION" \
+                --region=us-east-1 \
                 --group-id="$AWS_SECURITY_GROUP" \
                 --protocol=tcp \
                 --port=3306 \
@@ -842,283 +1129,236 @@ main() {
                 2>&1
         )
 
-        AWS_RC=$?
 
-        if [[ "$AWS_RC" -eq 0 ]]; then
+        RC=$?
+
+
+        if [[ "$RC" -eq 0 ]]; then
+
 
             ok "$IP/32 added."
 
-        elif echo "$AWS_RESULT" |
-            grep -q "InvalidPermission.Duplicate"; then
+
+        elif echo "$RESULT" |
+             grep -q \
+                'InvalidPermission.Duplicate'; then
+
 
             ok "$IP/32 already exists."
 
+
         else
 
-            echo "$AWS_RESULT"
 
-            error "Failed to allow $IP"
+            echo "$RESULT"
+
+            err "Failed to update AWS Security Group."
 
             return 1
         fi
     done
+
 
     echo
 
+    info "Allowed TCP 3306 CIDRs:"
+
+
     aws ec2 describe-security-groups \
-        --region="$AWS_REGION" \
+        --region=us-east-1 \
         --group-ids="$AWS_SECURITY_GROUP" \
         --query \
-        'SecurityGroups[0].IpPermissions[?FromPort==`3306`].[FromPort,ToPort,IpRanges[].CidrIp]' \
-        --output=table
+        'SecurityGroups[0].IpPermissions[?FromPort==`3306`].IpRanges[].CidrIp' \
+        --output=text \
+        2>/dev/null |
+        tr '\t' '\n' |
+        sed 's/^/  → /'
+
+
+    sleep 10
+
 
     # ========================================================
-    # STEP 16 - DEMOTE DESTINATION
+    # STEP 17 - VERIFY
     # ========================================================
 
-    step "STEP 16 - Prepare existing Cloud SQL destination"
+    step "STEP 17 - Test migration job"
 
-    STATE=$(get_job_state)
 
-    info "Current state: $STATE"
+    run_dms_action \
+        "verify"
 
-    if [[ "$STATE" == "DRAFT" ]]; then
 
-        info "Demoting Cloud SQL destination..."
-
-        run_dms_action "demote-destination"
-
-        if [[ $? -ne 0 ]]; then
-
-            error "Destination demotion failed."
-
-            return 1
-        fi
-    else
-
-        ok "Demotion not required for current state: $STATE"
-    fi
-
-    # Existing destination must be demoted before starting. Google
-    # documents this requirement explicitly. :contentReference[oaicite:1]{index=1}
-
-    # ========================================================
-    # STEP 17 - WAIT DESTINATION
-    # ========================================================
-
-    step "STEP 17 - Wait for destination preparation"
-
-    for i in $(seq 1 120); do
-
-        STATE=$(get_job_state)
-
-        info "State: $STATE"
-
-        case "$STATE" in
-
-            NOT_STARTED|STARTING|RUNNING|COMPLETED|FAILED)
-                break
-                ;;
-        esac
-
-        sleep 5
-    done
-
-    # ========================================================
-    # STEP 18 - VERIFY
-    # ========================================================
-
-    step "STEP 18 - Test migration job"
-
-    STATE=$(get_job_state)
-
-    if [[ "$STATE" == "NOT_STARTED" ]]; then
-
-        run_dms_action "verify"
-
-        if [[ $? -ne 0 ]]; then
-
-            show_job_error
-
-            error "Migration job verification failed."
-
-            return 1
-        fi
-
-        ok "Migration verification passed."
-
-    elif [[ "$STATE" == "RUNNING" ||
-            "$STATE" == "STARTING" ||
-            "$STATE" == "COMPLETED" ]]; then
-
-        ok "Verification already passed."
-
-    elif [[ "$STATE" == "FAILED" ]]; then
-
-        warn "Job already FAILED."
+    if [[ $? -ne 0 ]]; then
 
         show_job_error
 
-    else
+        err "Migration verification failed."
 
-        warn "Current state: $STATE"
+        return 1
     fi
 
-    # ========================================================
-    # STEP 19 - START
-    # ========================================================
 
-    step "STEP 19 - Start migration job"
+    ok "Migration test passed."
 
-    STATE=$(get_job_state)
-
-    case "$STATE" in
-
-        NOT_STARTED)
-
-            run_dms_action "start"
-
-            if [[ $? -ne 0 ]]; then
-
-                show_job_error
-
-                error "Failed to start migration."
-
-                return 1
-            fi
-            ;;
-
-        STARTING|RUNNING)
-
-            ok "Migration already running."
-            ;;
-
-        COMPLETED)
-
-            ok "Migration already completed."
-            ;;
-
-        FAILED)
-
-            warn "Trying restart..."
-
-            run_dms_action "restart"
-
-            if [[ $? -ne 0 ]]; then
-
-                show_job_error
-
-                error "Migration restart failed."
-
-                return 1
-            fi
-            ;;
-
-        *)
-
-            error "Unexpected job state: $STATE"
-
-            return 1
-            ;;
-    esac
 
     # ========================================================
-    # STEP 20 - WAIT COMPLETED
+    # STEP 18 - START
     # ========================================================
 
-    step "STEP 20 - Wait for migration"
+    step "STEP 18 - Start one-time migration"
 
-    for i in $(seq 1 240); do
+
+    run_dms_action \
+        "start"
+
+
+    if [[ $? -ne 0 ]]; then
+
+        show_job_error
+
+        err "Failed to start migration."
+
+        return 1
+    fi
+
+
+    # ========================================================
+    # STEP 19 - WAIT
+    # ========================================================
+
+    step "STEP 19 - Wait for migration to complete"
+
+
+    COMPLETED=0
+
+
+    for i in $(seq 1 180); do
+
 
         STATE=$(get_job_state)
+
         PHASE=$(get_job_phase)
 
-        printf "${CYAN}➜ State: %-15s Phase: %s${RESET}\n" \
-            "$STATE" \
+
+        printf \
+            "${CYAN}➜ [%03d/180] %-15s Phase: %s${RESET}\n" \
+            "$i" \
+            "${STATE:-UNKNOWN}" \
             "${PHASE:-N/A}"
+
 
         if [[ "$STATE" == "COMPLETED" ]]; then
 
+
+            COMPLETED=1
+
             echo
-            ok "Migration completed successfully!"
+
+            ok "Migration completed."
 
             break
         fi
 
+
         if [[ "$STATE" == "FAILED" ]]; then
+
 
             show_job_error
 
-            error "Migration failed."
+            err "Migration failed."
 
             return 1
         fi
 
+
         sleep 10
     done
 
+
+    if [[ "$COMPLETED" -ne 1 ]]; then
+
+        err "Migration did not finish in time."
+
+        return 1
+    fi
+
+
     # ========================================================
-    # STEP 21 - DATABASES
+    # STEP 20 - CHECK DATABASES
     # ========================================================
 
-    step "STEP 21 - Check migrated databases"
+    step "STEP 20 - Confirm migrated databases"
+
 
     gcloud sql databases list \
         --instance="$DEST_INSTANCE" \
         --project="$PROJECT_ID" \
         --format="table(name)"
 
+
     DB_LIST=$(
         gcloud sql databases list \
             --instance="$DEST_INSTANCE" \
             --project="$PROJECT_ID" \
-            --format="value(name)" \
-            2>/dev/null
+            --format="value(name)"
     )
 
-    if echo "$DB_LIST" | grep -qx "customers_data"; then
+
+    if echo "$DB_LIST" |
+       grep -qx \
+           "customers_data"; then
+
+
         ok "customers_data found."
+
     else
-        warn "customers_data not found yet."
+
+        warn "customers_data not found."
     fi
 
-    if echo "$DB_LIST" | grep -qx "sales_data"; then
+
+    if echo "$DB_LIST" |
+       grep -qx \
+           "sales_data"; then
+
+
         ok "sales_data found."
+
     else
-        warn "sales_data not found yet."
+
+        warn "sales_data not found."
     fi
 
+
     # ========================================================
-    # STEP 22 - RECORD COUNT
+    # STEP 21 - RECORD COUNT
     # ========================================================
 
-    step "STEP 22 - Check customers count"
+    step "STEP 21 - Check customers record count"
+
 
     SQL_PUBLIC_IP=$(
         gcloud sql instances describe \
             "$DEST_INSTANCE" \
             --project="$PROJECT_ID" \
             --format=json |
-        jq -r '
-            .ipAddresses[]?
-            | select(.type=="PRIMARY")
-            | .ipAddress
-        ' |
-        head -n1
+            jq -r '
+                .ipAddresses[]?
+                | select(.type=="PRIMARY")
+                | .ipAddress
+            ' |
+            head -n1
     )
 
-    if [[ -z "$SQL_PUBLIC_IP" ||
-          "$SQL_PUBLIC_IP" == "null" ]]; then
 
-        warn "Cloud SQL public IP not found."
+    if [[ -n "$SQL_PUBLIC_IP" &&
+          "$SQL_PUBLIC_IP" != "null" ]]; then
 
-    else
 
-        info "Cloud SQL IP: $SQL_PUBLIC_IP"
+        if ! command -v mysql \
+             >/dev/null 2>&1; then
 
-        if ! command -v mysql >/dev/null 2>&1; then
-
-            info "Installing MySQL client..."
 
             sudo apt-get update -qq
 
@@ -1127,38 +1367,30 @@ main() {
                 >/dev/null 2>&1
         fi
 
-        CUSTOMER_COUNT=$(
+
+        COUNT=$(
             MYSQL_PWD="$DEST_DB_PASSWORD" \
             mysql \
-                --connect-timeout=10 \
-                --get-server-public-key \
                 -h "$SQL_PUBLIC_IP" \
                 -u "$DEST_DB_USER" \
+                --connect-timeout=15 \
+                --get-server-public-key \
                 -Nse \
-                "SELECT COUNT(*) FROM customers_data.customers;" \
+                'SELECT COUNT(*) FROM customers_data.customers;' \
                 2>/dev/null
         )
 
-        if [[ $? -eq 0 ]]; then
 
-            info "Customer records: $CUSTOMER_COUNT"
+        if [[ "$COUNT" == "5030" ]]; then
 
-            if [[ "$CUSTOMER_COUNT" == "5030" ]]; then
-
-                ok "Correct: 5,030 records."
-
-            else
-
-                warn "Expected: 5,030"
-                warn "Actual  : $CUSTOMER_COUNT"
-            fi
+            ok "customers = 5,030 records."
 
         else
 
-            warn "Direct MySQL connection failed."
-            warn "Migration status is still checked separately."
+            warn "Record count result: ${COUNT:-unable to query}"
         fi
     fi
+
 
     # ========================================================
     # FINAL
@@ -1166,36 +1398,33 @@ main() {
 
     step "FINAL STATUS"
 
+
     FINAL_STATE=$(get_job_state)
 
+
     echo
-    echo "${WHITE}Project        : ${CYAN}$PROJECT_ID${RESET}"
-    echo "${WHITE}GCP Region     : ${CYAN}$REGION${RESET}"
-    echo "${WHITE}AWS Region     : ${CYAN}$AWS_REGION${RESET}"
-    echo "${WHITE}RDS IP         : ${CYAN}$RDS_IP${RESET}"
-    echo "${WHITE}Security Group : ${CYAN}$AWS_SECURITY_GROUP${RESET}"
-    echo "${WHITE}Source Profile : ${CYAN}$SOURCE_PROFILE${RESET}"
-    echo "${WHITE}Destination    : ${CYAN}$DEST_INSTANCE${RESET}"
-    echo "${WHITE}Migration Job  : ${CYAN}$MIGRATION_JOB${RESET}"
-    echo "${WHITE}State          : ${CYAN}$FINAL_STATE${RESET}"
+    echo "${WHITE}Amazon RDS       : ${CYAN}$SOURCE_VERSION${RESET}"
+    echo "${WHITE}Cloud SQL        : ${CYAN}$DEST_VERSION${RESET}"
+    echo "${WHITE}Migration Job    : ${CYAN}$FINAL_STATE${RESET}"
     echo
+
 
     if [[ "$FINAL_STATE" == "COMPLETED" ]]; then
 
-        echo "${GREEN}${BOLD}"
-        echo "╔════════════════════════════════════════════════════════════╗"
-        echo "               ✓ GSP859 MIGRATION COMPLETE                 "
-        echo "                       ePlus.DEV                            "
-        echo "╚════════════════════════════════════════════════════════════╝"
-        echo "${RESET}"
 
-    else
+        echo "${GREEN}${BOLD}╔════════════════════════════════════════════════════════════╗${RESET}"
+        echo "${GREEN}${BOLD}               ✓ GSP859 MIGRATION COMPLETE                 ${RESET}"
+        echo "${GREEN}${BOLD}                       ePlus.DEV                            ${RESET}"
+        echo "${GREEN}${BOLD}╚════════════════════════════════════════════════════════════╝${RESET}"
 
-        warn "Migration has not reached COMPLETED."
+
+        return 0
     fi
 
-    return 0
+
+    return 1
 }
+
 
 # ============================================================
 # RUN
@@ -1203,22 +1432,21 @@ main() {
 
 main
 
-MAIN_RC=$?
+RC=$?
 
 echo
 
-if [[ "$MAIN_RC" -ne 0 ]]; then
 
-    echo "${YELLOW}${BOLD}Script stopped because a step failed.${RESET}"
-    echo "${GREEN}${BOLD}Cloud Shell terminal remains open.${RESET}"
-    echo
-    echo "Fix the value/error above and run the script again."
-    echo
+if [[ "$RC" -eq 0 ]]; then
+
+    echo "${GREEN}${BOLD}Script finished successfully.${RESET}"
 
 else
 
-    echo "${GREEN}${BOLD}Script finished. Terminal remains open.${RESET}"
-    echo
+    echo "${YELLOW}${BOLD}Script stopped because a step needs attention.${RESET}"
 fi
 
-# DO NOT EXIT
+
+echo "${GREEN}${BOLD}Cloud Shell remains open.${RESET}"
+
+# NO exit
