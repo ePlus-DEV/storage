@@ -41,7 +41,7 @@ MIGRATION_JOB="vm-to-cloudsql"
 POLL_SECONDS=8
 
 # Random local proxy port so an old proxy cannot conflict with this run.
-PROXY_PORT=$((20000 + ($$ % 20000)))
+PROXY_PORT=$((20000 + (RANDOM % 10000)))
 PROXY_BIN="$HOME/cloud-sql-proxy"
 PROXY_LOG="/tmp/eplus-cloud-sql-proxy-$$.log"
 PROXY_PID=""
@@ -313,8 +313,8 @@ cloudsql_sql() {
 }
 
 get_destination_count() {
-  start_proxy
-
+  # IMPORTANT: this function is used inside command substitution.
+  # It must print ONLY the numeric result to stdout.
   MYSQL_PWD="$DEST_PASSWORD" \
   mysql \
     --protocol=TCP \
@@ -327,15 +327,32 @@ get_destination_count() {
     2>/dev/null || true
 }
 
+get_destination_query_error() {
+  MYSQL_PWD="$DEST_PASSWORD" \
+  mysql \
+    --protocol=TCP \
+    --host=127.0.0.1 \
+    --port="$PROXY_PORT" \
+    --user="$DEST_USER" \
+    --batch \
+    --skip-column-names \
+    -e "SELECT COUNT(*) FROM customers_data.customers;" \
+    2>&1 >/dev/null || true
+}
+
 wait_destination_count() {
   local wanted="$1"
+
+  # Start the proxy ONCE in the parent shell.
+  start_proxy
 
   info "Waiting for destination customer count = $wanted..."
 
   while true; do
     local count
+    local query_error
 
-    count="$(get_destination_count)"
+    count="$(get_destination_count | tr -d '\r' | tail -n1)"
 
     if [[ "$count" =~ ^[0-9]+$ ]]; then
       echo -e "  Destination customers: ${YELLOW}${count}${RESET}"
@@ -349,7 +366,13 @@ wait_destination_count() {
         fail "Destination already contains $count rows; expected $wanted. This is not a fresh-lab state."
       fi
     else
-      warn "Destination database is not ready yet."
+      query_error="$(get_destination_query_error)"
+
+      if [[ -n "$query_error" ]]; then
+        warn "Destination query not ready: $query_error"
+      else
+        warn "Destination database is not ready yet."
+      fi
     fi
 
     sleep "$POLL_SECONDS"
