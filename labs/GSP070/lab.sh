@@ -1,115 +1,97 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-# ============================
-#  App Engine Go HelloWorld
-#  © ePlus.DEV
-# ============================
+# ============================================================
+# GSP070 - App Engine: Qwik Start - Go
+# ePlus.DEV
+# ============================================================
 
-# Colors
-RESET="\033[0m"
-BOLD="\033[1m"
-GREEN="\033[0;92m"
-YELLOW="\033[0;93m"
-RED="\033[0;91m"
-CYAN="\033[0;96m"
+# -------------------------- COLORS ---------------------------
+BLACK_TEXT=$'\033[0;90m'
+RED_TEXT=$'\033[0;91m'
+GREEN_TEXT=$'\033[0;92m'
+YELLOW_TEXT=$'\033[0;93m'
+BLUE_TEXT=$'\033[0;94m'
+MAGENTA_TEXT=$'\033[0;95m'
+CYAN_TEXT=$'\033[0;96m'
+WHITE_TEXT=$'\033[0;97m'
 
-log()  { echo -e "${CYAN}${BOLD}▶${RESET} $*"; }
-ok()   { echo -e "${GREEN}${BOLD}✔${RESET} $*"; }
-warn() { echo -e "${YELLOW}${BOLD}⚠${RESET} $*"; }
-die()  { echo -e "${RED}${BOLD}✖${RESET} $*"; exit 1; }
+RESET_FORMAT=$'\033[0m'
+BOLD_TEXT=$'\033[1m'
 
-# ---- Pre-checks
-command -v gcloud >/dev/null 2>&1 || die "gcloud not found (are you in Cloud Shell?)"
-command -v git >/dev/null 2>&1 || die "git not found"
+# -------------------------- HEADER ---------------------------
+clear
 
-PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
-ACTIVE_ACCOUNT="$(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null || true)"
+echo
+echo "${CYAN_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
+echo "${MAGENTA_TEXT}${BOLD_TEXT}        GSP070 - APP ENGINE: QWIK START - GO${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
+echo "${YELLOW_TEXT}${BOLD_TEXT}                     © ePlus.DEV${RESET_FORMAT}"
+echo
 
-log "Project: ${PROJECT_ID:-unknown}"
-log "Account: ${ACTIVE_ACCOUNT:-unknown}"
+# ----------------------- PROJECT INFO ------------------------
+PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
 
-# ---- Task: set region
-REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-log "Setting compute/region to ${REGION} ..."
-gcloud config set compute/region "${REGION}" -q
-ok "Region set."
+echo "${BLUE_TEXT}${BOLD_TEXT}Project:${RESET_FORMAT} ${WHITE_TEXT}${PROJECT_ID}${RESET_FORMAT}"
 
-# ---- Task: clone repo
-REPO_DIR="golang-samples"
-APP_DIR="${REPO_DIR}/appengine/go11x/helloworld"
+# ------------------------------------------------------------
+# Detect region
+# ------------------------------------------------------------
 
-if [[ -d "${REPO_DIR}" ]]; then
-  warn "Repo ${REPO_DIR} already exists, skipping clone."
-else
-  log "Cloning golang-samples ..."
-  git clone https://github.com/GoogleCloudPlatform/golang-samples.git
-  ok "Cloned."
+REGION=$(gcloud config get-value compute/region 2>/dev/null)
+
+if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then
+    REGION=$(gcloud compute project-info describe \
+        --format="value(commonInstanceMetadata.items[google-compute-default-region])" \
+        2>/dev/null)
 fi
 
-[[ -d "${APP_DIR}" ]] || die "App dir not found: ${APP_DIR}"
-
-log "Changing directory: ${APP_DIR}"
-cd "${APP_DIR}"
-
-# ---- Task: install App Engine Go component
-# (Lab instruction uses apt-get; we keep it, but try without sudo if needed)
-log "Installing google-cloud-sdk-app-engine-go ..."
-if command -v sudo >/dev/null 2>&1; then
-  sudo apt-get update -y
-  sudo apt-get install -y google-cloud-sdk-app-engine-go
-else
-  apt-get update -y
-  apt-get install -y google-cloud-sdk-app-engine-go
-fi
-ok "Installed component."
-
-# ---- Task: deploy (auto answer region prompt + continue prompt)
-# App Engine region selection prompt usually expects a number. We auto-pick "europe-west" if present.
-warn "Deploy will create App Engine application if not created yet."
-log "Deploying (auto-select europe-west if prompted) ..."
-
-# Feed:
-# 1) If gcloud asks region number -> we parse list in output and pick europe-west if visible
-# 2) Continue prompt -> Y
-TMP_OUT="$(mktemp)"
-
-# Run deploy once, capture prompts
-set +e
-gcloud app deploy --quiet 2>&1 | tee "${TMP_OUT}"
-RC=${PIPESTATUS[0]}
-set -e
-
-if [[ $RC -ne 0 ]]; then
-  # If failure likely due to region selection prompt not handled by --quiet,
-  # rerun interactively by piping chosen selection and 'Y'
-  warn "First deploy attempt did not complete. Trying interactive auto-select..."
-
-  # Try to find europe-west in prompt list and get its number.
-  # If not found, default to '9'?? (avoid guessing wildly) -> fallback to manual input.
-  EURO_NUM="$(grep -n -E 'europe-west' "${TMP_OUT}" | head -n 1 | awk -F: '{print $1}' || true)"
-
-  if [[ -z "${EURO_NUM}" ]]; then
-    warn "Could not auto-detect region selection number from output."
-    warn "Running deploy normally now. If prompted, choose europe-west and type Y."
-    gcloud app deploy
-  else
-    # This is a best-effort: many gcloud prompts print a numbered list like "1. us-central"
-    # Grep number from the same line if present
-    EURO_SEL="$(grep -E 'europe-west' "${TMP_OUT}" | head -n 1 | sed -n 's/^[[:space:]]*\([0-9]\+\).*/\1/p' || true)"
-
-    if [[ -z "${EURO_SEL}" ]]; then
-      warn "Could not parse region number; running deploy normally."
-      gcloud app deploy
-    else
-      printf "%s\nY\n" "${EURO_SEL}" | gcloud app deploy
-    fi
-  fi
-else
-  ok "Deployed."
+# GSP070 currently specifies us-east4.
+# Only used if the lab environment does not expose a default region.
+if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then
+    REGION="us-east4"
 fi
 
-# ---- Task: browse
-log "Opening app in browser (prints URL) ..."
-gcloud app browse
-ok "Done. --- ePlus.DEV"
+gcloud config set compute/region "$REGION" >/dev/null 2>&1
+
+echo "${BLUE_TEXT}${BOLD_TEXT}Region :${RESET_FORMAT} ${WHITE_TEXT}${REGION}${RESET_FORMAT}"
+echo
+
+# ============================================================
+# TASK 1 - ENABLE APIS
+# ============================================================
+
+echo "${CYAN_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
+echo "${YELLOW_TEXT}${BOLD_TEXT} TASK 1 - ENABLE REQUIRED APIS${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
+echo
+
+echo "${YELLOW_TEXT}Enabling App Engine Admin API...${RESET_FORMAT}"
+
+gcloud services enable \
+    appengine.googleapis.com \
+    cloudbuild.googleapis.com \
+    artifactregistry.googleapis.com \
+    --project="$PROJECT_ID"
+
+if [[ $? -eq 0 ]]; then
+    echo
+    echo "${GREEN_TEXT}${BOLD_TEXT}✓ Required APIs enabled.${RESET_FORMAT}"
+else
+    echo
+    echo "${RED_TEXT}${BOLD_TEXT}⚠ API enable command returned an error.${RESET_FORMAT}"
+    echo "${YELLOW_TEXT}Continuing because some APIs may already be enabled.${RESET_FORMAT}"
+fi
+
+echo
+
+# ============================================================
+# TASK 2 - DOWNLOAD HELLO WORLD APPLICATION
+# ============================================================
+
+echo "${CYAN_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
+echo "${YELLOW_TEXT}${BOLD_TEXT} TASK 2 - DOWNLOAD HELLO WORLD APP${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}============================================================${RESET_FORMAT}"
+echo
+
+WORK_DIR="$HOME/gsp070"
+REPO_DIR="$WORK_DIR/golang
