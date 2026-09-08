@@ -25,10 +25,8 @@ echo "${CYAN_TEXT}${BOLD_TEXT}      ePlus.DEV - INITIATING EXECUTION...  ${RESET
 echo "${CYAN_TEXT}${BOLD_TEXT}==================================================================${RESET_FORMAT}"
 echo
 
-echo -e "${YELLOW_TEXT}Enter REGION:${RESET_FORMAT}"
-read REGION
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null || true)
 
-echo -e "${GREEN_TEXT}Selected REGION:${RESET_FORMAT} $REGION"
 
 gcloud config set compute/region $REGION
 gcloud config set project $DEVSHELL_PROJECT_ID
