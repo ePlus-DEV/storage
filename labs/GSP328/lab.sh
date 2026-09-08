@@ -152,20 +152,6 @@ fi
 
 gcloud config set project "$PROJECT_ID" --quiet >/dev/null
 
-# ==============================================================
-# REGION
-# ==============================================================
-
-DETECTED_REGION=$(gcloud compute project-info describe \
-    --format="value(commonInstanceMetadata.items[google-compute-default-region])" \
-    2>/dev/null || true)
-
-if [[ -z "$DETECTED_REGION" ]]; then
-    DETECTED_REGION="us-west1"
-fi
-
-success "Project detected : $PROJECT_ID"
-success "Region detected  : $DETECTED_REGION"
 
 # ==============================================================
 # INPUT VARIABLES
@@ -176,9 +162,6 @@ section "ENTER LAB VARIABLES"
 echo "${YELLOW}${BOLD}Enter values from your lab.${RESET}"
 echo "${WHITE}Press Enter on an input only if the value inside [ ] is correct.${RESET}"
 echo
-
-read -rp "REGION [$DETECTED_REGION]: " REGION
-REGION="${REGION:-$DETECTED_REGION}"
 
 read -rp "Task 1 Public Billing Service [public-billing-service-748]: " TASK_1_SERVICES_NAME
 TASK_1_SERVICES_NAME="${TASK_1_SERVICES_NAME:-public-billing-service-748}"
@@ -202,7 +185,9 @@ read -rp "Task 7 Production Frontend Service [frontend-prod-service-578]: " TASK
 TASK_7_SERVICES_NAME="${TASK_7_SERVICES_NAME:-frontend-prod-service-578}"
 
 export PROJECT_ID
-export REGION
+export REGION=$(gcloud compute project-info describe \
+    --format="value(commonInstanceMetadata.items[google-compute-default-region])" \
+    2>/dev/null || true)
 
 export TASK_1_SERVICES_NAME
 export TASK_2_SERVICES_NAME
