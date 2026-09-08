@@ -153,22 +153,12 @@ fi
 # Auto detect REGION
 # ------------------------------------------------------------
 
-DETECTED_REGION=$(gcloud compute project-info describe \
-    --format="value(commonInstanceMetadata.items[google-compute-default-region])" \
-    2>/dev/null || true)
-
-if [[ -z "$DETECTED_REGION" ]]; then
-    DETECTED_REGION="us-west1"
-fi
-
 echo
 echo "${MAGENTA}${BOLD}Enter the lab values below.${RESET}"
 echo "${WHITE}Press ENTER to use the value shown inside [ ].${RESET}"
 echo
 
-REGION=$(input_value \
-    "Enter REGION" \
-    "$DETECTED_REGION")
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null || true)
 
 TASK_1_SERVICES_NAME=$(input_value \
     "Enter Task 1 Public Billing Service Name" \
