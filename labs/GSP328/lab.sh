@@ -160,31 +160,39 @@ gcloud config set project "$PROJECT_ID" --quiet >/dev/null
 section "ENTER LAB VARIABLES"
 
 echo "${YELLOW}${BOLD}Enter values from your lab.${RESET}"
-echo "${WHITE}Press Enter on an input only if the value inside [ ] is correct.${RESET}"
+echo "${WHITE}Press Enter if the default value inside [ ] is correct.${RESET}"
 echo
 
-read -rp "Task 1 Public Billing Service [public-billing-service-748]: " TASK_1_SERVICES_NAME
+printf "${CYAN}${BOLD}Task 1${RESET} ${WHITE}Public Billing Service${RESET} ${GREEN}[public-billing-service-748]${RESET}: "
+read -r TASK_1_SERVICES_NAME
 TASK_1_SERVICES_NAME="${TASK_1_SERVICES_NAME:-public-billing-service-748}"
 
-read -rp "Task 2 Staging Frontend Service [frontend-staging-service-657]: " TASK_2_SERVICES_NAME
+printf "${BLUE}${BOLD}Task 2${RESET} ${WHITE}Staging Frontend Service${RESET} ${GREEN}[frontend-staging-service-657]${RESET}: "
+read -r TASK_2_SERVICES_NAME
 TASK_2_SERVICES_NAME="${TASK_2_SERVICES_NAME:-frontend-staging-service-657}"
 
-read -rp "Task 3 Private Billing Service [private-billing-service-473]: " TASK_3_SERVICES_NAME
+printf "${MAGENTA}${BOLD}Task 3${RESET} ${WHITE}Private Billing Service${RESET} ${GREEN}[private-billing-service-473]${RESET}: "
+read -r TASK_3_SERVICES_NAME
 TASK_3_SERVICES_NAME="${TASK_3_SERVICES_NAME:-private-billing-service-473}"
 
-read -rp "Task 4 Billing Service Account [billing-service-sa-699]: " TASK_4_SERVICES_NAME
+printf "${YELLOW}${BOLD}Task 4${RESET} ${WHITE}Billing Service Account${RESET} ${GREEN}[billing-service-sa-699]${RESET}: "
+read -r TASK_4_SERVICES_NAME
 TASK_4_SERVICES_NAME="${TASK_4_SERVICES_NAME:-billing-service-sa-699}"
 
-read -rp "Task 5 Production Billing Service [billing-prod-service-311]: " TASK_5_SERVICES_NAME
+printf "${CYAN}${BOLD}Task 5${RESET} ${WHITE}Production Billing Service${RESET} ${GREEN}[billing-prod-service-311]${RESET}: "
+read -r TASK_5_SERVICES_NAME
 TASK_5_SERVICES_NAME="${TASK_5_SERVICES_NAME:-billing-prod-service-311}"
 
-read -rp "Task 6 Frontend Service Account [frontend-service-sa-122]: " TASK_6_SERVICES_NAME
+printf "${BLUE}${BOLD}Task 6${RESET} ${WHITE}Frontend Service Account${RESET} ${GREEN}[frontend-service-sa-122]${RESET}: "
+read -r TASK_6_SERVICES_NAME
 TASK_6_SERVICES_NAME="${TASK_6_SERVICES_NAME:-frontend-service-sa-122}"
 
-read -rp "Task 7 Production Frontend Service [frontend-prod-service-578]: " TASK_7_SERVICES_NAME
+printf "${MAGENTA}${BOLD}Task 7${RESET} ${WHITE}Production Frontend Service${RESET} ${GREEN}[frontend-prod-service-578]${RESET}: "
+read -r TASK_7_SERVICES_NAME
 TASK_7_SERVICES_NAME="${TASK_7_SERVICES_NAME:-frontend-prod-service-578}"
 
 export PROJECT_ID
+
 export REGION=$(gcloud compute project-info describe \
     --format="value(commonInstanceMetadata.items[google-compute-default-region])" \
     2>/dev/null || true)
