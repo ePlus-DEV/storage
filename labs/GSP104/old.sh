@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# =========================================================
+# ePlus.DEV — Dataproc Lab Helper (Tasks 1–2 only)
+# - Prompt REGION
+# - Set gcloud configs
+# - Enable APIs
+# - Grant Storage Admin to Compute Engine default SA
+# - Enable Private Google Access on default subnet
+# - Create Dataproc cluster
+# - Submit SparkPi job (1000 tasks)
+# =========================================================
+
+set -euo pipefail
+
+# ----- Styling -----
+BOLD=$(tput bold || true); RESET=$(tput sgr0 || true)
+GREEN=$(tput setaf 2 || true); BLUE=$(tput setaf 4 || true); YELLOW=$(tput setaf 3 || true); RED=$(tput setaf 1 || true)
+
+CLUSTER="example-cluster"
+
+echo "${BOLD}${BLUE}▶ Using active account & project from Cloud Shell...${RESET}"
+gcloud auth list
+PROJECT_ID="$(gcloud config get-value project -q)"
+echo "${YELLOW}Project:${RESET} ${PROJECT_ID}"
+
+echo "${BOLD}${BLUE}▶ Enabling required APIs (Compute, Dataproc)...${RESET}"
+gcloud services enable compute.googleapis.com dataproc.googleapis.com
+
+# ----- Prompt for REGION (mandatory) -----
+export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
+
+export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+
+echo "${BOLD}${BLUE}▶ Setting gcloud properties (compute & dataproc region/zone)...${RESET}"
+gcloud config set project "${PROJECT_ID}" >/dev/null
+gcloud config set compute/region "${REGION}" >/dev/null
+gcloud config set compute/zone "${ZONE}" >/dev/null
+gcloud config set dataproc/region "${REGION}" >/dev/null
+
+echo "${BOLD}${BLUE}▶ Granting Storage Admin to Compute Engine default service account...${RESET}"
+PROJECT_NUMBER="$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')"
+CE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+  --member="serviceAccount:${CE_SA}" \
+  --role="roles/storage.admin" \
+  --quiet
+
+echo "${BOLD}${BLUE}▶ Enabling Private Google Access on default subnet in ${REGION}...${RESET}"
+gcloud compute networks subnets update default \
+  --region="${REGION}" \
+  --enable-private-ip-google-access
+
+echo "${BOLD}${BLUE}▶ Creating Dataproc cluster: ${CLUSTER} in ${REGION}...${RESET}"
+gcloud dataproc clusters create "${CLUSTER}" \
+  --region="${REGION}" \
+  --worker-boot-disk-size=500 \
+  --worker-machine-type=e2-standard-4 \
+  --master-machine-type=e2-standard-4 \
+  --quiet
+echo "${BOLD}${GREEN}✓ Cluster created.${RESET}"
+
+echo "${BOLD}${BLUE}▶ Submitting SparkPi job (1000 tasks)...${RESET}"
+gcloud dataproc jobs submit spark \
+  --region="${REGION}" \
+  --cluster="${CLUSTER}" \
+  --class=org.apache.spark.examples.SparkPi \
+  --jars=file:///usr/lib/spark/examples/jars/spark-examples.jar -- 1000
+
+echo "${BOLD}${GREEN}✓ Spark job finished. (Look for 'Pi is roughly ...')${RESET}"
+echo "${BOLD}${GREEN}Tasks 1–2 completed. Use 'Check my progress' in the lab UI.${RESET}"
+
+# --- Optional cleanup after verifying (uncomment to delete cluster) ---
+# gcloud dataproc clusters delete "${CLUSTER}" --region="${REGION}" --quiet
