@@ -1,49 +1,44 @@
-#!/bin/bash
-clear
+#!/usr/bin/env bash
+# Copyright (c) 2026 ePlus.DEV | Unlicense
+set -Eeuo pipefail
 
-# ==============================================================================
-# ORBIT OF OPS COMMAND CENTER: GSP540 ADK CHALLENGE LAB MASTER SCRIPT
-# ==============================================================================
-GREEN=$(tput setaf 2)
-YELLOW=$(tput setaf 3)
-CYAN=$(tput setaf 6)
-MAGENTA=$(tput setaf 5)
-WHITE=$(tput setaf 7)
-BOLD=$(tput bold)
-RESET=$(tput sgr0)
+if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-dumb}" != dumb ]] && command -v tput >/dev/null 2>&1; then
+  GREEN="$(tput setaf 2)"; YELLOW="$(tput setaf 3)"; CYAN="$(tput setaf 6)"
+  MAGENTA="$(tput setaf 5)"; WHITE="$(tput setaf 7)"; BOLD="$(tput bold)"; RESET="$(tput sgr0)"
+else
+  GREEN=''; YELLOW=''; CYAN=''; MAGENTA=''; WHITE=''; BOLD=''; RESET=''
+fi
+printf '%s\n' 'ePlus.DEV – Starting Execution' 'GSP540: Engineer AI Agents with ADK'
 
-echo "${CYAN}${BOLD}"
-echo "   ePlus.DEV"
-echo "${RESET}"
-echo "${MAGENTA}${BOLD}>>> INITIATING GSP540 ADK AUTOMATION PIPELINE <<<${RESET}"
-echo ""
-
-export PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
-export PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
-export SA_EMAIL="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
-export PATH=$PATH:"/home/${USER}/.local/bin"
+PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
+[[ -n "$PROJECT_ID" && "$PROJECT_ID" != '(unset)' ]] || { echo 'ERROR: Set a valid lab project.' >&2; exit 1; }
+export PROJECT_ID
+export PATH="$PATH:$HOME/.local/bin"
 
 # ==============================================================================
 # PHASE 1: SILENT AUTHENTICATION & ENVIRONMENT SETUP
 # ==============================================================================
-echo "${YELLOW}[*] Phase 1: Installing ADK and bypassing browser authentication...${RESET}"
+echo "${YELLOW}[*] Phase 1: Installing ADK and checking keyless credentials...${RESET}"
 python3 -m pip install google-adk --quiet
-
-# Generating a key for the default Compute Service Account to bypass browser logins
-gcloud iam service-accounts keys create ~/adc.json --iam-account=$SA_EMAIL --quiet
-export GOOGLE_APPLICATION_CREDENTIALS=~/adc.json
+# Do not mint long-lived keys for the default Compute service account.
+if ! gcloud auth application-default print-access-token >/dev/null 2>&1; then
+  echo 'ERROR: Application Default Credentials are unavailable. Run gcloud auth application-default login in the authorized lab Cloud Shell, then rerun.' >&2
+  exit 1
+fi
 
 echo -e "\n${YELLOW}[*] Phase 2: Downloading and dynamically locating the ADK project...${RESET}"
-cd ~
-rm -rf adk_project*
-gsutil cp gs://${PROJECT_ID}-bucket/adk_project.zip . 2>/dev/null || gsutil cp gs://${PROJECT_ID}/adk_project.zip .
-unzip -q -o adk_project.zip
-
-# Dynamically locate the root directory to bypass nested folder extraction bugs
-TARGET_DIR=$(find . -name "requirements.txt" -printf '%h\n' -quit)
-cd $TARGET_DIR
-echo "[+] Project root dynamically located at: $(pwd)"
-pip install -r requirements.txt --quiet
+WORK_DIR="$HOME/gsp540-adk-work"
+mkdir -p "$WORK_DIR/extracted"
+cd "$WORK_DIR"
+if ! gcloud storage cp "gs://${PROJECT_ID}-bucket/adk_project.zip" ./adk_project.zip; then
+  gcloud storage cp "gs://${PROJECT_ID}/adk_project.zip" ./adk_project.zip
+fi
+unzip -q -o ./adk_project.zip -d "$WORK_DIR/extracted"
+TARGET_DIR="$(find "$WORK_DIR/extracted" -type f -name requirements.txt -printf '%h\n' -quit)"
+[[ -n "$TARGET_DIR" ]] || { echo 'ERROR: requirements.txt not found in extracted lab archive.' >&2; exit 1; }
+cd "$TARGET_DIR"
+echo "[+] Lab project: $TARGET_DIR"
+python3 -m pip install -r requirements.txt --quiet
 
 # ==============================================================================
 # PHASE 2: DYNAMIC PYTHON PATCHING
@@ -54,7 +49,7 @@ cat << 'EOF' > patch_agents.py
 import os, re
 
 project_id = os.environ.get('PROJECT_ID', '')
-env_content = f"""GOOGLE_GENAI_USE_ENTERPRISE=true
+env_content = f"""GOOGLE_GENAI_USE_VERTEXAI=true
 GOOGLE_CLOUD_PROJECT={project_id}
 GOOGLE_CLOUD_LOCATION=global
 MODEL=gemini-2.5-flash
@@ -145,6 +140,6 @@ adk run llm_auditor "Double check this: You can take a direct train from Hawaii 
 sleep 3
 
 echo -e "\n${GREEN}${BOLD}====================================================================${RESET}"
-echo "${GREEN}${BOLD}>>> PIPELINE COMPLETE! ALL TASKS ARE PROVISIONED AND TESTED <<<${RESET}"
-echo "${GREEN}${BOLD}>>> YOU CAN NOW CLICK 'CHECK MY PROGRESS' ON ALL TASKS!     <<<${RESET}"
+echo "${GREEN}${BOLD}>>> CLI COMMANDS FINISHED; REVIEW AGENT OUTPUT AND LAB GRADER <<<${RESET}"
+echo "${GREEN}${BOLD}>>> Verify each task manually using Check my progress.         <<<${RESET}"
 echo "${GREEN}${BOLD}====================================================================${RESET}"
