@@ -4,18 +4,18 @@
 # https://www.skills.google/focuses/127766
 set -Eeuo pipefail
 
-if [[ -t 1 && -z "\${NO_COLOR:-}" ]]; then
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
   GREEN=$'\033[1;32m'; CYAN=$'\033[1;36m'; RED=$'\033[1;31m'; RESET=$'\033[0m'
 else
   GREEN=''; CYAN=''; RED=''; RESET=''
 fi
-log() { printf '%s\n' "\${CYAN}== $* ==\${RESET}"; }
-ok() { printf '%s\n' "\${GREEN}$*\${RESET}"; }
-die() { printf '%s\n' "\${RED}ERROR: $*\${RESET}" >&2; exit 1; }
+log() { printf '%s\n' "${CYAN}== $* ==${RESET}"; }
+ok() { printf '%s\n' "${GREEN}$*${RESET}"; }
+die() { printf '%s\n' "${RED}ERROR: $*${RESET}" >&2; exit 1; }
 
 printf '%s\n' 'ePlus.DEV – Starting Execution' 'Copyright (c) 2026 ePlus.DEV | Unlicense'
 command -v gcloud >/dev/null 2>&1 || die 'gcloud CLI is required.'
-PROJECT_ID="\${PROJECT_ID:-\${DEVSHELL_PROJECT_ID:-}}"
+PROJECT_ID="${PROJECT_ID:-${DEVSHELL_PROJECT_ID:-}}"
 if [[ -z "$PROJECT_ID" ]]; then
   PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
 fi
