@@ -40,31 +40,13 @@ class ScriptHealthTests(unittest.TestCase):
     def test_ignores_comments_and_prevents_repeated_rule_matches(self):
         self.add("sample/lab.sh", "#!/bin/bash\n# gsutil ls\n# MODEL_ID=gemini-pro\ngsutil ls\ngsutil cp a b\n")
         results, _ = scan(self.root)
-        self.assertEqual([entry.rule for entry in results if entry.rule not in {"missing-branding", "missing-color"}], ["gsutil"])
+        core_rules = [entry.rule for entry in results if entry.rule not in {"missing-branding", "missing-color"}]
+        self.assertEqual(core_rules, ["gsutil"])
 
     def test_nonblocking_style_hints_apply_only_to_standalone_lab(self):
         self.add("plain/lab.sh", "#!/bin/bash\necho plain\n")
         self.add("auxiliary/step1.sh", "#!/bin/bash\necho plain\n")
-        self.add("styled/lab.sh", "#!/bin/bash\n# ePlus.DEV\nCYAN=
-        body = "#!/bin/bash\n" + ("echo same\n" * 20)
-        self.add("sa/lab.sh", body)
-        self.add("vpc/lab.sh", body)
-        results, _ = scan(self.root)
-        self.assertEqual(sum(entry.rule == "duplicate-script" for entry in results), 2)
-
-    def test_report_is_deterministic(self):
-        self.add("example/lab.sh", "#!/bin/bash\ngsutil ls\n")
-        findings, count = scan(self.root)
-        report = render(findings, count)
-        self.assertEqual(report, render(findings, count))
-        self.assertIn("Bash scripts scanned:** 1", report)
-        self.assertIn("labs/example/lab.sh:2", report)
-        self.assertIn("\n## Findings for review\n", report)
-
-
-if __name__ == "__main__":
-    unittest.main()
-\\033[1;36m'\n")
+        self.add("styled/lab.sh", "#!/bin/bash\n# ePlus.DEV\ntput setaf 6\n")
         results, _ = scan(self.root)
         style = {"missing-branding", "missing-color"}
         by_path = {}
