@@ -152,4 +152,4 @@ GROUP BY sentiment'
 echo
 
 # Function to display a random congratulatory message
-function printf '\nAll GSP1249 CLI steps finished. Verify each Check my progress in Google Skills.\n'
+printf '\nAll GSP1249 CLI steps finished. Verify each Check my progress in Google Skills.\n'
