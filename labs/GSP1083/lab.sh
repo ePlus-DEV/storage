@@ -218,21 +218,60 @@ else
   ok "Cluster created."
 fi
 
-if gcloud alloydb instances describe "${INSTANCE_TASK3}" \
-  --cluster="${CLUSTER_TASK3}" \
-  --region="${REGION}" \
-  --project="${PROJECT_ID}" >/dev/null 2>&1; then
-  ok "Instance '${INSTANCE_TASK3}' already exists (skip)."
-else
-  log "Creating PRIMARY instance '${INSTANCE_TASK3}'..."
-  gcloud alloydb instances create "${INSTANCE_TASK3}" \
-    --instance-type=PRIMARY \
-    --cpu-count=2 \
-    --region="${REGION}" \
-    --cluster="${CLUSTER_TASK3}" \
-    --project="${PROJECT_ID}"
-  ok "Instance created."
-fi
+# Retry only transient AlloyDB regional capacity errors; keep lab region and shape.
+TASK3_MAX_ATTEMPTS=5
+TASK3_CREATED=false
+TASK3_LOG="$(mktemp)"
+for ((TASK3_ATTEMPT=1; TASK3_ATTEMPT<=TASK3_MAX_ATTEMPTS; TASK3_ATTEMPT++)); do
+  TASK3_STATE="$(gcloud alloydb instances describe "$INSTANCE_TASK3" \
+    --cluster="$CLUSTER_TASK3" --region="$REGION" --project="$PROJECT_ID" \
+    --format="value(state)" 2>/dev/null || true)"
+
+  if [[ "$TASK3_STATE" == "READY" ]]; then
+    ok "Instance '$INSTANCE_TASK3' is READY (skip)."
+    TASK3_CREATED=true
+    break
+  fi
+  if [[ -n "$TASK3_STATE" ]]; then
+    rm -f "$TASK3_LOG"
+    die "Instance '$INSTANCE_TASK3' exists in state '$TASK3_STATE'. Check its operation before retrying; no resources were deleted."
+  fi
+
+  log "Creating PRIMARY instance '$INSTANCE_TASK3' (attempt $TASK3_ATTEMPT/$TASK3_MAX_ATTEMPTS)..."
+  if gcloud alloydb instances create "$INSTANCE_TASK3" \
+    --instance-type=PRIMARY --cpu-count=2 --region="$REGION" \
+    --cluster="$CLUSTER_TASK3" --project="$PROJECT_ID" 2>&1 | tee "$TASK3_LOG"; then
+    TASK3_CREATED=true
+    ok "Instance created."
+    break
+  fi
+
+  # Do not retry permission, quota, or configuration failures.
+  if ! grep -Eiq 'does not have enough resources available|not enough resources available to fulfill|resource_exhausted|insufficient resources available' "$TASK3_LOG"; then
+    rm -f "$TASK3_LOG"
+    die "Task 3 instance creation failed for a non-capacity reason. See gcloud output above."
+  fi
+
+  if ((TASK3_ATTEMPT == TASK3_MAX_ATTEMPTS)); then
+    rm -f "$TASK3_LOG"
+    die "Task 3: $REGION still lacks AlloyDB capacity after $TASK3_MAX_ATTEMPTS attempts. Keep the cluster and retry later; do not change the lab region."
+  fi
+
+  TASK3_DELAY=$((30 * TASK3_ATTEMPT))
+  warn "Temporary AlloyDB capacity shortage in $REGION. Retrying in $TASK3_DELAY seconds..."
+  for ((TASK3_REMAINING=TASK3_DELAY; TASK3_REMAINING>0; TASK3_REMAINING--)); do
+    printf '\rRetry countdown: %3ds ' "$TASK3_REMAINING"
+    sleep 1
+  done
+  printf '\r%30s\r' ' '
+done
+rm -f "$TASK3_LOG"
+[[ "$TASK3_CREATED" == true ]] || die "Task 3 instance could not be created."
+
+TASK3_FINAL_STATE="$(gcloud alloydb instances describe "$INSTANCE_TASK3" \
+  --cluster="$CLUSTER_TASK3" --region="$REGION" --project="$PROJECT_ID" \
+  --format="value(state)" 2>/dev/null || true)"
+[[ "$TASK3_FINAL_STATE" == "READY" ]] || die "Task 3 instance is not READY (current state: '$TASK3_FINAL_STATE'). Verify its operation status."
 
 echo
 ok "All required lab tasks completed."
