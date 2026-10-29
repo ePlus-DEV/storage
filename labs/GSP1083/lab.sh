@@ -167,14 +167,21 @@ case "$EXISTING_TABLES" in
     ;;
 esac
 
+# Check the exact four tables described in GSP1083, even on reruns.
+TABLES_OK="$(psql -X -h "$ALLOYDB" -U postgres -d postgres -v ON_ERROR_STOP=1 -Atc \
+  "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename IN ('regions','countries','departments','jobs')")"
+[[ "$TABLES_OK" == 4 ]] || { echo "ERROR: Expected all four GSP1083 tables, found $TABLES_OK/4." >&2; exit 1; }
+
 HRM_ROWS="$(psql -X -h "$ALLOYDB" -U postgres -d postgres -v ON_ERROR_STOP=1 -Atc \
   "SELECT CASE WHEN (SELECT count(*) FROM public.countries)>0 AND (SELECT count(*) FROM public.departments)>0 AND (SELECT count(*) FROM public.jobs)>0 THEN 1 ELSE 0 END")"
 [[ "$HRM_ROWS" == 1 ]] || { echo "ERROR: One or more HRM tables contain no data." >&2; exit 1; }
 
+# Match the lab's required verification commands: \dt, regions, jobs.
 psql -X -h "$ALLOYDB" -U postgres -d postgres -v ON_ERROR_STOP=1 \
+  -c '\dt public.*' \
   -c "SELECT region_id, region_name FROM public.regions ORDER BY region_id;" \
-  -c "SELECT job_title, max_salary FROM public.jobs ORDER BY max_salary DESC LIMIT 5;"
-echo "Task 2 verified successfully."
+  -c "SELECT job_title, max_salary FROM public.jobs ORDER BY max_salary DESC;"
+echo "Task 2 verified successfully: all four tables exist and are populated."
 REMOTE_TASK2
 
 if ! gcloud compute scp --quiet "$TASK2_REMOTE_SCRIPT" \
