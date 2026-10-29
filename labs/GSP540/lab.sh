@@ -49,7 +49,7 @@ cat << 'EOF' > patch_agents.py
 import os, re
 
 project_id = os.environ.get('PROJECT_ID', '')
-env_content = f"""GOOGLE_GENAI_USE_VERTEXAI=true
+env_content = f"""GOOGLE_GENAI_USE_ENTERPRISE=true
 GOOGLE_CLOUD_PROJECT={project_id}
 GOOGLE_CLOUD_LOCATION=global
 MODEL=gemini-2.5-flash
