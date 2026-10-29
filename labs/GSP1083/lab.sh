@@ -87,58 +87,117 @@ else
 fi
 
 # =======================
-# PRINT info for Task 2
+# TASK 2: Create and load PostgreSQL tables on the client VM
 # =======================
-ALLOYDB_IP="$(gcloud alloydb instances describe "${INSTANCE_TASK1}" \
-  --cluster="${CLUSTER_TASK1}" \
-  --region="${REGION}" \
-  --project="${PROJECT_ID}" \
+echo
+echo -e "$BOLD$CYAN== Task 2: Create and load tables ==$RESET"
+
+ALLOYDB_IP="$(gcloud alloydb instances describe "$INSTANCE_TASK1" \
+  --cluster="$CLUSTER_TASK1" \
+  --region="$REGION" \
+  --project="$PROJECT_ID" \
   --format="value(ipAddress)" 2>/dev/null || true)"
+[[ -n "$ALLOYDB_IP" ]] || die "Cannot fetch the AlloyDB private IP. Check that the primary instance is READY."
 
-[[ -n "${ALLOYDB_IP}" ]] || die "Cannot fetch AlloyDB private IP. Ensure instance is READY."
-
-# ✅ FIX: Get client VM zone WITHOUT interactive prompt
 CLIENT_ZONE="$(gcloud compute instances list \
-  --project="${PROJECT_ID}" \
-  --filter="name=(${CLIENT_VM})" \
+  --project="$PROJECT_ID" \
+  --filter="name=($CLIENT_VM)" \
   --format="value(zone)" 2>/dev/null | head -n 1 | awk -F/ '{print $NF}')"
+[[ -n "$CLIENT_ZONE" ]] || die "Cannot locate the '$CLIENT_VM' VM zone."
 
-[[ -n "${CLIENT_ZONE}" ]] || die "Cannot detect zone for VM '${CLIENT_VM}'. Check Compute Engine > VM instances."
+log "AlloyDB private IP: $ALLOYDB_IP"
+log "Client VM: $CLIENT_VM ($CLIENT_ZONE)"
 
-echo
-echo -e "${BOLD}${GREEN}=================================================${RESET}"
-echo -e "${BOLD}${GREEN}TASK 2 – MANUAL STEP (REQUIRED)${RESET}"
-echo -e "${BOLD}${GREEN}=================================================${RESET}"
-echo
-echo "AlloyDB Private IP : ${ALLOYDB_IP}"
-echo "Postgres user      : postgres"
-echo "Postgres password  : ${DB_PASSWORD}"
-echo
-echo
-printf '%b\n' "Open: ${GREEN}https://console.cloud.google.com/compute/instances${RESET}"
-echo
-echo
-echo "Inside VM:"
-printf '%b\n' "${RED}export ALLOYDB=${ALLOYDB_IP}"
-echo "echo \$ALLOYDB > alloydbip.txt"
-printf '%b\n' "psql -h \$ALLOYDB -U postgres${RESET}"
-echo
-echo -e "${BOLD}${GREEN}=================================================${RESET}"
-echo
-warn "👉 NOW perform Task 2 manually (Create and load a table)"
-warn "👉 After you FINISH Task 2 and click 'Check my progress', come back here."
-echo
+# Keep SQL and database connections inside the lab-provided client VM. The
+# AlloyDB private IP is generally unreachable from the Cloud Shell network.
+TASK2_REMOTE_SCRIPT="$(mktemp)"
+cat > "$TASK2_REMOTE_SCRIPT" <<'REMOTE_TASK2'
+#!/bin/bash
+set -euo pipefail
 
-# =======================
-# WAIT for user confirmation
-# =======================
-while true; do
-  read -r -p "$(echo -e ${BOLD}${YELLOW}Type Y to continue with Task 3:${RESET} )" CONFIRM
-  case "${CONFIRM}" in
-    Y|y) break ;;
-    *) echo -e "${YELLOW}Please type Y when Task 2 is completed.${RESET}" ;;
-  esac
-done
+: "$ALLOYDB"
+: "$PGPASSWORD"
+export PGCONNECT_TIMEOUT=10
+command -v psql >/dev/null 2>&1 || { echo "ERROR: psql is missing on the client VM." >&2; exit 1; }
+printf '%s\n' "$ALLOYDB" > "$HOME/alloydbip.txt"
+
+# Idempotent seed: rerunning the lab must not fail on existing region IDs.
+psql -X -h "$ALLOYDB" -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+CREATE TABLE IF NOT EXISTS public.regions (
+  region_id bigint NOT NULL PRIMARY KEY,
+  region_name varchar(25)
+);
+INSERT INTO public.regions (region_id, region_name) VALUES
+  (1, 'Europe'),
+  (2, 'Americas'),
+  (3, 'Asia'),
+  (4, 'Middle East and Africa')
+ON CONFLICT (region_id)
+DO UPDATE SET region_name = EXCLUDED.region_name;
+SQL
+
+REGIONS_OK="$(psql -X -h "$ALLOYDB" -U postgres -d postgres -v ON_ERROR_STOP=1 -Atc \
+  "SELECT count(*) FROM public.regions WHERE (region_id,region_name) IN ((1,'Europe'),(2,'Americas'),(3,'Asia'),(4,'Middle East and Africa'))")"
+[[ "$REGIONS_OK" == 4 ]] || { echo "ERROR: Expected four lab regions, got $REGIONS_OK." >&2; exit 1; }
+echo "Verified four required rows in public.regions."
+
+# The official lab also loads countries, departments, and jobs from hrm_load.sql.
+# Avoid rerunning the DDL against already existing tables.
+EXISTING_TABLES="$(psql -X -h "$ALLOYDB" -U postgres -d postgres -v ON_ERROR_STOP=1 -Atc \
+  "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename IN ('countries','departments','jobs')")"
+case "$EXISTING_TABLES" in
+  0)
+    if command -v gcloud >/dev/null 2>&1; then
+      gcloud storage cp gs://spls/gsp1083/hrm_load.sql "$HOME/hrm_load.sql"
+    elif command -v gsutil >/dev/null 2>&1; then
+      gsutil cp gs://spls/gsp1083/hrm_load.sql "$HOME/hrm_load.sql"
+    else
+      echo "ERROR: Neither gcloud storage nor gsutil is available on the client VM." >&2
+      exit 1
+    fi
+    # Roll back the entire SQL load on error, making retries safe.
+    psql -X -h "$ALLOYDB" -U postgres -d postgres -v ON_ERROR_STOP=1 --single-transaction -f "$HOME/hrm_load.sql"
+    ;;
+  3)
+    echo "The countries, departments and jobs tables already exist; skipping DDL."
+    ;;
+  *)
+    echo "ERROR: Partial HRM table load ($EXISTING_TABLES/3). Inspect before retrying to avoid deleting existing data." >&2
+    exit 1
+    ;;
+esac
+
+# Check the exact four tables described in GSP1083, even on reruns.
+TABLES_OK="$(psql -X -h "$ALLOYDB" -U postgres -d postgres -v ON_ERROR_STOP=1 -Atc \
+  "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename IN ('regions','countries','departments','jobs')")"
+[[ "$TABLES_OK" == 4 ]] || { echo "ERROR: Expected all four GSP1083 tables, found $TABLES_OK/4." >&2; exit 1; }
+
+HRM_ROWS="$(psql -X -h "$ALLOYDB" -U postgres -d postgres -v ON_ERROR_STOP=1 -Atc \
+  "SELECT CASE WHEN (SELECT count(*) FROM public.countries)>0 AND (SELECT count(*) FROM public.departments)>0 AND (SELECT count(*) FROM public.jobs)>0 THEN 1 ELSE 0 END")"
+[[ "$HRM_ROWS" == 1 ]] || { echo "ERROR: One or more HRM tables contain no data." >&2; exit 1; }
+
+# Match the lab's required verification commands: \dt, regions, jobs.
+psql -X -h "$ALLOYDB" -U postgres -d postgres -v ON_ERROR_STOP=1 \
+  -c '\dt public.*' \
+  -c "SELECT region_id, region_name FROM public.regions ORDER BY region_id;" \
+  -c "SELECT job_title, max_salary FROM public.jobs ORDER BY max_salary DESC;"
+echo "Task 2 verified successfully: all four tables exist and are populated."
+REMOTE_TASK2
+
+if ! gcloud compute scp --quiet "$TASK2_REMOTE_SCRIPT" \
+  "$CLIENT_VM:~/gsp1083-task2.sh" --zone="$CLIENT_ZONE" --project="$PROJECT_ID"; then
+  rm -f "$TASK2_REMOTE_SCRIPT"
+  die "Cannot copy Task 2 loader to the VM. Check gcloud SSH access / OS Login permissions."
+fi
+rm -f "$TASK2_REMOTE_SCRIPT"
+
+if ! gcloud compute ssh --quiet "$CLIENT_VM" \
+  --zone="$CLIENT_ZONE" --project="$PROJECT_ID" \
+  --command="ALLOYDB='$ALLOYDB_IP' PGPASSWORD='$DB_PASSWORD' bash \"\$HOME/gsp1083-task2.sh\""; then
+  die "Task 2 could not be verified. SSH into '$CLIENT_VM' to inspect the SQL error, then rerun the script."
+fi
+ok "Task 2 completed and verified. Click 'Check my progress' for Task 2."
+echo
 
 # =======================
 # TASK 3: Create cluster & instance with CLI
