@@ -25,9 +25,10 @@ die(){ echo -e "${RED}✘${RESET} $*"; exit 1; }
 # =======================
 # 🔧 Lab fixed config
 # =======================
+# Project, VM zone, network, and region are discovered per lab session.
+# Resource names and password below are prescribed by GSP1083, not locations.
 PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
-export REGION="$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")"
-NETWORK="peering-network"
+REGION_OVERRIDE="$(printenv REGION 2>/dev/null || true)"
 DB_PASSWORD="Change3Me"
 
 # Task 1 resources
@@ -40,15 +41,76 @@ INSTANCE_TASK3="gcloud-lab-instance"
 
 CLIENT_VM="alloydb-client"
 
-[[ -n "${PROJECT_ID}" ]] || die "Cannot detect PROJECT_ID. Use LAB Cloud Shell."
-[[ -n "${REGION}" ]] || die "Cannot detect REGION from project metadata."
+[[ -n "$PROJECT_ID" && "$PROJECT_ID" != "(unset)" ]] || die "Cannot detect PROJECT_ID. Select the Qwiklabs project in Cloud Shell."
+
+CLIENT_ZONE="$(gcloud compute instances list \
+  --project="$PROJECT_ID" \
+  --filter="name=($CLIENT_VM)" \
+  --format="value(zone)" 2>/dev/null | head -n 1 | awk -F/ '{print $NF}')"
+[[ -n "$CLIENT_ZONE" ]] || die "Cannot detect the zone of the lab-provided VM '$CLIENT_VM'."
+
+CLIENT_NETWORK_URI="$(gcloud compute instances describe "$CLIENT_VM" \
+  --zone="$CLIENT_ZONE" --project="$PROJECT_ID" \
+  --format="value(networkInterfaces[0].network)" 2>/dev/null || true)"
+NETWORK="$(printf '%s\n' "$CLIENT_NETWORK_URI" | awk -F/ '{print $NF}')"
+[[ -n "$NETWORK" && "$NETWORK" != "(unset)" ]] || die "Cannot determine the client VM VPC network."
+
+# When rerunning, use the location of the existing lab cluster before defaults.
+# gcloud alloydb clusters list covers all regions when --region is omitted.
+CLUSTER_REGIONS="$(gcloud alloydb clusters list --project="$PROJECT_ID" \
+  --format="value(name)" 2>/dev/null | \
+  awk -F/ -v target="$CLUSTER_TASK1" \
+  '$NF == target { for (i=1; i<=NF; i++) if ($i=="locations") print $(i+1) }' | \
+  sort -u)"
+CLUSTER_REGION_COUNT="$(printf '%s\n' "$CLUSTER_REGIONS" | sed '/^$/d' | wc -l | tr -d '[:space:]')"
+(( CLUSTER_REGION_COUNT <= 1 )) || die "Multiple '$CLUSTER_TASK1' clusters in different regions; cannot safely pick a region."
+
+REGION_SOURCE=""
+if [[ -n "$CLUSTER_REGIONS" ]]; then
+  REGION="$CLUSTER_REGIONS"
+  REGION_SOURCE="existing AlloyDB cluster"
+  if [[ -n "$REGION_OVERRIDE" && "$REGION_OVERRIDE" != "$REGION" ]]; then
+    warn "Ignoring REGION override '$REGION_OVERRIDE': existing lab cluster is in '$REGION'."
+  fi
+elif [[ -n "$REGION_OVERRIDE" && "$REGION_OVERRIDE" != "(unset)" ]]; then
+  REGION="$REGION_OVERRIDE"
+  REGION_SOURCE="user-provided environment"
+else
+  METADATA_REGION="$(gcloud compute project-info describe \
+    --project="$PROJECT_ID" \
+    --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null || true)"
+  GCLOUD_REGION="$(gcloud config get-value compute/region 2>/dev/null || true)"
+  if [[ -n "$METADATA_REGION" && "$METADATA_REGION" != "(unset)" ]]; then
+    REGION="$METADATA_REGION"
+    REGION_SOURCE="project metadata"
+  elif [[ -n "$GCLOUD_REGION" && "$GCLOUD_REGION" != "(unset)" ]]; then
+    REGION="$GCLOUD_REGION"
+    REGION_SOURCE="gcloud configuration"
+  else
+    REGION="$(printf '%s\n' "$CLIENT_ZONE" | sed -E 's/-[a-z]$//')"
+    REGION_SOURCE="client VM zone"
+  fi
+fi
+[[ "$REGION" =~ ^[a-z]+(-[a-z]+)+[0-9]+$ ]] || die "Could not detect a valid region: '$REGION'."
+
+if [[ -n "$CLUSTER_REGIONS" ]]; then
+  EXISTING_CLUSTER_VPC_URI="$(gcloud alloydb clusters describe "$CLUSTER_TASK1" \
+    --region="$REGION" --project="$PROJECT_ID" \
+    --format="value(networkConfig.network)" 2>/dev/null || true)"
+  EXISTING_CLUSTER_NETWORK="$(printf '%s\n' "$EXISTING_CLUSTER_VPC_URI" | awk -F/ '{print $NF}')"
+  if [[ -n "$EXISTING_CLUSTER_NETWORK" && "$EXISTING_CLUSTER_NETWORK" != "$NETWORK" ]]; then
+    die "VPC mismatch: existing AlloyDB cluster uses '$EXISTING_CLUSTER_NETWORK', but '$CLIENT_VM' uses '$NETWORK'."
+  fi
+fi
 
 echo -e "${CYAN}=============================================================${RESET}"
 echo -e "${CYAN}🚀 AlloyDB Lab${RESET}"
 echo -e "${CYAN}© 2026 - ePlus.DEV${RESET}"
 echo -e "${CYAN}=============================================================${RESET}"
 log "Project: ${BOLD}${PROJECT_ID}${RESET}"
-log "Region : ${BOLD}${REGION}${RESET}"
+log "Region : ${BOLD}${REGION}${RESET} (source: ${REGION_SOURCE})"
+log "VM zone: ${BOLD}${CLIENT_ZONE}${RESET}"
+log "VPC    : ${BOLD}${NETWORK}${RESET}"
 echo
 
 # =======================
