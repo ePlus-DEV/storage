@@ -43,10 +43,15 @@ def audit(root: Path, with_shellcheck=True):
     scripts = sorted(p for p in labs.rglob("*.sh") if p.is_file())
     py_files = sorted(p for p in labs.rglob("*.py") if p.is_file())
     json_files = sorted(p for p in labs.rglob("*.json") if p.is_file())
+    js_files = sorted(p for p in labs.rglob("*.js") if p.is_file())
+    notebooks = sorted(p for p in labs.rglob("*.ipynb") if p.is_file())
+    unparsed_files = [p for p in labs.rglob("*") if p.is_file() and p.suffix in {".tf", ".bat", ".yaml", ".yml"}]
     findings, duplicates = [], defaultdict(list)
     shellcheck_found = shutil.which("shellcheck") is not None and with_shellcheck
     stats = {"shell_scripts": len(scripts), "python_files": len(py_files),
-             "json_files": len(json_files), "shellcheck_available": shellcheck_found,
+             "json_files": len(json_files), "javascript_files": len(js_files),
+             "notebook_files": len(notebooks), "unparsed_other_code_files": len(unparsed_files),
+             "shellcheck_available": shellcheck_found,
              "shellcheck_error_scripts": 0, "bash_syntax_error_scripts": 0}
     for path in scripts:
         rel = path.relative_to(root).as_posix()
@@ -113,6 +118,35 @@ def audit(root: Path, with_shellcheck=True):
             json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, UnicodeError) as exc:
             add(findings, "P0", "invalid-json", rel, getattr(exc, "lineno", 1) or 1, str(exc)[:300])
+    for path in js_files:
+        rel = path.relative_to(root).as_posix()
+        if not shutil.which("node"):
+            add(findings, "P2", "node-unavailable", rel, 1, "Node.js not installed; syntax check skipped.")
+            continue
+        result = run_cmd(["node", "--check", rel], root)
+        if isinstance(result, Exception) or result.returncode:
+            err = str(result) if isinstance(result, Exception) else (result.stderr or result.stdout)
+            lineno = re.search(r":(\d+)\b", err)
+            add(findings, "P0", "javascript-syntax", rel, int(lineno.group(1)) if lineno else 1,
+                err.strip().splitlines()[-1][:300] if err.strip() else "Node syntax check failed.")
+    for path in notebooks:
+        rel = path.relative_to(root).as_posix()
+        try:
+            notebook = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(notebook, dict) or not isinstance(notebook.get("cells"), list):
+                add(findings, "P0", "invalid-notebook", rel, 1, "Notebook is missing a valid cells array.")
+            else:
+                for cell in notebook["cells"]:
+                    if cell.get("cell_type") == "code":
+                        source = cell.get("source", [])
+                        source = "".join(source) if isinstance(source, list) else str(source)
+                        if re.search(r"(?<![\w-])gemini-pro(?![\w-])", source):
+                            add(findings, "P1", "legacy-gemini-pro-notebook", rel, 1,
+                                "Code cell references old Gemini Pro model; verify current lab model.")
+                            break
+        except (json.JSONDecodeError, UnicodeError, AttributeError) as exc:
+            add(findings, "P0", "invalid-notebook", rel, getattr(exc, "lineno", 1) or 1, str(exc)[:300])
+
     findings.sort(key=lambda f: (ORDER[f["severity"]], f["rule"], f["path"], f["line"]))
     return {"stats": stats, "findings": findings}
 
@@ -129,6 +163,9 @@ def make_report(result: dict) -> str:
         f"- Bash scripts scanned: **{stats['shell_scripts']}**",
         f"- Python files parsed: **{stats['python_files']}**",
         f"- JSON files parsed: **{stats['json_files']}**",
+        f"- JavaScript files checked: **{stats['javascript_files']}**",
+        f"- Notebooks validated as JSON: **{stats['notebook_files']}**",
+        f"- Other code files not syntax-checked (Terraform/YAML/BAT): **{stats['unparsed_other_code_files']}**",
         f"- ShellCheck available: **{stats['shellcheck_available']}**",
         f"- Bash syntax failures: **{stats['bash_syntax_error_scripts']}**",
         f"- Scripts with ShellCheck error diagnostics: **{stats['shellcheck_error_scripts']}**",
@@ -154,6 +191,8 @@ def make_report(result: dict) -> str:
         rows.append(f"\nShowing first 300 of {len(high)} P0/P1 findings; see JSON artifact for all.")
     rows += ["", "## Limitations", "",
         "- No proof of Google Skills Boost grading or live API/model compatibility.",
+        "- Notebook cell Python/SQL/magic runtime semantics are not executed; only notebook JSON structure is validated.",
+        "- Terraform, YAML, and BAT scripts are inventoried but not syntax-checked in this version.",
         "- Some ShellCheck diagnostics can be false positives due to embedded scripts and heredocs.",
         "- P2 maintenance hints are not confirmed runtime errors.",
         "- Do not execute lab provisioning, destructive operations, or IAM changes in this workflow.",
