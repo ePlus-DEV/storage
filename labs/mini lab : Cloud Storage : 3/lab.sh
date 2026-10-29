@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
 echo ""
 echo ""
@@ -15,7 +17,8 @@ gcloud storage cp --recursive gs://$BUCKET/* gs://$BUCKET_NAME
 
 gcloud storage buckets update gs://$BUCKET_NAME --no-uniform-bucket-level-access
 
-gcloud storage buckets add-iam-policy-binding gs://$BUCKET_NAME --member=allUsers --role=roles/storage.admin
+# Public website access only needs read-only access to the bucket.
+# NEVER grant roles/storage.admin to allUsers.
 gcloud storage buckets add-iam-policy-binding gs://$BUCKET_NAME --member=allUsers --role=roles/storage.objectViewer
 
 
@@ -35,9 +38,7 @@ gcloud compute url-maps create website-url-map \
 gcloud compute target-http-proxies create website-http-proxy \
     --url-map=website-url-map
 
-gcloud compute addresses create website-ip --global
-
-ID=$(gcloud compute addresses describe website-ip --global --format="get(address)")
+ID=$(gcloud compute addresses describe example-ip --global --format="get(address)")
 
 gcloud compute forwarding-rules create website-forwarding-rule \
     --global \
@@ -50,8 +51,6 @@ gcloud compute forwarding-rules create website-forwarding-rule \
 
 sleep 30
 
-curl http://$ID
-
 
 MAX_ATTEMPTS=10
 DELAY=20  # in seconds
@@ -63,7 +62,7 @@ for ((i=1; i<=MAX_ATTEMPTS; i++)); do
   echo "Attempt $i of $MAX_ATTEMPTS..."
   
   # Use curl to send a request and check the response
-  RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://$ID)
+  RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "http://${ID}" || true)
   
   # Check if the response is successful (HTTP 200)
   if [ "$RESPONSE" -eq 200 ]; then
@@ -74,3 +73,5 @@ for ((i=1; i<=MAX_ATTEMPTS; i++)); do
     sleep $DELAY
   fi
 done
+echo "ERROR: Website did not return HTTP 200 after $MAX_ATTEMPTS attempts." >&2
+exit 1
