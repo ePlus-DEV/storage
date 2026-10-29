@@ -63,13 +63,13 @@ def scan(root: Path) -> tuple[list[Finding], int]:
                 continue
             matches = (
                 ("public-storage-admin", bool(re.search(
-                    r"(?i)(?:allusers.*roles/storage\\.admin|roles/storage\\.admin.*allusers)", line))),
-                ("invalid-pip-option", bool(re.search(r"\\bpip(?:3)?\\s+install\\s+---[a-z-]+", line))),
-                ("legacy-gemini-pro", bool(re.search(r"(?<![\\w-])gemini-pro(?![\\w-])", line))),
-                ("service-account-key", bool(re.search(r"\\bgcloud\\s+iam\\s+service-accounts\\s+keys\\s+create\\b", line))),
-                ("gsutil", bool(re.search(r"\\bgsutil\\b", line))),
-                ("gcloud-alpha", bool(re.search(r"\\bgcloud\\s+alpha\\b", line))),
-                ("gcloud-beta", bool(re.search(r"\\bgcloud\\s+beta\\b", line))),
+                    r"(?i)(?:allusers.*roles/storage\.admin|roles/storage\.admin.*allusers)", line))),
+                ("invalid-pip-option", bool(re.search(r"\bpip(?:3)?\s+install\s+---[a-z-]+", line))),
+                ("legacy-gemini-pro", bool(re.search(r"(?<![\w-])gemini-pro(?![\w-])", line))),
+                ("service-account-key", bool(re.search(r"\bgcloud\s+iam\s+service-accounts\s+keys\s+create\b", line))),
+                ("gsutil", bool(re.search(r"\bgsutil\b", line))),
+                ("gcloud-alpha", bool(re.search(r"\bgcloud\s+alpha\b", line))),
+                ("gcloud-beta", bool(re.search(r"\bgcloud\s+beta\b", line))),
             )
             for rule, matched in matches:
                 if matched and rule not in observed:
@@ -102,7 +102,7 @@ def render(findings: list[Finding], count: int, max_rows: int = 120) -> str:
         "| --- | --- | ---: |",
     ]
     for rule, (severity, _) in sorted(RULES.items(), key=lambda item: (SEVERITY_ORDER[item[1][0]], item[0])):
-        out.append(f"| {severity} | \`{rule}\` | {counts[rule]} |")
+        out.append(f"| {severity} | `{rule}` | {counts[rule]} |")
     out += [
         "",
         "## Findings for review",
@@ -112,9 +112,9 @@ def render(findings: list[Finding], count: int, max_rows: int = 120) -> str:
     ]
     for finding in findings[:max_rows]:
         url = f"https://github.com/{REPO}/blob/main/{quote(finding.path, safe='/')}#L{finding.line}"
-        location = f"[\`{finding.path}:{finding.line}\`]({url})"
-        detail = finding.detail.replace("|", "\\|").replace("\\n", " ")
-        out.append(f"| {finding.severity} | \`{finding.rule}\` | {location} | {detail} |")
+        location = f"[`{finding.path}:{finding.line}`]({url})"
+        detail = finding.detail.replace("|", "\|").replace("\n", " ")
+        out.append(f"| {finding.severity} | `{finding.rule}` | {location} | {detail} |")
     if len(findings) > max_rows:
         out += ["", f"_Displaying {max_rows} of {len(findings)} findings. Increase --max-rows to view more._"]
     if not findings:
@@ -134,7 +134,7 @@ def render(findings: list[Finding], count: int, max_rows: int = 120) -> str:
         "and attach its Check my progress evidence before marking it verified.",
         "",
     ]
-    return "\\n".join(out)
+    return "\n".join(out)
 
 def check_changed(root: Path, base: str, head: str) -> int:
     """Run Bash parsing and ShellCheck (errors only) on changed scripts."""
@@ -142,7 +142,7 @@ def check_changed(root: Path, base: str, head: str) -> int:
         ["git", "diff", "--name-only", "-z", "--diff-filter=ACMR", base, head, "--", "labs/"],
         cwd=root, check=True, capture_output=True,
     )
-    changed = sorted(set(p.decode("utf-8") for p in result.stdout.split(b"\\0") if p))
+    changed = sorted(set(p.decode("utf-8") for p in result.stdout.split(b"\0") if p))
     scripts = [p for p in changed if p.endswith(".sh") and (root / p).is_file()]
     if not scripts:
         print("No changed Bash scripts; syntax check skipped.")
@@ -157,7 +157,7 @@ def check_changed(root: Path, base: str, head: str) -> int:
             if outcome.returncode:
                 failures += 1
                 print(f"FAIL {path}: {' '.join(command)}")
-                print((outcome.stdout + "\\n" + outcome.stderr).strip())
+                print((outcome.stdout + "\n" + outcome.stderr).strip())
             else:
                 print(f"OK {path}: {command[0]}")
     return 1 if failures else 0
