@@ -192,8 +192,7 @@ FROM ML.GENERATE_TEXT(
     5 AS top_k,
     TRUE AS flatten_json_output
   )
-);
+);"
 echo
 
-echo -e \"${CLR_OK}All done!${CLR_RESET} 🚀  Don't forget to subscribe: ${CLR_ACCENT}https://eplus.dev${CLR_RESET}\"
-"
+echo -e "${CLR_OK}All done!${CLR_RESET} 🚀  Don't forget to subscribe: ${CLR_ACCENT}https://eplus.dev${CLR_RESET}"

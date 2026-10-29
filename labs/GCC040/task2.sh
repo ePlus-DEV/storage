@@ -25,7 +25,7 @@ RESET=`tput sgr0`
 
 echo "${BG_MAGENTA}${BOLD}Starting Execution - Task 2 - ePlus.DEV ${RESET}"
 
-psql "host=$HOST_IP user=postgres password=$PASSWORD dbname=postgres"
+psql "host=$HOST_IP user=postgres password=$PASSWORD dbname=postgres" <<'SQL'
 
 CREATE TABLE patients (
     patient_id INT PRIMARY KEY,
@@ -36,6 +36,7 @@ CREATE TABLE patients (
     last_visit_date DATE,
     primary_physician VARCHAR(100)
 );
+SQL
 
 echo "${BG_RED}${BOLD}Congratulations For Completing - Task 2 !!! - ePlus.DEV ${RESET}"
 

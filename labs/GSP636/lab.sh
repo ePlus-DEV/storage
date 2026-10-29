@@ -314,11 +314,13 @@ if [ -n "$EXISTING_CLIENT_ZONE" ]; then
   echo "${YELLOW_TEXT}  client-vm already exists in ${CLIENT_ZONE}, reusing it.${RESET_FORMAT}"
 else
   ZONE_CANDIDATES=$(
-    printf "%s\n%s\n%s\n" "${REGION}-c" "${REGION}-b" "${REGION}-d"
-    gcloud compute zones list \
-      --filter="region:(${REGION}) status=UP" \
-      --format="value(name)" 2>/dev/null
-  | awk 'NF && !seen[$0]++')
+    {
+      printf "%s\n%s\n%s\n" "${REGION}-c" "${REGION}-b" "${REGION}-d"
+      gcloud compute zones list \
+        --filter="region:(${REGION}) status=UP" \
+        --format="value(name)" 2>/dev/null
+    } | awk 'NF && !seen[$0]++'
+  )
 
   MACHINE_TYPES="e2-micro e2-small n1-standard-1"
   CLIENT_CREATED="false"
