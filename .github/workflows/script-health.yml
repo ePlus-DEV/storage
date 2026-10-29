@@ -1,0 +1,100 @@
+name: Lab Script Health
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'labs/**'
+      - 'scripts/script_health.py'
+      - 'scripts/test_script_health.py'
+      - '.github/workflows/script-health.yml'
+  schedule:
+    # Every Monday 09:19 Asia/Ho_Chi_Minh (UTC+7)
+    - cron: '19 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: script-health-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pr-validation:
+    name: Check changed scripts (read-only)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Unit tests
+        run: python3 -m unittest discover -s scripts -p 'test_script_health.py' -v
+
+      - name: Validate changed Bash scripts only
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 scripts/script_health.py --root . --check-changed \
+            --base "$BASE_SHA" --head "$HEAD_SHA"
+
+  scheduled-audit:
+    name: Draft PR with script health report
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout default branch only
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Unit tests
+        run: python3 -m unittest discover -s scripts -p 'test_script_health.py' -v
+
+      - name: Scan scripts (no execution of labs)
+        run: python3 scripts/script_health.py --root . --report docs/script-health-report.md
+
+      - name: Create or update one draft review PR if report changed
+        id: report_pr
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: main
+          branch: automation/script-health-report
+          add-paths: docs/script-health-report.md
+          commit-message: 'chore(audit): refresh lab script health report'
+          title: 'chore(audit): review outdated lab scripts'
+          body: |
+            Automated **read-only** audit of Bash scripts in `labs/`.
+
+            - Review findings in `docs/script-health-report.md`.
+            - The audit does not execute lab scripts, change Google Cloud
+              resources, or automatically modify lab solutions.
+            - Findings are candidates for manual verification, not proof
+              that a lab failed to run.
+            - Create focused follow-up PRs to fix verified problems.
+
+            A single stable branch/PR is used to avoid notification spam.
+          draft: true
+          delete-branch: false
+
+      - name: Summary
+        env:
+          PR_URL: ${{ steps.report_pr.outputs.pull-request-url }}
+          PR_OPERATION: ${{ steps.report_pr.outputs.pull-request-operation }}
+        run: |
+          if [[ -n "$PR_URL" ]]; then
+            echo "Audit PR ($PR_OPERATION): $PR_URL" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No report changes; no new PR needed." >> "$GITHUB_STEP_SUMMARY"
+          fi
