@@ -36,7 +36,8 @@ trap 'stop_spin || true' EXIT
 
 banner() {
   clear || true
-  echo -e "${CLR_TITLE}"
+  printf '%b\n' "${CLR_TITLE}ePlus.DEV - Starting Execution${CLR_RESET}"
+}
 
 need() {
   command -v "$1" >/dev/null 2>&1 || {
