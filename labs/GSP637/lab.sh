@@ -25,11 +25,11 @@ RESET=`tput sgr0`
 
 echo "${BG_MAGENTA}${BOLD}Starting Execution - ePus.DEV ${RESET}"
 
-pip install google-cloud-logging
+python -m pip install google-cloud-logging
 
-pip install ---upgrade protobuf
+python -m pip install --upgrade protobuf
 
-pip install --upgrade tensorflow
+python -m pip install --upgrade tensorflow
 
 python --version
 
