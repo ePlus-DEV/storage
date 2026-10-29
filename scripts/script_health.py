@@ -29,6 +29,8 @@ RULES = {
     "gsutil": ("P2", "gsutil dependency; plan a tested migration to gcloud storage."),
     "gcloud-alpha": ("P2", "gcloud alpha command; verify command stability and lab compatibility."),
     "gcloud-beta": ("P2", "gcloud beta command; verify whether stable commands are available."),
+    "missing-branding": ("P2", "No ePlus.DEV attribution in the first 80 lines; consider a consistent banner."),
+    "missing-color": ("P2", "No ANSI color setup in the first 80 lines; consider optional terminal colors."),
 }
 
 @dataclass(frozen=True)
@@ -54,6 +56,15 @@ def scan(root: Path) -> tuple[list[Finding], int]:
             continue
         if len(content.encode("utf-8")) >= 128:
             hashes[hashlib.sha256(content.encode("utf-8")).hexdigest()].append(path)
+
+        # Nonblocking presentation hints: only standalone lab.sh entrypoints.
+        # Limit checks to the header so command comments and URLs do not count.
+        if file.name == "lab.sh":
+            header = "\n".join(content.splitlines()[:80])
+            if not re.search(r"eplus[.\s-]*dev", header, re.IGNORECASE):
+                findings.append(Finding("P2", "missing-branding", path, 1, RULES["missing-branding"][1]))
+            if not re.search(r"\\033|\\e\[|tput\s+seta[fb]|\x1b\[", header):
+                findings.append(Finding("P2", "missing-color", path, 1, RULES["missing-color"][1]))
 
         # Avoid multiple findings for the same rule in the same file.
         observed: set[str] = set()
