@@ -2,6 +2,8 @@
 set -euo pipefail
 
 # ============================================================
+# Copyright (c) 2026 ePlus.DEV | Unlicense
+# GSP008 official lab: https://www.skills.google/focuses/1846
 # ePlus.DEV © 2026 - EARTHQUAKE LAB AUTO (ANTI-OUT)
 # - Color output
 # - Auto detect Zone/Region
@@ -27,19 +29,32 @@ fail(){ printf "%s%s✘ %s%s\n" "$RED" "$BOLD" "$*" "$RESET"; }
 
 clear || true
 hr
-printf "%s%s  ePlus.DEV © 2026 - Rent-a-VM to Process Earthquake Data  %s\n" "$MAGENTA" "$BOLD" "$RESET"
+printf "%s%s  ePlus.DEV – Starting Execution | GSP008 Earthquake Data  %s\n" "$MAGENTA" "$BOLD" "$RESET"
 hr
 
 # ---------- AUTO DETECT ----------
-PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
-export REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-export ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
+PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
+[[ -n "$PROJECT_ID" && "$PROJECT_ID" != "(unset)" ]] || { echo "ERROR: Select the authorized lab project." >&2; exit 1; }
+REGION="${REGION:-$(gcloud compute project-info describe --project="$PROJECT_ID" --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null || true)}"
+ZONE="${ZONE:-$(gcloud compute project-info describe --project="$PROJECT_ID" --format="value(commonInstanceMetadata.items[google-compute-default-zone])" 2>/dev/null || true)}"
+if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then REGION="$(gcloud config get-value compute/region 2>/dev/null || true)"; fi
+if [[ -z "$ZONE" || "$ZONE" == "(unset)" ]]; then ZONE="$(gcloud config get-value compute/zone 2>/dev/null || true)"; fi
+if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then
+  [[ -t 0 ]] || { echo "ERROR: Set REGION to the lab region." >&2; exit 1; }
+  read -r -p "Lab region: " REGION
+fi
+if [[ -z "$ZONE" || "$ZONE" == "(unset)" ]]; then
+  [[ -t 0 ]] || { echo "ERROR: Set ZONE to the lab zone." >&2; exit 1; }
+  read -r -p "Lab zone: " ZONE
+fi
+[[ "$REGION" =~ ^[a-z]+(-[a-z]+)+[0-9]+$ && "$ZONE" == "$REGION"-[a-z] ]] || { echo "ERROR: Invalid region/zone." >&2; exit 1; }
+export REGION ZONE
 
 gcloud config set compute/zone "$ZONE" --quiet >/dev/null
 gcloud config set compute/region "$REGION" --quiet >/dev/null
 
 INSTANCE_NAME="earthquake-vm"
-BUCKET_NAME="${PROJECT_ID}-earthquake-$(date +%s)"
+BUCKET_NAME="${BUCKET_NAME:-${PROJECT_ID}-earthquake-data}"
 
 ok "Project: $PROJECT_ID"
 ok "Zone:    $ZONE"
@@ -71,13 +86,19 @@ fi
 
 # ---------- CREATE BUCKET ----------
 step "Create bucket"
-gsutil mb -l "$REGION" "gs://${BUCKET_NAME}" >/dev/null 2>&1 || warn "Bucket may already exist"
-gsutil uniformbucketlevelaccess set off "gs://${BUCKET_NAME}" >/dev/null 2>&1 || true
+if gsutil ls -b "gs://${BUCKET_NAME}" >/dev/null 2>&1; then
+  warn "Reusing existing lab bucket: $BUCKET_NAME"
+else
+  gsutil mb -l "$REGION" "gs://${BUCKET_NAME}"
+fi
+# The lab publishes two individual objects, so object ACLs are required.
+gsutil uniformbucketlevelaccess set off "gs://${BUCKET_NAME}"
 ok "Bucket ready"
 
 # ---------- BUILD VM SCRIPT LOCALLY ----------
 step "Create VM runner script (local temp)"
-TMP_VM_SCRIPT="/tmp/eplus_earthquake_vm_runner.sh"
+TMP_VM_SCRIPT="$(mktemp "${TMPDIR:-/tmp}/gsp008-runner.XXXXXXXX.sh")"
+trap 'rm -f "$TMP_VM_SCRIPT"' EXIT
 cat > "$TMP_VM_SCRIPT" <<'VM_SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -97,8 +118,12 @@ source earthquake-data/bin/activate
 wget -q https://storage.googleapis.com/spls/gsp008/requirements.txt
 pip3 install -q -r requirements.txt
 
-rm -rf training-data-analyst
-git clone -q https://github.com/GoogleCloudPlatform/training-data-analyst
+if [[ -e training-data-analyst ]]; then
+  [[ -d training-data-analyst/.git ]] || { echo "ERROR: Existing training-data-analyst is not a Git checkout; refusing to delete." >&2; exit 1; }
+  [[ "$(git -C training-data-analyst remote get-url origin)" == "https://github.com/GoogleCloudPlatform/training-data-analyst" || "$(git -C training-data-analyst remote get-url origin)" == "https://github.com/GoogleCloudPlatform/training-data-analyst.git" ]] || { echo "ERROR: Unexpected training-data-analyst origin." >&2; exit 1; }
+else
+  git clone -q https://github.com/GoogleCloudPlatform/training-data-analyst
+fi
 cd training-data-analyst/CPB100/lab2b
 
 bash ingest.sh
@@ -106,9 +131,10 @@ python3 transform.py
 
 gsutil cp earthquakes.* "gs://${BUCKET_NAME}/earthquakes/"
 
-# make public (best effort)
-gsutil iam ch allUsers:objectViewer "gs://${BUCKET_NAME}/earthquakes/earthquakes.htm" >/dev/null 2>&1 || true
-gsutil iam ch allUsers:objectViewer "gs://${BUCKET_NAME}/earthquakes/earthquakes.png" >/dev/null 2>&1 || true
+# Publish only the two generated lab objects, not the whole bucket.
+# With UBLA disabled, object ACLs allow anonymous reads of these two files.
+gsutil acl ch -u AllUsers:R "gs://${BUCKET_NAME}/earthquakes/earthquakes.htm"
+gsutil acl ch -u AllUsers:R "gs://${BUCKET_NAME}/earthquakes/earthquakes.png"
 
 echo "DONE_UPLOAD"
 VM_SCRIPT
@@ -127,8 +153,6 @@ step "Start VM job via nohup (survives Cloud Shell disconnect)"
 gcloud compute ssh "$INSTANCE_NAME" \
   --zone="$ZONE" \
   --quiet \
-  --ssh-flag="-o StrictHostKeyChecking=no" \
-  --ssh-flag="-o UserKnownHostsFile=/dev/null" \
   --command "chmod +x ~/eplus_earthquake_vm_runner.sh && nohup ~/eplus_earthquake_vm_runner.sh '$BUCKET_NAME' > ~/earthquake_job.log 2>&1 & disown; echo STARTED"
 ok "VM job started"
 
