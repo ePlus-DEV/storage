@@ -8,6 +8,7 @@ RESET=$(tput sgr0)
 BOLD=$(tput bold)
 
 echo "${YELLOW}${BOLD}=== GCP Machine Image Creator ===${RESET}"
+printf '%s\n' "${YELLOW}Copyright (c) 2026 ePlus.DEV | Unlicense${RESET}"
 
 # Nhập thông tin
 read -p "Enter ${BOLD}Machine Image Name${RESET}: " MACHINE_IMAGE

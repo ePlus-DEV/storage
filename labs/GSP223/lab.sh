@@ -23,7 +23,8 @@ BOLD=`tput bold`
 RESET=`tput sgr0`
 #----------------------------------------------------start--------------------------------------------------#
 
-echo "${BG_MAGENTA}${BOLD}Starting Execution${RESET}"
+echo "${BG_MAGENTA}${BOLD}Starting Execution - ePlus.DEV${RESET}"
+printf '%s\n' "${YELLOW}Copyright (c) 2026 ePlus.DEV | Unlicense${RESET}"
 
 gsutil mb -p $DEVSHELL_PROJECT_ID \
     -c standard    \
