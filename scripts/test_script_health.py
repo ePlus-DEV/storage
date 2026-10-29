@@ -40,7 +40,21 @@ class ScriptHealthTests(unittest.TestCase):
     def test_ignores_comments_and_prevents_repeated_rule_matches(self):
         self.add("sample/lab.sh", "#!/bin/bash\n# gsutil ls\n# MODEL_ID=gemini-pro\ngsutil ls\ngsutil cp a b\n")
         results, _ = scan(self.root)
-        self.assertEqual([entry.rule for entry in results], ["gsutil"])
+        core_rules = [entry.rule for entry in results if entry.rule not in {"missing-branding", "missing-color"}]
+        self.assertEqual(core_rules, ["gsutil"])
+
+    def test_nonblocking_style_hints_apply_only_to_standalone_lab(self):
+        self.add("plain/lab.sh", "#!/bin/bash\necho plain\n")
+        self.add("auxiliary/step1.sh", "#!/bin/bash\necho plain\n")
+        self.add("styled/lab.sh", "#!/bin/bash\n# ePlus.DEV\ntput setaf 6\n")
+        results, _ = scan(self.root)
+        style = {"missing-branding", "missing-color"}
+        by_path = {}
+        for entry in results:
+            if entry.rule in style:
+                by_path.setdefault(entry.path, set()).add(entry.rule)
+        self.assertEqual(by_path, {"labs/plain/lab.sh": style})
+        self.assertTrue(all(entry.severity == "P2" for entry in results if entry.rule in style))
 
     def test_identical_nonempty_script_detection(self):
         body = "#!/bin/bash\n" + ("echo same\n" * 20)
