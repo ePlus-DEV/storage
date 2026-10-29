@@ -21,6 +21,10 @@ BLUE=$(tput setaf 4 2>/dev/null || true)
 MAGENTA=$(tput setaf 5 2>/dev/null || true)
 CYAN=$(tput setaf 6 2>/dev/null || true)
 
+if [[ ! -t 1 || -n "${NO_COLOR:-}" ]]; then
+  BOLD=''; RESET=''; RED=''; GREEN=''; YELLOW=''; BLUE=''; MAGENTA=''; CYAN=''
+fi
+
 hr(){ printf "%s%s============================================================%s\n" "$BLUE" "$BOLD" "$RESET"; }
 step(){ printf "%s%s➜ %s%s\n" "$CYAN" "$BOLD" "$*" "$RESET"; }
 ok(){ printf "%s%s✔ %s%s\n" "$GREEN" "$BOLD" "$*" "$RESET"; }
