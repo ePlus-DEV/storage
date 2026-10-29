@@ -108,7 +108,9 @@ echo -e "${CYAN}🚀 AlloyDB Lab${RESET}"
 echo -e "${CYAN}© 2026 - ePlus.DEV${RESET}"
 echo -e "${CYAN}=============================================================${RESET}"
 log "Project: ${BOLD}${PROJECT_ID}${RESET}"
-log "Region : ${BOLD}${REGION}${RESET}"
+log "Region : ${BOLD}${REGION}${RESET} (source: ${REGION_SOURCE})"
+log "VM zone: ${BOLD}${CLIENT_ZONE}${RESET}"
+log "VPC    : ${BOLD}${NETWORK}${RESET}"
 echo
 
 # =======================
