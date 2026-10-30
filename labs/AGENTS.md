@@ -22,3 +22,13 @@ Treat [PR #38](https://github.com/ePlus-DEV/storage/pull/38), especially its `la
 - **PR description:** direct links to script, README and Hashnode guide; copy-ready Cloud Shell command using the PR branch, `git ls-remote` SHA resolution, `curl -fL`, `FORCE_COLOR=1`, and optional `tee`; checkpoint/evidence table; known limitations and unverified grader status.
 - **Execution:** use real ANSI escapes with `FORCE_COLOR=1`, ensure color initialization is safe under `set -Eeuo pipefail`, and independently check SSH/remote color behavior. **Automatically discover** project, region and VM zone; do not prompt for discoverable settings or hardcode regions/zones.
 - Match the **structure**, not the lab-specific SQL or names, from PR #38. Do not copy GSP1087's pgbench/columnar logic into an unrelated challenge lab. Do not assert grader completion without user-provided scoring evidence.
+
+## Published Hashnode article reference (canonical visual/editorial format)
+
+Use the **actual published Markdown export** as the formatting reference, not merely PR #38: [hoangsvit/eplus.dev — GSP1087 Hashnode export at commit 81f75d4](https://github.com/hoangsvit/eplus.dev/blob/81f75d4dadc932d8ca9228fc0bd53d98deb79ff7/cmvuhqeh5000102nx42tofj4v.md).
+
+- Match the published article's **YAML frontmatter names**: `title`, `seoTitle`, `seoDescription`, `slug` and `tags`. Do not invent a Hashnode `cuid`, `datePublished`, `cover` or `ogImage`: those are created by Hashnode at publication, or added only if real values are provided.
+- Start the body with **Official lab**, **Source/Status** as appropriate; use **Overview**, **Objectives**, **Setup and requirements**, **Task 1..N**, horizontal rule, **Solution of Lab** (exact `Quick`, `Manual`, `Other Solution` subheadings), **Troubleshooting**, **Verification** and copyright.
+- Use concise executable fenced `bash` and `sql` examples, explain expected results and grader checkpoints. Avoid a redundant H1 when the publishing platform already renders the article title.
+- In unmerged PRs, `Quick` pointing at `main` must be marked **after merge only**; offer a branch/SHA-based Cloud Shell command separately for testing.
+- Keep the source article's editorial **format** while adapting lab-specific requirements; never copy its GSP1087 SQL into GSP395 or imply verified scores without evidence.
