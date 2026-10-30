@@ -76,7 +76,8 @@ cat > "$workdir/remote.sh" <<'REMOTE'
 set -Eeuo pipefail
 if [[ -z "${PGPASSWORD:-}" ]]; then
   [[ -r /dev/tty ]] || { echo 'Interactive SSH TTY required for the lab-provided database password' >&2; exit 2; }
-  read -r -s -p 'Lab-provided postgres password: ' PGPASSWORD </dev/tty
+  printf '%s\n' 'Enter the PostgreSQL password shown in the lab instructions (input is hidden).' >/dev/tty
+  read -r -s -p 'PostgreSQL password (press Enter to continue): ' PGPASSWORD </dev/tty
   printf '\n' >/dev/tty
   [[ -n "$PGPASSWORD" ]] || { echo 'Password required' >&2; exit 2; }
   export PGPASSWORD
@@ -85,6 +86,10 @@ IP="$1"
 [[ "$IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || exit 2
 sql() { psql -X -v ON_ERROR_STOP=1 -h "$IP" -U postgres -d postgres -c "$1"; }
 scalar() { psql -X -At -v ON_ERROR_STOP=1 -h "$IP" -U postgres -d postgres -c "$1"; }
+if ! scalar 'SELECT 1;' >/dev/null; then
+  echo 'PostgreSQL login failed. Confirm the password from this lab and rerun; no database changes were made.' >&2
+  exit 1
+fi
 echo 'Task 1 — Generate 50-million-row baseline dataset (checkpoint 50)'
 exists="$(scalar "SELECT to_regclass('public.pgbench_accounts') IS NOT NULL;")"
 if [[ "$exists" == f ]]; then
