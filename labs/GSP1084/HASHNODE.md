@@ -1,59 +1,80 @@
 # Migrate to AlloyDB from PostgreSQL Using Database Migration Service - GSP1084
 
+> Original task-by-task guide based on the **four-task Google Skills edition updated August 10, 2026**. This is an independently written practical walkthrough; see the [official lab](https://www.skills.google/focuses/100854) for the full original text and interface images.
+
 ## Overview
 
-This lab migrates a PostgreSQL database running on a Compute Engine VM into a pre-provisioned AlloyDB for PostgreSQL instance. Database Migration Service (DMS) performs an initial copy and then uses change data capture (CDC) to replicate subsequent changes. VPC peering connects the source and destination. This guide is independently written, following the four-task version of the [official lab](https://www.skills.google/focuses/100854); other public editions split the connection-profile step into its own task.
+This exercise migrates a standalone PostgreSQL database hosted on a Compute Engine virtual machine into an existing AlloyDB for PostgreSQL cluster. Database Migration Service (DMS) first transfers existing data, then continuously replicates later changes using change data capture (CDC). Connectivity uses **VPC peering**. The source database's replication prerequisites, including `pglogical`, are already prepared in the lab environment.
 
-### What you'll do
+### What you'll learn
 
-- Inspect the source PostgreSQL database and verify six HR tables.
-- Configure the PostgreSQL source connection profile and launch a continuous DMS migration to an existing AlloyDB cluster.
-- Compare the source and destination data.
-- Insert a new region at the source and verify that CDC replicates it.
+- Check source PostgreSQL tables and reference row counts.
+- Create a PostgreSQL source connection profile **inside** the DMS migration job wizard.
+- Configure a continuous migration into the **existing** AlloyDB target and wait for CDC.
+- Confirm the imported dataset from an AlloyDB client VM.
+- Make a change to the source and check it replicates to the target.
 
 ## Setup and requirements
 
 ### Before you click the Start Lab button
 
-Use an incognito/private browser session and the **temporary student account provided by the lab**. Do not use personal billing credentials or publish any lab passwords. The lab timer cannot be paused. Start the lab, open the Google Cloud console, and ensure the temporary project is active.
+This timed lab uses a temporary Google Cloud project and student credentials. Use a private/incognito browser window, start the lab, and sign in with **only** the account and password generated for this session; avoid using your own billing account. Don't click **End lab** until you're done, because it destroys the lab resources.
+
+### How to start your lab and sign in to the Google Cloud console
+
+1. Click **Start Lab**; the lab credentials and **Open Google Cloud console** link appear in the setup panel.
+2. Open the console in an incognito window and sign in using the issued student account.
+3. Accept the initial terms; skip account recovery, two-factor enrollment, and free-trial setup.
+
+![Google Cloud navigation and search](https://cdn.qwiklabs.com/9Fk8NYFp3quE9mF%2FilWF6%2FlXY9OUBi3UWtb2Ne4uXNU%3D)
 
 ### Activate Cloud Shell
 
-Open Cloud Shell from the Google Cloud console and confirm the selected project:
+Click **Activate Cloud Shell** in the console toolbar, then click **Continue** and **Authorize** as needed.
+
+![Activate Cloud Shell icon](https://cdn.qwiklabs.com/ep8HmqYGdD%2FkUncAAYpV47OYoHwC8%2Bg0WK%2F8sidHquE%3D)
+
+Optionally inspect the active account and selected project:
 
 ```bash
 gcloud auth list
-export PROJECT_ID="$(gcloud config get-value project)"
-printf 'Project: %s\n' "$PROJECT_ID"
-gcloud compute instances list --project="$PROJECT_ID"
-gcloud alloydb clusters list --project="$PROJECT_ID"
+gcloud config list project
 ```
 
-The commands below refer to the resources provisioned for this lab: source VM `pg14-source`, client VM `alloydb-client`, target cluster `alloydb-target-cluster`, and target instance `alloydb-target-instance`. Read the live instructions if your lab has different resource names.
+The outputs will show the temporary project and account assigned to **your own** lab session. Never publish their credentials.
 
 ## Task 1. Verify the data in the source instance for migration
 
-1. Navigate to **Compute Engine → VM instances** and open an SSH session to `pg14-source`.
-2. Start the PostgreSQL shell and inspect the HR schema.
+### Verify the data in the source instance
+
+1. In the navigation menu, open **Compute Engine → VM instances**.
+2. Locate `pg14-source` and click **SSH**.
+3. Open the PostgreSQL shell:
 
 ```bash
 sudo -u postgres psql
 ```
 
+4. List available tables:
+
 ```sql
 \dt
-SELECT 'countries' AS table_name, COUNT(*) FROM countries
-UNION ALL SELECT 'departments', COUNT(*) FROM departments
-UNION ALL SELECT 'employees', COUNT(*) FROM employees
-UNION ALL SELECT 'jobs', COUNT(*) FROM jobs
-UNION ALL SELECT 'locations', COUNT(*) FROM locations
-UNION ALL SELECT 'regions', COUNT(*) FROM regions
-ORDER BY table_name;
 ```
 
-For the documented lab dataset, the expected initial counts are:
+5. Count records in each of the six HR tables:
 
-| Table | Expected rows |
+```sql
+SELECT count(*) AS countries_row_count FROM countries;
+SELECT count(*) AS departments_row_count FROM departments;
+SELECT count(*) AS employees_row_count FROM employees;
+SELECT count(*) AS jobs_row_count FROM jobs;
+SELECT count(*) AS locations_row_count FROM locations;
+SELECT count(*) AS regions_row_count FROM regions;
+```
+
+The reference dataset supplied with the lab has:
+
+| Table | Rows |
 | --- | ---: |
 | countries | 25 |
 | departments | 27 |
@@ -62,130 +83,170 @@ For the documented lab dataset, the expected initial counts are:
 | locations | 23 |
 | regions | 4 |
 
-These are **documented reference values**, not output observed during this session.
+Leave the PostgreSQL shell, then close the source VM session:
 
-```plaintext
+```sql
 \q
 ```
 
-Exit the VM terminal when finished.
+```bash
+exit
+```
 
-## Task 2. Create a Database Migration Service connection profile for a stand-alone PostgreSQL database
+## Task 2. Create and start a continuous migration job
 
-### Identify the source endpoint
+**In this four-task edition, creating the source connection profile is part of Task 2**, not a standalone task.
 
-In **Compute Engine → VM instances**, note the **internal IP** of `pg14-source`. Do not use the external IP.
+### Get connectivity information for the PostgreSQL source instance
 
-### Create the source connection profile
+In **Compute Engine → VM instances**, locate `pg14-source` and copy its **Internal IP**. This address belongs to the temporary lab project; don't substitute an internet-facing IP.
 
-1. Navigate to **Database Migration → Connection profiles** (or select **Create a connection profile** in the migration wizard).
-2. Choose a **PostgreSQL source** profile and name it `pg14-source`.
-3. Enter the source VM's **internal IP**, port `5432`, and the **temporary database credentials supplied by the current lab instructions**.
-4. Save the profile.
+### Create a new continuous migration job
+
+1. Search for **Database Migration** in the Google Cloud console.
+2. Open **Migration jobs → Create migration job**.
+
+### Get started
+
+Fill the wizard with these values and leave the other settings at their lab defaults:
+
+| Field | Value |
+| --- | --- |
+| Migration job name | `postgres-to-alloydb` |
+| Source database engine | PostgreSQL |
+| Destination database engine | AlloyDB for PostgreSQL |
+| Destination region | Region of the lab's existing target cluster |
+
+Click **Save & continue**.
+
+### Define a source
+
+1. Under **Select source connection profile**, choose **Create a connection profile**.
+2. Enter the source connection profile settings:
+
+| Field | Value |
+| --- | --- |
+| Profile type | Source |
+| Connection profile name | `pg14-source` |
+| Source database engine | PostgreSQL |
+| Destination database engine | AlloyDB for PostgreSQL |
+| Region | Region assigned to the lab resources |
+| Connectivity / host | Source VM **Internal IP** |
+| Port | `5432` |
+| Username | `postgres` |
+| Password | Temporary lab database password (provided by the official lab) |
+
+3. Click **Define** or expand the PostgreSQL connection settings as shown in the current console wizard, then **Save** and **Create** the connection profile.
+4. Confirm that `pg14-source` is selected as the source, and click **Save & continue**.
 
 ### Test completed task
 
-If your lab edition has a separate connection-profile checkpoint, use **Check my progress** after creating the profile. Do not assume that merely saving the form passes the checkpoint.
+Click **Check my progress** for **Create a connection profile for the PostgreSQL source instance**. This is the **first graded checkpoint (50 points)** in this edition.
 
-## Task 3. Create and start a continuous migration job
+### Define the destination
 
-### Create the migration job
+1. Choose **Existing cluster** as the target type.
+2. Select `alloydb-target-cluster`.
+3. Choose **Select & continue**.
+4. When prompted, enter `alloydb-target-cluster` to confirm the destination and continue.
 
-1. Go to **Database Migration → Migration jobs → Create migration job**.
-2. Name the job `postgres-to-alloydb`, select **PostgreSQL** as source and **AlloyDB for PostgreSQL** as destination, choose **Continuous**, and select the region of the existing target cluster.
-3. Select the previously created `pg14-source` source profile.
-4. For the destination, select **Existing cluster** and choose `alloydb-target-cluster`. Confirm the cluster selection when prompted.
-5. Choose **VPC peering** as the connectivity method.
-6. Select **All databases** for migration.
-7. Run **Test job** and address any connectivity/precondition errors. When the test succeeds, select **Create & start job**; merely creating the job without starting it is insufficient.
+**Do not create another AlloyDB cluster** or promote the target: the lab uses the provided target for continuous replication.
 
-**Important:** The existing AlloyDB target may need a destination demotion operation as part of DMS preparation. Do not manually delete or promote the target while continuous migration is needed. Follow the current wizard and lab's instructions.
+### Define the connectivity method
 
-### Check migration status
+Select **VPC peering**, then click **Configure & continue**.
 
-Use the job details page to monitor its status. Wait for **Running**, with phase **CDC**, after the initial load. The initial copy may take several minutes.
+### Configure the migration databases
+
+Select **All databases**, then **Save & continue**.
+
+### Test and create the migration job
+
+1. On the final wizard page, click **Test job**.
+2. Once the test succeeds, click **Create & start job**, and confirm if prompted.
+3. Do not select the create-only option: the migration must actually start.
+
+### Review the status of the continuous migration job
+
+Open the `postgres-to-alloydb` job details page. Its state should advance from **Starting** to **Running**; once the initial data copy finishes, the phase should display **CDC**. Do not proceed to data comparison before the continuous replication phase is available.
+
+## Task 3. Confirm data load in the AlloyDB for PostgreSQL instance
+
+### Check the AlloyDB for PostgreSQL instance
+
+1. Open **AlloyDB for PostgreSQL → Clusters**.
+2. Select `alloydb-target-cluster`, then open **Connectivity** and record its **Private IP**.
+3. If the copied address contains `:5432`, remove the port suffix; the next command requires only the IP address.
+4. Return to **Compute Engine → VM instances**, and click **SSH** for `alloydb-client`.
+5. On the client VM, set the target IP using your observed private address:
 
 ```bash
-gcloud database-migration migration-jobs describe postgres-to-alloydb \
-  --project="$PROJECT_ID" \
-  --region="YOUR_DISCOVERED_REGION" \
-  --format='yaml(state,phase)'
+export ALLOYDB="YOUR_ALLOYDB_PRIVATE_IP"
+echo "$ALLOYDB" > alloydbip.txt
+psql -h "$ALLOYDB" -U postgres
 ```
 
-Replace the placeholder with the region you observed in the console; it is **not** a prescribed hardcoded region.
-
-### Test completed task
-
-Use the official migration-job progress checker after the job reaches the required state.
-
-## Task 4. Confirm data load in the AlloyDB for PostgreSQL instance
-
-1. Open **AlloyDB for PostgreSQL → Clusters**, select `alloydb-target-cluster`, and inspect its **Connectivity** information.
-2. Copy the target **private IP** without the `:5432` port suffix.
-3. Open an SSH terminal to `alloydb-client` in **Compute Engine → VM instances**.
-4. Connect using `psql`, supplying the temporary database password securely at the password prompt:
-
-```bash
-psql -h "YOUR_ALLOYDB_PRIVATE_IP" -p 5432 -U postgres -d postgres -W
-```
-
-5. Run the same row-count query used in Task 1:
+6. Enter the temporary database password from the official lab when prompted.
+7. In `psql`, list the imported tables and compare their row counts to the source:
 
 ```sql
-SELECT 'countries' AS table_name, COUNT(*) FROM countries
-UNION ALL SELECT 'departments', COUNT(*) FROM departments
-UNION ALL SELECT 'employees', COUNT(*) FROM employees
-UNION ALL SELECT 'jobs', COUNT(*) FROM jobs
-UNION ALL SELECT 'locations', COUNT(*) FROM locations
-UNION ALL SELECT 'regions', COUNT(*) FROM regions
-ORDER BY table_name;
+\dt
+SELECT count(*) AS countries_row_count FROM countries;
+SELECT count(*) AS departments_row_count FROM departments;
+SELECT count(*) AS employees_row_count FROM employees;
+SELECT count(*) AS jobs_row_count FROM jobs;
+SELECT count(*) AS locations_row_count FROM locations;
+SELECT count(*) AS regions_row_count FROM regions;
 ```
 
-The six counts should match the source's initial dataset. Keep this client session available for the CDC check.
+All six tables should be present, initially with the same counts as in Task 1.
 
-### Test completed task
+8. Inspect the `regions` table:
 
-Use the lab's **Check my progress** control if provided for the initial data-load checkpoint.
+```sql
+SELECT region_id, region_name FROM regions;
+```
 
-## Task 5. Propagate a live update to the AlloyDB instance
+At this stage there should be four original regions. **Leave the client terminal and psql session open** for the CDC check in Task 4.
 
-### Insert a row at the source
+## Task 4. Propagate a live update to the AlloyDB instance
 
-Reconnect to `pg14-source` via SSH and open `psql`:
+This step checks that the continuous migration job also replicates updates made **after** the initial copy.
+
+1. In Compute Engine, reopen SSH to the source VM `pg14-source`.
+2. Launch `psql` on the source VM:
 
 ```bash
 sudo -u postgres psql
 ```
 
-Insert the region if it is not already present:
+3. Insert the new region requested by the lab:
 
 ```sql
-INSERT INTO regions (region_id, region_name)
-SELECT 5, 'Oceania'
-WHERE NOT EXISTS (SELECT 1 FROM regions WHERE region_id = 5);
-
-SELECT region_id, region_name
-FROM regions
-ORDER BY region_id;
+INSERT INTO regions VALUES (5, 'Oceania');
+SELECT region_id, region_name FROM regions;
 ```
 
-The source should now include `5 | Oceania`, with five region records in total.
+The source should now list **five** rows, including `5 | Oceania`.
 
-### Verify the change at the destination
+### Review data in the AlloyDB for PostgreSQL instance
 
-Return to the `alloydb-client` PostgreSQL session and query the destination:
+1. Return to the still-open `alloydb-client` `psql` session.
+2. Query the destination:
 
 ```sql
-SELECT region_id, region_name
-FROM regions
-ORDER BY region_id;
+SELECT region_id, region_name FROM regions;
 ```
 
-If replication has not caught up, wait briefly and retry. The target should eventually include the new `Oceania` row. **Do not promote the destination** while the exercise expects ongoing CDC.
+After CDC catches up, the destination should also show **five** rows and the new `Oceania` entry. If it has not appeared yet, wait for replication and repeat the query.
 
 ### Test completed task
 
-Use **Check my progress** for the live-update checkpoint. A successful query is not proof that the external grader has passed.
+Click **Check my progress** for **Test the continuous migration of data**. This is the **second graded checkpoint (50 points)**. The commands and reference outputs shown here do not represent a grader PASS from a live run.
+
+## Congratulations!
+
+You have configured a source profile, run a PostgreSQL-to-AlloyDB continuous migration, compared source and destination records, and checked an additional replicated update.
 
 ---
 
@@ -193,25 +254,25 @@ Use **Check my progress** for the live-update checkpoint. A successful query is 
 
 ### Quick
 
-The script is available on **PR #11's feature branch**, not on `main` until merged:
+For testing **PR #11 before merge**, download the script from its feature branch:
 
 ```bash
 curl -LO https://raw.githubusercontent.com/ePlus-DEV/storage/refs/heads/feat/gsp1084-postgres-to-alloydb-dms/labs/GSP1084/lab.sh
 source lab.sh
 ```
 
-The script attempts to discover project, region, VM zones, source and destination IPs, create/verify the DMS configuration, wait for CDC, and verify replication. It must only be run in a lab environment where you have permission.
+After merge, use the `main` branch URL instead. The script performs operations on lab resources; review it before execution.
 
 ### Manual
 
-Video tham khảo về GSP1084: https://www.youtube.com/watch?v=eZBxC09QD-o (chưa xác minh video trình bày đầy đủ thao tác thủ công).
+Chưa tìm thấy video YouTube hướng dẫn thủ công đã xác minh cho lab này.
 
 ## Sources and verification
 
-- [Google Skills official GSP1084 lab](https://www.skills.google/focuses/100854)
-- [Google Cloud — Migrate to AlloyDB for PostgreSQL using Database Migration Service](https://docs.cloud.google.com/alloydb/docs/migrate-with-dms)
-- [PR #11 — ePlus.DEV GSP1084 script](https://github.com/ePlus-DEV/storage/pull/11)
+- [Original Google Skills GSP1084 lab](https://www.skills.google/focuses/100854) — four-task edition, *Manual Last Updated August 10, 2026*.
+- [Google Cloud documentation: Migrate to AlloyDB for PostgreSQL using DMS](https://docs.cloud.google.com/alloydb/docs/migrate-with-dms)
+- [PR #11 — GSP1084 automation](https://github.com/ePlus-DEV/storage/pull/11)
 
-**Status:** This is a five-task original-language Markdown adaptation of the publicly accessible instructions, **not a verbatim reproduction** of the copyrighted lab page. The official page currently redirects to sign-in in this environment, so its original embedded image URLs could not be retrieved; no images are represented as extracted or verified. **static validated only; runtime/grader unverified** for the PR script according to its existing PR description; this documentation edit does not add new runtime evidence. Not published on Hashnode.
+**Documentation note:** Task order, wizard fields, two checkpoints, example counts, and the two linked Google Skills interface images are matched to the August 2026 four-task edition. Text is paraphrased rather than copied verbatim. The image links reference Google's original CDN and remain subject to their availability and reuse terms. **Runtime/grader unverified in this session.**
 
-Copyright (c) 2026 ePlus.DEV | Unlicense
+Copyright (c) 2026 ePlus.DEV | Unlicense (applies to original guide and automation, not Google's images or documentation).
