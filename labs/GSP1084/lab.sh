@@ -107,9 +107,20 @@ command -v jq >/dev/null || fail 'jq is required in Google Cloud Shell.'
 PROJECT_ID="$(gcloud config get-value project 2>/dev/null)"
 [[ -n "$PROJECT_ID" && "$PROJECT_ID" != '(unset)' ]] || fail 'No active Google Cloud project.'
 info "Project: $PROJECT_ID"
-info 'Ensuring necessary APIs are enabled...'
-gcloud services enable compute.googleapis.com alloydb.googleapis.com datamigration.googleapis.com \
-  --project="$PROJECT_ID" --quiet >/dev/null
+info 'Checking required APIs (lab accounts may not have permission to enable services)...'
+for api in compute.googleapis.com alloydb.googleapis.com datamigration.googleapis.com; do
+  if gcloud services list --enabled --project="$PROJECT_ID" \
+    --filter="config.name=$api" --format='value(config.name)' 2>/dev/null | grep -Fxq "$api"; then
+    ok "$api is enabled."
+  else
+    warn "Cannot confirm $api is enabled. Trying to enable it (if permitted)..."
+    if gcloud services enable "$api" --project="$PROJECT_ID" --quiet >/dev/null 2>&1; then
+      ok "$api enabled."
+    else
+      warn "Cannot enable $api with this lab account. Continuing; a later resource command will report if the API is actually unavailable."
+    fi
+  fi
+done
 
 # Determine the DMS region from the existing AlloyDB cluster, never from a fixed value.
 CLUSTER_RESOURCE="$(gcloud alloydb clusters list --project="$PROJECT_ID" \
