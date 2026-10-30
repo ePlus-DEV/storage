@@ -6,9 +6,17 @@
 # Resume-safe | No cluster/instance creation or deletion
 # Copyright (c) 2026 ePlus.DEV
 # ============================================================
+# The published Quick instructions use `source lab.sh`. Run the actual lab
+# in a child Bash process so `set -e`, traps and `exit` cannot terminate
+# or change the caller's interactive Cloud Shell session.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  bash "${BASH_SOURCE[0]}" "$@"
+  return $?
+fi
+
 set -Eeuo pipefail
 
-if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+if [[ -z "${NO_COLOR:-}" && ( -t 1 || "${FORCE_COLOR:-0}" == "1" ) ]]; then
   RED=$'\033[0;91m'; GREEN=$'\033[0;92m'
   YELLOW=$'\033[0;93m'; CYAN=$'\033[0;96m'
   BLUE=$'\033[0;94m'; BOLD=$'\033[1m'; RESET=$'\033[0m'
@@ -99,9 +107,20 @@ command -v jq >/dev/null || fail 'jq is required in Google Cloud Shell.'
 PROJECT_ID="$(gcloud config get-value project 2>/dev/null)"
 [[ -n "$PROJECT_ID" && "$PROJECT_ID" != '(unset)' ]] || fail 'No active Google Cloud project.'
 info "Project: $PROJECT_ID"
-info 'Ensuring necessary APIs are enabled...'
-gcloud services enable compute.googleapis.com alloydb.googleapis.com datamigration.googleapis.com \
-  --project="$PROJECT_ID" --quiet >/dev/null
+info 'Checking required APIs (lab accounts may not have permission to enable services)...'
+for api in compute.googleapis.com alloydb.googleapis.com datamigration.googleapis.com; do
+  if gcloud services list --enabled --project="$PROJECT_ID" \
+    --filter="config.name=$api" --format='value(config.name)' 2>/dev/null | grep -Fxq "$api"; then
+    ok "$api is enabled."
+  else
+    warn "Cannot confirm $api is enabled. Trying to enable it (if permitted)..."
+    if gcloud services enable "$api" --project="$PROJECT_ID" --quiet >/dev/null 2>&1; then
+      ok "$api enabled."
+    else
+      warn "Cannot enable $api with this lab account. Continuing; a later resource command will report if the API is actually unavailable."
+    fi
+  fi
+done
 
 # Determine the DMS region from the existing AlloyDB cluster, never from a fixed value.
 CLUSTER_RESOURCE="$(gcloud alloydb clusters list --project="$PROJECT_ID" \
@@ -143,6 +162,30 @@ else
     --username="$DB_USER" --password="$DB_PASSWORD" --no-async
   ok 'Source connection profile created.'
 fi
+# Ensure AlloyDB is fully provisioned before DMS validates its destination.
+# The cluster may be listed while still provisioning; DMS then reports
+# FAILED_PRECONDITION / cluster doesn't exist.
+step 'Check AlloyDB destination readiness before DMS job creation'
+CLUSTER_STATE="$(gcloud alloydb clusters describe "$CLUSTER" \
+  --region="$REGION" --project="$PROJECT_ID" --format='value(state)')"
+info "AlloyDB cluster state: $CLUSTER_STATE"
+if [[ "$CLUSTER_STATE" != 'READY' ]]; then
+  warn "Cluster is not READY. Waiting up to 10 minutes for lab provisioning..."
+  for ((attempt=1; attempt<=30; attempt++)); do
+    sleep 20
+    CLUSTER_STATE="$(gcloud alloydb clusters describe "$CLUSTER" \
+      --region="$REGION" --project="$PROJECT_ID" --format='value(state)')" || fail 'Cannot describe AlloyDB cluster.'
+    printf '  [%02d/30] Cluster state: %s\n' "$attempt" "$CLUSTER_STATE"
+    [[ "$CLUSTER_STATE" == 'READY' ]] && break
+  done
+  [[ "$CLUSTER_STATE" == 'READY' ]] || fail "AlloyDB cluster is $CLUSTER_STATE; wait for lab provisioning and rerun."
+fi
+if ! gcloud alloydb instances describe "$INSTANCE" \
+  --cluster="$CLUSTER" --region="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
+  fail "Expected AlloyDB instance $INSTANCE is missing in cluster $CLUSTER. Check lab provisioning; no new resources were created."
+fi
+ok 'AlloyDB destination cluster and instance are present.'
+
 if gcloud database-migration connection-profiles describe "$DEST_PROFILE" \
   --region="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
   ok "Destination profile $DEST_PROFILE already exists."
