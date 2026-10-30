@@ -1,11 +1,11 @@
 ---
-title: "GSP395: Create and Manage AlloyDB Instances — Challenge Lab Solution"
-subtitle: "Automate an AlloyDB cluster, HR tables, read pool, and backup with Google Cloud CLI"
-tags: googlecloud, alloydb, cloudskillsboost, postgresql, devops
-coverImage: ""
+title: "Create and Manage AlloyDB Instances: Challenge Lab - GSP395"
+seoTitle: "Create and Manage AlloyDB Instances: Challenge Lab - GSP395"
+seoDescription: "Step-by-step GSP395 AlloyDB challenge lab solution: create the cluster and primary instance, load HR tables, provision a read pool and create an on-demand backup."
+slug: create-and-manage-alloydb-instances-challenge-lab-gsp395
+tags: create-and-manage-alloydb-instances-challenge-lab-gsp395, alloydb, gsp395
 ---
 
-# GSP395 — Create and Manage AlloyDB Instances: Challenge Lab
 
 > **Lab:** [Google Skills challenge lab](https://www.skills.google/games/7501/labs/45914)  
 > **Solution:** [Draft PR #45 — ePlus.DEV / GSP395](https://github.com/ePlus-DEV/storage/pull/45)  
@@ -249,6 +249,8 @@ Confirm that the primary instance is ready, the VM is `alloydb-client`, the IP i
 ### Existing tables
 
 The automated script uses `CREATE TABLE IF NOT EXISTS` and `ON CONFLICT DO NOTHING` to make reruns safer. This does **not** repair an incorrectly defined existing schema. Inspect table definitions with `\d regions`, `\d countries`, and `\d departments` if the grader does not pass.
+
+---
 
 ## Solution of Lab
 
