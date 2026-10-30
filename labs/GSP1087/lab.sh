@@ -128,9 +128,13 @@ sql 'EXPLAIN (ANALYZE,COSTS,SETTINGS,BUFFERS,TIMING,SUMMARY,WAL,VERBOSE) SELECT 
 loaded="$(scalar "SELECT count(*) FROM g_columnar_relations WHERE relation_name='pgbench_accounts' AND status='Usable';")"
 [[ "$loaded" -ge 1 ]] || { echo 'Column store not usable; check memory capacity' >&2; exit 1; }
 printf 'Checkpoint diagnostics: columnar status is Usable; check both objectives in Google Skills.\n'
+echo 'Lab checkpoint evidence:'
+scalar "SELECT current_database(), current_user;"
+scalar "SELECT count(*) FROM public.pgbench_accounts;"
+sql "SELECT relation_name, status FROM g_columnar_relations WHERE relation_name='pgbench_accounts';"
 REMOTE
 chmod 600 "$workdir/remote.sh"
 remote_copy "$workdir/remote.sh" alloydb-client "$ZONE" "$REMOTE_DIR/remote.sh"
 remote_run alloydb-client "$ZONE" "bash '$REMOTE_DIR/remote.sh' '$IP'"
 remote_run alloydb-client "$ZONE" "rm -f '$REMOTE_DIR/remote.sh' && rmdir '$REMOTE_DIR'"
-printf '%s\n' "${GREEN}Both checkpoints are configured; click Check my progress in Google Skills.${RESET}" 'Runtime/grader not independently verified.'
+printf '%s\n' "${GREEN}Both checkpoints are configured; click Check my progress in Google Skills.${RESET}" 'Runtime/grader not independently verified. A passing script does NOT confirm Google Skills checkpoint credit.'
