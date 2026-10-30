@@ -25,10 +25,16 @@ Treat [PR #38](https://github.com/ePlus-DEV/storage/pull/38), especially its `la
 
 ## Published Hashnode article reference (canonical visual/editorial format)
 
-Use the **actual published Markdown export** as the formatting reference, not merely PR #38: [hoangsvit/eplus.dev — GSP1087 Hashnode export at commit 81f75d4](https://github.com/hoangsvit/eplus.dev/blob/81f75d4dadc932d8ca9228fc0bd53d98deb79ff7/cmvuhqeh5000102nx42tofj4v.md).
+Use the **actual published Markdown export** as the formatting reference, not merely PR #38: [hoangsvit/eplus.dev — GSP1087 final Hashnode export on main](https://github.com/hoangsvit/eplus.dev/blob/main/cmvuhqeh5000102nx42tofj4v.md).
 
 - Match the published article's **YAML frontmatter names**: `title`, `seoTitle`, `seoDescription`, `slug` and `tags`. Do not invent a Hashnode `cuid`, `datePublished`, `cover` or `ogImage`: those are created by Hashnode at publication, or added only if real values are provided.
 - Start the body with **Official lab**, **Source/Status** as appropriate; use **Overview**, **Objectives**, **Setup and requirements**, **Task 1..N**, horizontal rule, **Solution of Lab** (exact `Quick`, `Manual`, `Other Solution` subheadings), **Troubleshooting**, **Verification** and copyright.
 - Use concise executable fenced `bash` and `sql` examples, explain expected results and grader checkpoints. Avoid a redundant H1 when the publishing platform already renders the article title.
 - In unmerged PRs, `Quick` pointing at `main` must be marked **after merge only**; offer a branch/SHA-based Cloud Shell command separately for testing.
 - Keep the source article's editorial **format** while adapting lab-specific requirements; never copy its GSP1087 SQL into GSP395 or imply verified scores without evidence.
+
+### Final published article updates (main branch)
+
+The **main branch export supersedes the earlier fixed commit**. Its `Solution of Lab → Manual` contains **Hashnode native video embeds**, e.g. `%[https://www.youtube.com/watch?v=...]`, instead of a prose instruction saying to follow the tasks above. For new articles, **include valid, verified, lab-specific YouTube embeds only when actual URLs are available**. Never copy the GSP1087 video URLs to an unrelated lab, and never fabricate videos. If none exists, keep a meaningful written manual walkthrough or explicitly indicate that no verified video is available.
+
+Preserve Hashnode's authored body structure and metadata when using the published Markdown as a template. Publication-generated metadata (`cuid`, `datePublished`, `cover`, `ogImage`) must be used only for the particular published article, never reused for a new article.
