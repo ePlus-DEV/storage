@@ -70,7 +70,7 @@ These are **documented reference values**, not output observed during this sessi
 
 Exit the VM terminal when finished.
 
-## Task 2. Create and start a continuous migration job
+## Task 2. Create a Database Migration Service connection profile for a stand-alone PostgreSQL database
 
 ### Identify the source endpoint
 
@@ -86,6 +86,8 @@ In **Compute Engine → VM instances**, note the **internal IP** of `pg14-source
 ### Test completed task
 
 If your lab edition has a separate connection-profile checkpoint, use **Check my progress** after creating the profile. Do not assume that merely saving the form passes the checkpoint.
+
+## Task 3. Create and start a continuous migration job
 
 ### Create the migration job
 
@@ -116,7 +118,7 @@ Replace the placeholder with the region you observed in the console; it is **not
 
 Use the official migration-job progress checker after the job reaches the required state.
 
-## Task 3. Confirm data load in the AlloyDB for PostgreSQL instance
+## Task 4. Confirm data load in the AlloyDB for PostgreSQL instance
 
 1. Open **AlloyDB for PostgreSQL → Clusters**, select `alloydb-target-cluster`, and inspect its **Connectivity** information.
 2. Copy the target **private IP** without the `:5432` port suffix.
@@ -145,7 +147,7 @@ The six counts should match the source's initial dataset. Keep this client sessi
 
 Use the lab's **Check my progress** control if provided for the initial data-load checkpoint.
 
-## Task 4. Propagate a live update to the AlloyDB instance
+## Task 5. Propagate a live update to the AlloyDB instance
 
 ### Insert a row at the source
 
@@ -202,7 +204,7 @@ The script attempts to discover project, region, VM zones, source and destinatio
 
 ### Manual
 
-Chưa tìm thấy video YouTube hướng dẫn thủ công đã xác minh cho lab này.
+Video tham khảo về GSP1084: https://www.youtube.com/watch?v=eZBxC09QD-o (chưa xác minh video trình bày đầy đủ thao tác thủ công).
 
 ## Sources and verification
 
@@ -210,6 +212,6 @@ Chưa tìm thấy video YouTube hướng dẫn thủ công đã xác minh cho la
 - [Google Cloud — Migrate to AlloyDB for PostgreSQL using Database Migration Service](https://docs.cloud.google.com/alloydb/docs/migrate-with-dms)
 - [PR #11 — ePlus.DEV GSP1084 script](https://github.com/ePlus-DEV/storage/pull/11)
 
-**Status:** This is a task-by-task original-language Markdown adaptation of the publicly accessible instructions, **not a verbatim reproduction** of the copyrighted lab page. The supplied screenshot is too low-resolution to reliably extract its embedded figures; no images are represented as extracted or verified. **static validated only; runtime/grader unverified** for the PR script according to its existing PR description; this documentation edit does not add new runtime evidence. Not published on Hashnode.
+**Status:** This is a five-task original-language Markdown adaptation of the publicly accessible instructions, **not a verbatim reproduction** of the copyrighted lab page. The official page currently redirects to sign-in in this environment, so its original embedded image URLs could not be retrieved; no images are represented as extracted or verified. **static validated only; runtime/grader unverified** for the PR script according to its existing PR description; this documentation edit does not add new runtime evidence. Not published on Hashnode.
 
 Copyright (c) 2026 ePlus.DEV | Unlicense
