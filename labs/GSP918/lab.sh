@@ -266,9 +266,9 @@ fi
 [[ -n "$DEST_PASSWORD" ]] || die "Cloud SQL password is required"
 CDC_OK=0
 for attempt in $(seq 1 12); do
-  if OUTPUT="$(printf '%s\n' '\\pset tuples_only on' '\\pset format unaligned' \
+  if OUTPUT="$(printf '%s\n' '\pset tuples_only on' '\pset format unaligned' \
     'SELECT count(*) FROM public.distribution_centers WHERE id=11;' \
-    '\\q' | PGPASSWORD="$DEST_PASSWORD" gcloud sql connect "$DEST_INSTANCE" \
+    '\q' | PGPASSWORD="$DEST_PASSWORD" gcloud sql connect "$DEST_INSTANCE" \
       --project="$PROJECT_ID" --user=postgres --database=orders --quiet 2>&1)"; then
     if printf '%s\n' "$OUTPUT" | grep -qx '1'; then
       CDC_OK=1
