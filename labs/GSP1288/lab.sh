@@ -4,7 +4,7 @@
 # Static validation only; requires an authorized, active Google Skills lab.
 set -Eeuo pipefail
 
-if [[ -z "\${NO_COLOR:-}" ]] && { [[ -t 1 ]] || [[ "\${FORCE_COLOR:-0}" == "1" ]]; }; then
+if [[ -z "${NO_COLOR:-}" ]] && { [[ -t 1 ]] || [[ "${FORCE_COLOR:-0}" == "1" ]]; }; then
   GREEN=$'\033[0;32m'; CYAN=$'\033[0;36m'; YELLOW=$'\033[0;33m'; RED=$'\033[0;31m'; RESET=$'\033[0m'
 else
   GREEN=''; CYAN=''; YELLOW=''; RED=''; RESET=''
@@ -14,15 +14,15 @@ ok() { printf '%s✔ %s%s\n' "$GREEN" "$*" "$RESET"; }
 warn() { printf '%s! %s%s\n' "$YELLOW" "$*" "$RESET" >&2; }
 die() { printf '%s✖ %s%s\n' "$RED" "$*" "$RESET" >&2; exit 1; }
 trap 'die "Stopped near line $LINENO. Inspect the preceding command."' ERR
-printf '%s\n' "\${CYAN}ePlus.DEV – Starting Execution\${RESET}"
+printf '%s\n' "${CYAN}ePlus.DEV – Starting Execution${RESET}"
 printf '%s\n' "Copyright (c) 2026 ePlus.DEV | Unlicense"
 command -v gcloud >/dev/null || die 'Google Cloud CLI is required.'
 command -v python3 >/dev/null || die 'Python 3 is required.'
 
-PROJECT_ID="\${PROJECT_ID:-\${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}}"
+PROJECT_ID="${PROJECT_ID:-${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}}"
 [[ -n "$PROJECT_ID" && "$PROJECT_ID" != "(unset)" ]] || die 'No active project. Set PROJECT_ID.'
-INSTANCE="\${INSTANCE:-cymbal-retail}"
-DATABASE="\${DATABASE:-cymbal-bicycles}"
+INSTANCE="${INSTANCE:-cymbal-retail}"
+DATABASE="${DATABASE:-cymbal-bicycles}"
 gcloud spanner instances describe "$INSTANCE" --project="$PROJECT_ID" --format='value(name)' >/dev/null ||
   die "Lab-provisioned Spanner instance $INSTANCE not found in $PROJECT_ID."
 gcloud spanner databases describe "$DATABASE" --instance="$INSTANCE" --project="$PROJECT_ID" --format='value(name)' >/dev/null ||
@@ -30,9 +30,9 @@ gcloud spanner databases describe "$DATABASE" --instance="$INSTANCE" --project="
 CONFIG="$(gcloud spanner instances describe "$INSTANCE" --project="$PROJECT_ID" --format='value(config)' 2>/dev/null || true)"
 SPANNER_REGION="$(printf '%s' "$CONFIG" | sed -nE 's/.*regional-([a-z]+-[a-z0-9]+[0-9]).*/\1/p')"
 META_REGION="$(gcloud compute project-info describe --project="$PROJECT_ID" --format=json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next((i.get("value","") for i in d.get("commonInstanceMetadata",{}).get("items",[]) if i.get("key")=="google-compute-default-region"),""))' 2>/dev/null || true)"
-REGION="\${REGION:-\${META_REGION:-\${SPANNER_REGION:-$(gcloud config get-value compute/region 2>/dev/null || true)}}}"
+REGION="${REGION:-${META_REGION:-${SPANNER_REGION:-$(gcloud config get-value compute/region 2>/dev/null || true)}}}"
 [[ -n "$REGION" && "$REGION" != "(unset)" ]] || die 'Unable to determine region; set REGION from the lab details.'
-MODEL_ID="\${MODEL_ID:-gemini-embedding-001}"
+MODEL_ID="${MODEL_ID:-gemini-embedding-001}"
 [[ "$MODEL_ID" =~ ^[a-zA-Z0-9._-]+$ ]] || die 'Invalid MODEL_ID.'
 [[ "$REGION" =~ ^[a-z]+-[a-z0-9]+[0-9]$ ]] || die 'Invalid REGION.'
 info "Project: $PROJECT_ID | Spanner: $INSTANCE/$DATABASE | Region: $REGION | Model: $MODEL_ID"
@@ -85,7 +85,7 @@ rows=(
   '9|Cymbal Odyssey Multi-Tool|Pocket tool kit with screwdrivers and bicycle repair keys.|52|999'
   '10|Cymbal Nomad Water Bottle|Reusable leak resistant bottle for hydration on rides.|42|1299'
 )
-for record in "\${rows[@]}"; do
+for record in "${rows[@]}"; do
   IFS='|' read -r product_id name description inventory price <<< "$record"
   sql="INSERT INTO products (categoryId,productId,productName,productDescription,createTime,inventoryCount,priceInCents) SELECT 1,$product_id,'$name','$description',PENDING_COMMIT_TIMESTAMP(),$inventory,$price WHERE NOT EXISTS (SELECT 1 FROM products WHERE categoryId=1 AND productId=$product_id)"
   retry run_sql "$sql" >/dev/null || die "Failed to load product $product_id."
