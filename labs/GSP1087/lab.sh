@@ -103,6 +103,11 @@ else
 fi
 [[ "$(scalar 'SELECT count(*) FROM public.pgbench_accounts;')" == 50000000 ]] || { echo 'Baseline row count mismatch' >&2; exit 1; }
 echo 'Task 1 — Verified pgbench_accounts has exactly 50,000,000 rows'
+# The checkpoint also expects the other pgbench tables from scale-500 initialization.
+for table in pgbench_branches pgbench_tellers pgbench_history; do
+  [[ "$(scalar "SELECT to_regclass('public.$table') IS NOT NULL;")" == t ]] || { echo "Missing pgbench table: $table" >&2; exit 1; }
+done
+printf 'Baseline dataset verified in database postgres; IP file: %s\n' "$HOME/alloydbip.txt"
 echo 'Task 2 — Baseline performance query'
 sql 'SELECT aid,bid,abalance FROM pgbench_accounts WHERE bid < 189 OR abalance > 100 LIMIT 20;'
 sql 'EXPLAIN (ANALYZE,COSTS,SETTINGS,BUFFERS,TIMING,SUMMARY,WAL,VERBOSE) SELECT count(*) FROM pgbench_accounts WHERE bid < 189 OR abalance > 100;'
@@ -122,6 +127,7 @@ fi
 sql 'EXPLAIN (ANALYZE,COSTS,SETTINGS,BUFFERS,TIMING,SUMMARY,WAL,VERBOSE) SELECT count(*) FROM pgbench_accounts WHERE bid < 189 OR abalance > 100;'
 loaded="$(scalar "SELECT count(*) FROM g_columnar_relations WHERE relation_name='pgbench_accounts' AND status='Usable';")"
 [[ "$loaded" -ge 1 ]] || { echo 'Column store not usable; check memory capacity' >&2; exit 1; }
+printf 'Checkpoint diagnostics: columnar status is Usable; check both objectives in Google Skills.\n'
 REMOTE
 chmod 600 "$workdir/remote.sh"
 remote_copy "$workdir/remote.sh" alloydb-client "$ZONE" "$REMOTE_DIR/remote.sh"
