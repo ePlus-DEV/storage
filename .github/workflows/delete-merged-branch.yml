@@ -1,0 +1,37 @@
+name: Delete merged PR branch
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  delete-head-branch:
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref != github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete merged same-repository branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$PR_HEAD_REF" || "$PR_HEAD_REF" == "$DEFAULT_BRANCH" ]]; then
+            echo "Skipping default or empty branch."
+            exit 0
+          fi
+          # The event condition already excludes forks and unmerged PRs.
+          # A GitHub repository setting may have deleted this ref first.
+          if gh api "repos/$GH_REPO/git/ref/heads/$PR_HEAD_REF" >/dev/null 2>&1; then
+            gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$PR_HEAD_REF"
+            echo "Deleted merged PR branch: $PR_HEAD_REF"
+          else
+            echo "Branch ref not found (possibly already deleted): $PR_HEAD_REF"
+          fi
