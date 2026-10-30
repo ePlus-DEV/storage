@@ -76,7 +76,7 @@ cat > "$workdir/remote.sh" <<'REMOTE'
 set -Eeuo pipefail
 if [[ -z "${PGPASSWORD:-}" ]]; then
   [[ -r /dev/tty ]] || { echo 'Interactive SSH TTY required for the lab-provided database password' >&2; exit 2; }
-  printf '%s\n' 'Enter the PostgreSQL password shown in the lab instructions (input is hidden).' >/dev/tty
+  printf '%s\n' 'GSP1087 lab hint: the official instructions specify PostgreSQL password Change3Me.' 'Input is hidden; press Enter after typing it. Do not share passwords in logs.' >/dev/tty
   read -r -s -p 'PostgreSQL password (press Enter to continue): ' PGPASSWORD </dev/tty
   printf '\n' >/dev/tty
   [[ -n "$PGPASSWORD" ]] || { echo 'Password required' >&2; exit 2; }
