@@ -5,8 +5,13 @@ if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
   return $?
 fi
 set -Eeuo pipefail
-BLUE=$(printf '\033[1;34m'); GREEN=$(printf '\033[1;32m'); RED=$(printf '\033[1;31m'); RESET=$(printf '\033[0m')
-if [[ -n "${NO_COLOR:-}" ]]; then BLUE=''; GREEN=''; RED=''; RESET=''; fi
+BLUE=''; GREEN=''; RED=''; RESET=''
+if [[ -z "${NO_COLOR:-}" && ( -t 1 || "${FORCE_COLOR:-0}" == "1" ) ]]; then
+  BLUE=$(printf '\\033[1;34m' || true)
+  GREEN=$(printf '\\033[1;32m' || true)
+  RED=$(printf '\\033[1;31m' || true)
+  RESET=$(printf '\\033[0m' || true)
+fi
 step(){ printf '\n%s== %s ==%s\n' "$BLUE" "$1" "$RESET"; }
 ok(){ printf '%s✔ %s%s\n' "$GREEN" "$1" "$RESET"; }
 echo "ePlus.DEV – Starting Execution"
