@@ -254,14 +254,14 @@ You have configured a source profile, run a PostgreSQL-to-AlloyDB continuous mig
 
 ### Quick
 
-For testing **PR #11 before merge**, download the script from its feature branch:
+Download the script from `main` (available after the PR is merged):
 
 ```bash
-curl -LO https://raw.githubusercontent.com/ePlus-DEV/storage/refs/heads/feat/gsp1084-postgres-to-alloydb-dms/labs/GSP1084/lab.sh
+curl -LO https://raw.githubusercontent.com/ePlus-DEV/storage/refs/heads/main/labs/GSP1084/lab.sh
 source lab.sh
 ```
 
-After merge, use the `main` branch URL instead. The script performs operations on lab resources; review it before execution.
+The Quick link uses the permanent `main` branch. Review the script before execution.
 
 ### Manual
 
