@@ -5,17 +5,18 @@ if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
   return $?
 fi
 set -Eeuo pipefail
-BLUE=''; GREEN=''; RED=''; RESET=''
+BLUE=''; GREEN=''; YELLOW=''; RED=''; RESET=''
 if [[ -z "${NO_COLOR:-}" && ( -t 1 || "${FORCE_COLOR:-0}" == "1" ) ]]; then
-  BLUE=$(printf '\\033[1;34m' || true)
-  GREEN=$(printf '\\033[1;32m' || true)
-  RED=$(printf '\\033[1;31m' || true)
-  RESET=$(printf '\\033[0m' || true)
+  BLUE=$'\033[1;34m'
+  GREEN=$'\033[1;32m'
+  YELLOW=$'\033[1;33m'
+  RED=$'\033[1;31m'
+  RESET=$'\033[0m'
 fi
 step(){ printf '\n%s== %s ==%s\n' "$BLUE" "$1" "$RESET"; }
 ok(){ printf '%s✔ %s%s\n' "$GREEN" "$1" "$RESET"; }
-echo "ePlus.DEV – Starting Execution"
-echo "Copyright (c) 2026 ePlus.DEV | Unlicense"
+printf "%sePlus.DEV – Starting Execution%s\n" "$BLUE" "$RESET"
+printf "%sCopyright (c) 2026 ePlus.DEV | Unlicense%s\n" "$YELLOW" "$RESET"
 # Auto-detect lab project, region and client VM zone; never prompt for these.
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
 if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then PROJECT_ID="$(gcloud projects list --format="value(projectId)" --limit=1 2>/dev/null || true)"; fi
@@ -30,7 +31,7 @@ if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then REGION="$(gcloud compute p
 if [[ ( -z "$REGION" || "$REGION" == "(unset)" ) && "$ZONE" =~ ^(.+)-[a-z]$ ]]; then REGION="${BASH_REMATCH[1]}"; fi
 if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then REGION="$(gcloud alloydb clusters list --project="$PROJECT_ID" --format="value(location)" 2>/dev/null | head -n 1 || true)"; fi
 [[ "$REGION" =~ ^[a-z]+(-[a-z0-9]+)+[0-9]+$ ]] || { echo "Unable to detect GCP Region automatically" >&2; exit 1; }
-printf "Project: %s | Number: %s | Region: %s | Zone: %s\n" "$PROJECT_ID" "$PROJECT_NUMBER" "$REGION" "${ZONE:-unknown}"
+printf "%sProject: %s | Number: %s | Region: %s | Zone: %s%s\n" "$BLUE" "$PROJECT_ID" "$PROJECT_NUMBER" "$REGION" "${ZONE:-unknown}" "$RESET"
 step "Task 1 — Create AlloyDB cluster and primary"
 if ! gcloud alloydb clusters describe lab-cluster --region="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
  gcloud alloydb clusters create lab-cluster --password=Change3Me --network=peering-network --region="$REGION" --project="$PROJECT_ID"
