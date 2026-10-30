@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Copyright (c) 2026 ePlus.DEV | Unlicense
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  bash "${BASH_SOURCE[0]}" "$@"
+  return $?
+fi
 set -Eeuo pipefail
-if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+if [[ -z "${NO_COLOR:-}" && ( -t 1 || "${FORCE_COLOR:-0}" == "1" ) ]]; then
   BLUE=$'\033[1;34m'; GREEN=$'\033[1;32m'; RED=$'\033[1;31m'; RESET=$'\033[0m'
 else
   BLUE=''; GREEN=''; RED=''; RESET=''
