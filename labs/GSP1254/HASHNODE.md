@@ -126,10 +126,8 @@ Verify the shard count, follow any remaining workload instructions in the offici
 The current PR contains a **partial WIP script**. It does **not** fully automate Task 1 or the concurrent RedisSim workload, and must not be presented as a complete one-command solution.
 
 ```bash
-curl -fLO https://raw.githubusercontent.com/ePlus-DEV/storage/feat/gsp1254-redis-cluster-draft/labs/GSP1254/lab.sh
-bash -n lab.sh
-# Review the script and official lab instructions before running:
-# bash lab.sh
+curl -LO https://raw.githubusercontent.com/ePlus-DEV/storage/refs/heads/feat/gsp1254-redis-cluster-draft/labs/GSP1254/lab.sh
+source lab.sh
 ```
 
 ### Manual
