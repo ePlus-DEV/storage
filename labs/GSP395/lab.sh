@@ -1,18 +1,24 @@
 #!/usr/bin/env bash
 # Copyright (c) 2026 ePlus.DEV | Unlicense
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  bash "${BASH_SOURCE[0]}" "$@"
+  return $?
+fi
 set -Eeuo pipefail
 BLUE=$(printf '\033[1;34m'); GREEN=$(printf '\033[1;32m'); RED=$(printf '\033[1;31m'); RESET=$(printf '\033[0m')
-[[ -n "$NO_COLOR" ]] 2>/dev/null && BLUE='' && GREEN='' && RED='' && RESET='' || true
+if [[ -n "${NO_COLOR:-}" ]]; then BLUE=''; GREEN=''; RED=''; RESET=''; fi
 step(){ printf '\n%s== %s ==%s\n' "$BLUE" "$1" "$RESET"; }
 ok(){ printf '%s✔ %s%s\n' "$GREEN" "$1" "$RESET"; }
 echo "ePlus.DEV – Starting Execution"
 echo "Copyright (c) 2026 ePlus.DEV | Unlicense"
 PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
-REGION=$(gcloud config get-value compute/region 2>/dev/null || true)
+REGION="${REGION:-${CLOUDSDK_COMPUTE_REGION:-$(gcloud config get-value compute/region 2>/dev/null || true)}}"
 if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then
  read -r -p "GCP Region from lab launch page: " REGION
 fi
-[[ -n "$PROJECT_ID" && -n "$REGION" ]] || exit 1
+[[ -n "$PROJECT_ID" && "$PROJECT_ID" != "(unset)" && -n "$REGION" && "$REGION" != "(unset)" ]] || { echo "Project or region missing" >&2; exit 1; }
+[[ "$REGION" =~ ^[a-z]+(-[a-z0-9]+)+[0-9]+$ ]] || { echo "Invalid GCP Region: $REGION" >&2; exit 1; }
+printf 'Project: %s | Region: %s\n' "$PROJECT_ID" "$REGION"
 step "Task 1 — Create AlloyDB cluster and primary"
 if ! gcloud alloydb clusters describe lab-cluster --region="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
  gcloud alloydb clusters create lab-cluster --password=Change3Me --network=peering-network --region="$REGION" --project="$PROJECT_ID"
