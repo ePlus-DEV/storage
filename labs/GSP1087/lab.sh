@@ -83,6 +83,9 @@ if [[ -z "${PGPASSWORD:-}" ]]; then
   export PGPASSWORD
 fi
 IP="$1"
+printf '%s\n' "$IP" > "$HOME/alloydbip.txt"
+export ALLOYDB="$IP"
+printf 'Saved AlloyDB private IP to %s/alloydbip.txt\n' "$HOME"
 [[ "$IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || exit 2
 sql() { psql -X -v ON_ERROR_STOP=1 -h "$IP" -U postgres -d postgres -c "$1"; }
 scalar() { psql -X -At -v ON_ERROR_STOP=1 -h "$IP" -U postgres -d postgres -c "$1"; }
@@ -99,6 +102,7 @@ else
   [[ "$count" == 50000000 ]] || { echo "Unexpected existing pgbench row count: $count; refusing destructive reinit" >&2; exit 1; }
 fi
 [[ "$(scalar 'SELECT count(*) FROM public.pgbench_accounts;')" == 50000000 ]] || { echo 'Baseline row count mismatch' >&2; exit 1; }
+echo 'Task 1 — Verified pgbench_accounts has exactly 50,000,000 rows'
 echo 'Task 2 — Baseline performance query'
 sql 'SELECT aid,bid,abalance FROM pgbench_accounts WHERE bid < 189 OR abalance > 100 LIMIT 20;'
 sql 'EXPLAIN (ANALYZE,COSTS,SETTINGS,BUFFERS,TIMING,SUMMARY,WAL,VERBOSE) SELECT count(*) FROM pgbench_accounts WHERE bid < 189 OR abalance > 100;'
@@ -112,6 +116,8 @@ echo 'Task 5 — Populate column store and compare plan (checkpoint 50)'
 loaded="$(scalar "SELECT count(*) FROM g_columnar_relations WHERE relation_name='pgbench_accounts' AND status='Usable';")"
 if [[ "$loaded" == 0 ]]; then
   sql "SELECT google_columnar_engine_add('pgbench_accounts');"
+else
+  echo 'Columnar table already marked Usable; skipping duplicate add.'
 fi
 sql 'EXPLAIN (ANALYZE,COSTS,SETTINGS,BUFFERS,TIMING,SUMMARY,WAL,VERBOSE) SELECT count(*) FROM pgbench_accounts WHERE bid < 189 OR abalance > 100;'
 loaded="$(scalar "SELECT count(*) FROM g_columnar_relations WHERE relation_name='pgbench_accounts' AND status='Usable';")"
