@@ -162,6 +162,30 @@ else
     --username="$DB_USER" --password="$DB_PASSWORD" --no-async
   ok 'Source connection profile created.'
 fi
+# Ensure AlloyDB is fully provisioned before DMS validates its destination.
+# The cluster may be listed while still provisioning; DMS then reports
+# FAILED_PRECONDITION / cluster doesn't exist.
+step 'Check AlloyDB destination readiness before DMS job creation'
+CLUSTER_STATE="$(gcloud alloydb clusters describe "$CLUSTER" \
+  --region="$REGION" --project="$PROJECT_ID" --format='value(state)')"
+info "AlloyDB cluster state: $CLUSTER_STATE"
+if [[ "$CLUSTER_STATE" != 'READY' ]]; then
+  warn "Cluster is not READY. Waiting up to 10 minutes for lab provisioning..."
+  for ((attempt=1; attempt<=30; attempt++)); do
+    sleep 20
+    CLUSTER_STATE="$(gcloud alloydb clusters describe "$CLUSTER" \
+      --region="$REGION" --project="$PROJECT_ID" --format='value(state)')" || fail 'Cannot describe AlloyDB cluster.'
+    printf '  [%02d/30] Cluster state: %s\n' "$attempt" "$CLUSTER_STATE"
+    [[ "$CLUSTER_STATE" == 'READY' ]] && break
+  done
+  [[ "$CLUSTER_STATE" == 'READY' ]] || fail "AlloyDB cluster is $CLUSTER_STATE; wait for lab provisioning and rerun."
+fi
+if ! gcloud alloydb instances describe "$INSTANCE" \
+  --cluster="$CLUSTER" --region="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
+  fail "Expected AlloyDB instance $INSTANCE is missing in cluster $CLUSTER. Check lab provisioning; no new resources were created."
+fi
+ok 'AlloyDB destination cluster and instance are present.'
+
 if gcloud database-migration connection-profiles describe "$DEST_PROFILE" \
   --region="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
   ok "Destination profile $DEST_PROFILE already exists."
