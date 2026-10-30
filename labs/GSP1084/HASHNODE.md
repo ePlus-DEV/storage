@@ -194,10 +194,8 @@ Use **Check my progress** for the live-update checkpoint. A successful query is 
 The script is available on **PR #11's feature branch**, not on `main` until merged:
 
 ```bash
-curl -fLO https://raw.githubusercontent.com/ePlus-DEV/storage/feat/gsp1084-postgres-to-alloydb-dms/labs/GSP1084/lab.sh
-bash -n lab.sh
-# Review the source before running in an authorized temporary lab:
-bash lab.sh
+curl -LO https://raw.githubusercontent.com/ePlus-DEV/storage/refs/heads/feat/gsp1084-postgres-to-alloydb-dms/labs/GSP1084/lab.sh
+source lab.sh
 ```
 
 The script attempts to discover project, region, VM zones, source and destination IPs, create/verify the DMS configuration, wait for CDC, and verify replication. It must only be run in a lab environment where you have permission.
