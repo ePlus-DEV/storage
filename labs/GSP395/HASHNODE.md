@@ -8,7 +8,7 @@ coverImage: ""
 # GSP395 — Create and Manage AlloyDB Instances: Challenge Lab
 
 > **Lab:** [Google Skills challenge lab](https://www.skills.google/games/7501/labs/45914)  
-> **Solution:** [ePlus.DEV / GSP395](https://github.com/ePlus-DEV/storage/tree/main/labs/GSP395)  
+> **Solution:** [Draft PR #45 — ePlus.DEV / GSP395](https://github.com/ePlus-DEV/storage/pull/45)  
 > **Status:** Draft solution; Google Skills scoring has **not** been independently verified.
 
 ## Overview
@@ -52,7 +52,7 @@ set -o pipefail
 FORCE_COLOR=1 bash lab-gsp395.sh 2>&1 | tee "gsp395-${SHA:0:12}.log"
 ```
 
-The script detects the active project, reads the configured region (or asks for the region on the launch page), finds the `alloydb-client` VM zone, creates resources if absent, and inserts seed data without duplicating existing primary keys.
+The script automatically detects the active project, resolves the lab region using Cloud SDK settings, project metadata, or the provisioned `alloydb-client` VM zone, creates missing resources, and inserts seed data without duplicating primary keys. It does not prompt for a discoverable region.
 
 > **Checkpoint reminder:** Running a script is not the same as passing the grader. Click **Check my progress** after each relevant task.
 
@@ -62,7 +62,15 @@ Set the correct project and region from your lab session:
 
 ```bash
 PROJECT_ID="$(gcloud config get-value project)"
-read -r -p "GCP Region from lab launch page: " REGION
+REGION="$(gcloud config get-value compute/region 2>/dev/null || true)"
+if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then
+  REGION="$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null || true)"
+fi
+if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then
+  CLIENT_ZONE="$(gcloud compute instances list --filter="name=alloydb-client" --format="value(zone)" | awk -F/ 'NF{print $NF;exit}')"
+  REGION="${CLIENT_ZONE%-?}"
+fi
+[[ -n "$REGION" && "$REGION" != "(unset)" ]] || { echo "Region not discovered"; exit 1; }
 
 gcloud alloydb clusters create lab-cluster \
   --password=Change3Me \
@@ -228,7 +236,7 @@ echo "Exit code: $?"
 
 ### Region not configured
 
-The region must match the **GCP Region** shown on the Google Skills launch page. Do not infer it from the VM zone or replace it with a region that happens to have capacity.
+The region must match the **GCP Region** shown on the Google Skills launch page. The automatic solution derives it from configured region, project metadata, or the preprovisioned lab VM zone. Verify that it matches the lab launch page; never switch regions to bypass capacity errors.
 
 ### Instance creation fails due to insufficient resources
 
@@ -241,6 +249,25 @@ Confirm that the primary instance is ready, the VM is `alloydb-client`, the IP i
 ### Existing tables
 
 The automated script uses `CREATE TABLE IF NOT EXISTS` and `ON CONFLICT DO NOTHING` to make reruns safer. This does **not** repair an incorrectly defined existing schema. Inspect table definitions with `\d regions`, `\d countries`, and `\d departments` if the grader does not pass.
+
+## Solution of Lab
+
+### Quick
+
+> The Quick URL below targets `main`. Use it **only after PR #45 has been merged**. Until then use the draft-PR command in **Quick solution — Cloud Shell** above.
+
+```bash
+curl -LO https://raw.githubusercontent.com/ePlus-DEV/storage/refs/heads/main/labs/GSP395/lab.sh
+source lab.sh
+```
+
+### Manual
+
+Follow **Tasks 1–5** above to create the AlloyDB cluster and primary, create the three tables and insert the required records on `alloydb-client`, provision the two-node read pool and create the backup. Confirm the resource configuration and row counts after each task.
+
+### Other Solution
+
+Official lab: https://www.skills.google/games/7501/labs/45914. No third-party solution has been independently validated for this article.
 
 ## Final checklist
 
