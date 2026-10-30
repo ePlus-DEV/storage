@@ -131,6 +131,24 @@ Compare **Execution Time** before and after the columnar scan. The example in th
 
 Click **Check my progress → Testing the Columnar Engine**.
 
+## Testing the draft PR before merge
+
+Run this in **Cloud Shell** (not inside the `alloydb-client` SSH terminal). The `main` Quick below is only for use after merge.
+
+```bash
+REPO="ePlus-DEV/storage"
+BRANCH="scout/new-gsp1087-alloydb-columnar-20261030"
+SHA="$(git ls-remote "https://github.com/$REPO.git" "refs/heads/$BRANCH" | awk '{print $1}')"
+test -n "$SHA" || { echo "Cannot resolve PR branch"; exit 1; }
+curl -fL --retry 3 "https://raw.githubusercontent.com/$REPO/$SHA/labs/GSP1087/lab.sh" -o lab-gsp1087-test.sh
+set -o pipefail
+FORCE_COLOR=1 bash lab-gsp1087-test.sh 2>&1 | tee "gsp1087-${SHA:0:12}.log"
+```
+
+The script prompts once for the lab PostgreSQL password (shown in the official instructions); it is hidden while typed. The output is saved to a log file in Cloud Shell.
+
+**Known grader issue (30 October 2026):** An authorized tester ran the script to completion, generated 50 million account rows, and saw a columnar scan, but both Google Skills checkpoints remained incomplete. The observed post-add plan still included a sequential scan. The script's completion message is **not** proof of grader acceptance. Do not repeat destructive `pgbench -i` to troubleshoot. Confirm `~/alloydbip.txt`, database identity, row count and `g_columnar_relations` status, then check the grader again.
+
 ## Solution of Lab
 
 ### Quick
