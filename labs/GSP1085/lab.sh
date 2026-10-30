@@ -50,7 +50,10 @@ vm_zone() {
     printf '%sERROR: Required VM %s does not exist in project %s.%s\n' "$RED" "$vm" "$PROJECT_ID" "$RESET" >&2
     printf '%s\n' "Detected default zone: ${default_zone:-unset}" "Existing VMs:" >&2
     gcloud compute instances list --project="$PROJECT_ID" --format='table(name,zone,status)' >&2 || true
-    fail "Lab provisioning may be incomplete, or this is a different lab. Do not substitute startup-vm for $vm without verification."
+    if [[ "$vm" == "pg14-source" ]] && gcloud compute instances list --project="$PROJECT_ID" --format='value(name)' 2>/dev/null | grep -Fxq 'alloydb-client' && gcloud compute instances list --project="$PROJECT_ID" --format='value(name)' 2>/dev/null | grep -Fxq 'startup-vm'; then
+      printf '%s\n' "${BLUE}Environment hint: alloydb-client + startup-vm, but no pg14-source.${RESET}" "This resembles the GSP1087 Columnar Engine environment, not the GSP1085 PostgreSQL migration environment." "If your active lab is GSP1087, use PR #38: https://github.com/ePlus-DEV/storage/pull/38" "If your active lab is GSP1085, restart/check lab provisioning and confirm pg14-source exists." >&2
+    fi
+    fail "Missing required source VM $vm; refusing to substitute startup-vm or modify the wrong database."
   fi
   [[ "$zones" != *$'\n'* ]] || fail "Multiple zones found for $vm: $zones"
   [[ "$zones" =~ ^[a-z]+(-[a-z0-9]+)+[0-9]+-[a-z]$ ]] || fail "Invalid discovered zone for $vm: $zones"
