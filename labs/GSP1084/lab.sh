@@ -16,7 +16,7 @@ fi
 
 set -Eeuo pipefail
 
-if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+if [[ -z "${NO_COLOR:-}" && ( -t 1 || "${FORCE_COLOR:-0}" == "1" ) ]]; then
   RED=$'\033[0;91m'; GREEN=$'\033[0;92m'
   YELLOW=$'\033[0;93m'; CYAN=$'\033[0;96m'
   BLUE=$'\033[0;94m'; BOLD=$'\033[1m'; RESET=$'\033[0m'
