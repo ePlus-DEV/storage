@@ -189,6 +189,8 @@ remote_hba() {
   cat <<'REMOTE'
 set -Eeuo pipefail
 HBA_FILE="$(sudo -u postgres psql -Atqc 'SHOW hba_file')"
+# Replace only the lab's broad MD5 host rule if it exists; preserve other entries.
+sudo sed -i -E "s|^host[[:space:]]+all[[:space:]]+all[[:space:]]+0\\.0\\.0\\.0/0[[:space:]]+md5[[:space:]]*$|host all all $DMS_CIDR md5|" "$HBA_FILE"
 for rule in "host all all $DMS_CIDR md5" \
             "host replication all $DMS_CIDR md5"; do
   grep -Fxq "$rule" "$HBA_FILE" || printf '%s\n' "$rule" | sudo tee -a "$HBA_FILE" >/dev/null
@@ -225,8 +227,22 @@ if [[ "$JOB_STATE" == NOT_STARTED || "$JOB_STATE" == READY ]]; then
     --project="$PROJECT_ID" --region="$REGION"
   gcloud database-migration migration-jobs verify "$JOB_ID" \
     --project="$PROJECT_ID" --region="$REGION"
-  gcloud database-migration migration-jobs start "$JOB_ID" \
-    --project="$PROJECT_ID" --region="$REGION"
+  # DMS verify/demotion can be asynchronous. Retry start only while NOT_STARTED.
+  STARTED=0
+  for start_attempt in $(seq 1 8); do
+    CURRENT_STATE="$(gcloud database-migration migration-jobs describe "$JOB_ID" \
+      --project="$PROJECT_ID" --region="$REGION" --format='value(state)' || true)"
+    if [[ "$CURRENT_STATE" == STARTING || "$CURRENT_STATE" == RUNNING ]]; then
+      STARTED=1; break
+    fi
+    if gcloud database-migration migration-jobs start "$JOB_ID" \
+      --project="$PROJECT_ID" --region="$REGION"; then
+      STARTED=1; break
+    fi
+    warn "DMS start is not ready ($start_attempt/8); retrying in 20s."
+    sleep 20
+  done
+  [[ "$STARTED" -eq 1 ]] || die "DMS start did not succeed after bounded retries."
 else
   warn "Existing migration state: $JOB_STATE; not repeating demotion/start."
 fi
