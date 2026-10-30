@@ -7,11 +7,11 @@ fi
 set -Eeuo pipefail
 BLUE=''; GREEN=''; YELLOW=''; RED=''; RESET=''
 if [[ -z "${NO_COLOR:-}" && ( -t 1 || "${FORCE_COLOR:-0}" == "1" ) ]]; then
-  BLUE=$'\033[1;34m'
-  GREEN=$'\033[1;32m'
-  YELLOW=$'\033[1;33m'
-  RED=$'\033[1;31m'
-  RESET=$'\033[0m'
+  BLUE=$(printf '\033[1;34m')
+  GREEN=$(printf '\033[1;32m')
+  YELLOW=$(printf '\033[1;33m')
+  RED=$(printf '\033[1;31m')
+  RESET=$(printf '\033[0m')
 fi
 step(){ printf '\n%s== %s ==%s\n' "$BLUE" "$1" "$RESET"; }
 ok(){ printf '%s✔ %s%s\n' "$GREEN" "$1" "$RESET"; }
@@ -68,12 +68,49 @@ gcloud compute scp "$TEMP/seed.sql" alloydb-client:/tmp/eplus-gsp395-seed.sql --
 gcloud compute ssh alloydb-client --zone="$ZONE" --project="$PROJECT_ID" --quiet --command="export ALLOYDB='$IP'; echo \"\$ALLOYDB\" > ~/alloydbip.txt; PGPASSWORD=Change3Me psql -X -v ON_ERROR_STOP=1 -h \"\$ALLOYDB\" -U postgres -d postgres -f /tmp/eplus-gsp395-seed.sql; rm /tmp/eplus-gsp395-seed.sql"
 ok "HR tables populated"
 step "Task 4 — Create 2-node read pool"
-if ! gcloud alloydb instances describe lab-instance-rp1 --cluster=lab-cluster --region="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
- gcloud alloydb instances create lab-instance-rp1 --instance-type=READ_POOL --cpu-count=2 --read-pool-node-count=2 --cluster=lab-cluster --region="$REGION" --project="$PROJECT_ID"
+POOL_STATE="$(gcloud alloydb instances describe lab-instance-rp1 --cluster=lab-cluster --region="$REGION" --project="$PROJECT_ID" --format='value(state)' 2>/dev/null || true)"
+if [[ -z "$POOL_STATE" ]]; then
+  MAX_ATTEMPTS="${READ_POOL_ATTEMPTS:-3}"
+  for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
+    printf '%sRead pool creation attempt %s/%s%s\n' "$YELLOW" "$attempt" "$MAX_ATTEMPTS" "$RESET"
+    if gcloud alloydb instances create lab-instance-rp1 --instance-type=READ_POOL --cpu-count=2 --read-pool-node-count=2 --cluster=lab-cluster --region="$REGION" --project="$PROJECT_ID"; then
+      break
+    fi
+    POOL_STATE="$(gcloud alloydb instances describe lab-instance-rp1 --cluster=lab-cluster --region="$REGION" --project="$PROJECT_ID" --format='value(state)' 2>/dev/null || true)"
+    [[ -n "$POOL_STATE" ]] && break
+    if (( attempt < MAX_ATTEMPTS )); then
+      printf '%sProvisioning failed; waiting 60 seconds before retry in the same lab region.%s\n' "$YELLOW" "$RESET"
+      sleep 60
+    fi
+  done
+fi
+POOL_STATE="$(gcloud alloydb instances describe lab-instance-rp1 --cluster=lab-cluster --region="$REGION" --project="$PROJECT_ID" --format='value(state)' 2>/dev/null || true)"
+if [[ -n "$POOL_STATE" ]]; then
+  for ((i=1; i<=45; i++)); do
+    [[ "$POOL_STATE" == READY ]] && break
+    [[ "$POOL_STATE" == FAILED ]] && break
+    sleep 20
+    POOL_STATE="$(gcloud alloydb instances describe lab-instance-rp1 --cluster=lab-cluster --region="$REGION" --project="$PROJECT_ID" --format='value(state)' 2>/dev/null || true)"
+  done
+fi
+if [[ "$POOL_STATE" == READY ]]; then
+  ok "Read pool ready"
+else
+  printf '%sWARNING: Read pool unavailable in %s (state: %s). Task 4 remains incomplete.%s\n' "$YELLOW" "$REGION" "${POOL_STATE:-not created}" "$RESET" >&2
 fi
 step "Task 5 — Create backup"
 if ! gcloud alloydb backups describe lab-backup --region="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
- gcloud alloydb backups create lab-backup --cluster=lab-cluster --region="$REGION" --project="$PROJECT_ID"
+  gcloud alloydb backups create lab-backup --cluster=lab-cluster --region="$REGION" --project="$PROJECT_ID"
 fi
+BACKUP_STATE="$(gcloud alloydb backups describe lab-backup --region="$REGION" --project="$PROJECT_ID" --format='value(state)' 2>/dev/null || true)"
+for ((i=1; i<=45; i++)); do
+  [[ "$BACKUP_STATE" == READY ]] && break
+  [[ "$BACKUP_STATE" == FAILED ]] && break
+  sleep 20
+  BACKUP_STATE="$(gcloud alloydb backups describe lab-backup --region="$REGION" --project="$PROJECT_ID" --format='value(state)' 2>/dev/null || true)"
+done
 gcloud alloydb backups describe lab-backup --region="$REGION" --project="$PROJECT_ID" --format='yaml(name,state)'
+[[ "$BACKUP_STATE" == READY ]] || { printf '%sBackup is not READY: %s%s\n' "$RED" "$BACKUP_STATE" "$RESET" >&2; exit 1; }
+ok "Backup ready"
+[[ "$POOL_STATE" == READY ]] || { printf '%sTask 4 incomplete: read pool capacity unavailable in assigned region.%s\n' "$RED" "$RESET" >&2; exit 2; }
 ok "Finished; click Check my progress for each task. Grader not verified."
