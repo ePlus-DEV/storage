@@ -6,6 +6,14 @@
 # Resume-safe | No cluster/instance creation or deletion
 # Copyright (c) 2026 ePlus.DEV
 # ============================================================
+# The published Quick instructions use `source lab.sh`. Run the actual lab
+# in a child Bash process so `set -e`, traps and `exit` cannot terminate
+# or change the caller's interactive Cloud Shell session.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  bash "${BASH_SOURCE[0]}" "$@"
+  return $?
+fi
+
 set -Eeuo pipefail
 
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
