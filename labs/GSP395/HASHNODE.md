@@ -1,12 +1,3 @@
----
-title: "Create and Manage AlloyDB Instances: Challenge Lab - GSP395"
-seoTitle: "Create and Manage AlloyDB Instances: Challenge Lab - GSP395"
-seoDescription: "Step-by-step GSP395 AlloyDB challenge lab solution: create the cluster and primary instance, load HR tables, provision a read pool and create an on-demand backup."
-slug: create-and-manage-alloydb-instances-challenge-lab-gsp395
-tags: create-and-manage-alloydb-instances-challenge-lab-gsp395, alloydb, gsp395
----
-
-
 > **Lab:** [Google Skills challenge lab](https://www.skills.google/games/7501/labs/45914)  
 > **Solution:** [Draft PR #45 — ePlus.DEV / GSP395](https://github.com/ePlus-DEV/storage/pull/45)  
 > **Status:** Draft solution; Google Skills scoring has **not** been independently verified.
