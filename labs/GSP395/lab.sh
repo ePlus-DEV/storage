@@ -16,14 +16,21 @@ step(){ printf '\n%s== %s ==%s\n' "$BLUE" "$1" "$RESET"; }
 ok(){ printf '%s✔ %s%s\n' "$GREEN" "$1" "$RESET"; }
 echo "ePlus.DEV – Starting Execution"
 echo "Copyright (c) 2026 ePlus.DEV | Unlicense"
-PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+# Auto-detect lab project, region and client VM zone; never prompt for these.
+PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
+if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then PROJECT_ID="$(gcloud projects list --format="value(projectId)" --limit=1 2>/dev/null || true)"; fi
+[[ -n "$PROJECT_ID" && "$PROJECT_ID" != "(unset)" ]] || { echo "Unable to detect project" >&2; exit 1; }
+PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)" 2>/dev/null || true)"
+CLIENT_ZONE="$(gcloud compute instances list --project="$PROJECT_ID" --filter="name=alloydb-client" --format="value(zone)" 2>/dev/null | awk -F/ 'NF{print $NF;exit}')"
+ZONE="${ZONE:-${CLOUDSDK_COMPUTE_ZONE:-$(gcloud config get-value compute/zone 2>/dev/null || true)}}"
+if [[ -n "$CLIENT_ZONE" ]]; then ZONE="$CLIENT_ZONE"; fi
+if [[ -z "$ZONE" || "$ZONE" == "(unset)" ]]; then ZONE="$(gcloud compute project-info describe --project="$PROJECT_ID" --format="value(commonInstanceMetadata.items[google-compute-default-zone])" 2>/dev/null || true)"; fi
 REGION="${REGION:-${CLOUDSDK_COMPUTE_REGION:-$(gcloud config get-value compute/region 2>/dev/null || true)}}"
-if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then
- read -r -p "GCP Region from lab launch page: " REGION
-fi
-[[ -n "$PROJECT_ID" && "$PROJECT_ID" != "(unset)" && -n "$REGION" && "$REGION" != "(unset)" ]] || { echo "Project or region missing" >&2; exit 1; }
-[[ "$REGION" =~ ^[a-z]+(-[a-z0-9]+)+[0-9]+$ ]] || { echo "Invalid GCP Region: $REGION" >&2; exit 1; }
-printf 'Project: %s | Region: %s\n' "$PROJECT_ID" "$REGION"
+if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then REGION="$(gcloud compute project-info describe --project="$PROJECT_ID" --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null || true)"; fi
+if [[ ( -z "$REGION" || "$REGION" == "(unset)" ) && "$ZONE" =~ ^(.+)-[a-z]$ ]]; then REGION="${BASH_REMATCH[1]}"; fi
+if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then REGION="$(gcloud alloydb clusters list --project="$PROJECT_ID" --format="value(location)" 2>/dev/null | head -n 1 || true)"; fi
+[[ "$REGION" =~ ^[a-z]+(-[a-z0-9]+)+[0-9]+$ ]] || { echo "Unable to detect GCP Region automatically" >&2; exit 1; }
+printf "Project: %s | Number: %s | Region: %s | Zone: %s\n" "$PROJECT_ID" "$PROJECT_NUMBER" "$REGION" "${ZONE:-unknown}"
 step "Task 1 — Create AlloyDB cluster and primary"
 if ! gcloud alloydb clusters describe lab-cluster --region="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
  gcloud alloydb clusters create lab-cluster --password=Change3Me --network=peering-network --region="$REGION" --project="$PROJECT_ID"
@@ -40,7 +47,7 @@ done
 IP=$(gcloud alloydb instances describe lab-instance --cluster=lab-cluster --region="$REGION" --project="$PROJECT_ID" --format='value(ipAddress)')
 [[ "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
 step "Task 2–3 — Create and populate HR tables"
-ZONE=$(gcloud compute instances list --project="$PROJECT_ID" --filter='name=alloydb-client' --format='value(zone)' | awk -F/ 'NF{print $NF;exit}')
+ZONE="$CLIENT_ZONE"
 [[ -n "$ZONE" ]] || { echo "Missing alloydb-client"; exit 1; }
 TEMP=$(mktemp -d)
 trap 'rm -rf "$TEMP"' EXIT
