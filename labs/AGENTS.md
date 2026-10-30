@@ -10,3 +10,15 @@ These requirements apply to all scripts under `labs/` and to future lab-solution
 6. **PR-only delivery.** Work on a feature branch and open a Draft PR; do not push to main or merge without approval. Include the exact branch-based Cloud Shell run command in the PR description.
 7. **Include `HASHNODE.md`** in the same lab folder, with a full English walkthrough, exact task instructions, SQL/CLI, troubleshooting, and clear distinction between tested and untested results.
 8. **Never execute the lab with an unauthorized account or project.** The user runs Cloud Shell with their temporary lab credentials.
+
+## Canonical solution and documentation format (reference: PR #38)
+
+Treat [PR #38](https://github.com/ePlus-DEV/storage/pull/38), especially its `labs/GSP1087/README.md`, `HASHNODE.md`, and PR description, as the structural reference for **new lab solutions**. Always deliver a full solution, not just an executable script:
+
+- Each `labs/GSPxxxx/` contains **`lab.sh`, `README.md`, and `HASHNODE.md`** in the same PR.
+- **README.md:** official lab URL, overview and objectives, exact environment expectations, runnable script command, concise validation, limitations, and links to the full guide.
+- **HASHNODE.md:** official lab URL, objectives and prerequisites, complete **Task 1–N** walkthrough with real commands, expected results and checkpoints, a **Solution of Lab** section with exactly the subheadings **Quick**, **Manual**, **Other Solution**, troubleshooting, validation, attribution/copyright.
+- **Quick** may point to `main` **only after merge**. Before merging, both PR description and documentation must provide a tested-in-principle **draft branch / resolved SHA** download example. Never represent an unmerged `main` URL as runnable.
+- **PR description:** direct links to script, README and Hashnode guide; copy-ready Cloud Shell command using the PR branch, `git ls-remote` SHA resolution, `curl -fL`, `FORCE_COLOR=1`, and optional `tee`; checkpoint/evidence table; known limitations and unverified grader status.
+- **Execution:** use real ANSI escapes with `FORCE_COLOR=1`, ensure color initialization is safe under `set -Eeuo pipefail`, and independently check SSH/remote color behavior. **Automatically discover** project, region and VM zone; do not prompt for discoverable settings or hardcode regions/zones.
+- Match the **structure**, not the lab-specific SQL or names, from PR #38. Do not copy GSP1087's pgbench/columnar logic into an unrelated challenge lab. Do not assert grader completion without user-provided scoring evidence.
