@@ -43,13 +43,15 @@ wait_primary() {
   fail 'Primary did not become READY within 10 minutes'
 }
 vm_zone() {
-  local vm="$1" var="${2:-}" zone
-  zone="$var"
-  [[ -n "$zone" ]] || zone="$(gcloud compute instances list --project="$PROJECT_ID" --filter="name=$vm" --format='value(zone)' 2>/dev/null | head -n1 | awk -F/ '{print $NF}')"
-  [[ -n "$zone" ]] || ask zone "Zone of $vm"
-  [[ "$zone" =~ ^[a-z]+(-[a-z0-9]+)+[0-9]+-[a-z]$ ]] || fail "Invalid zone for $vm"
-  printf '%s' "$zone"
+  local vm="$1" zones default_zone
+  default_zone="$(gcloud compute project-info describe --project="$PROJECT_ID" --format='value(commonInstanceMetadata.items[google-compute-default-zone])' 2>/dev/null || true)"
+  zones="$(gcloud compute instances list --project="$PROJECT_ID" --filter="name=$vm" --format='value(zone)' 2>/dev/null | awk -F/ 'NF && $NF != "" {print $NF}' | sort -u)"
+  [[ -n "$zones" ]] || fail "Cannot locate $vm in $PROJECT_ID (default zone: ${default_zone:-unset})"
+  [[ "$zones" != *$'\n'* ]] || fail "Multiple zones found for $vm: $zones"
+  [[ "$zones" =~ ^[a-z]+(-[a-z0-9]+)+[0-9]+-[a-z]$ ]] || fail "Invalid discovered zone for $vm: $zones"
+  printf '%s' "$zones"
 }
+
 remote_run() {
   local vm="$1" zone="$2" command="$3"
   gcloud compute ssh "$vm" --project="$PROJECT_ID" --zone="$zone" --quiet --command="$command" -- -tt
@@ -62,8 +64,8 @@ workdir="$(mktemp -d)"
 trap 'rm -rf -- "$workdir"' EXIT
 
 step 'Task 1 — Verify source database and HR tables'
-SOURCE_ZONE="$(vm_zone pg14-source "${SOURCE_ZONE:-}")"
-DEST_ZONE="$(vm_zone alloydb-client "${DEST_ZONE:-${ZONE:-}}")"
+SOURCE_ZONE="$(vm_zone pg14-source)"
+DEST_ZONE="$(vm_zone alloydb-client)"
 remote_run pg14-source "$SOURCE_ZONE" "sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d postgres -c 'SELECT count(*) FROM countries;' -c 'SELECT count(*) FROM departments;' -c 'SELECT count(*) FROM employees;' -c 'SELECT count(*) FROM jobs;' -c 'SELECT count(*) FROM locations;' -c 'SELECT count(*) FROM regions;'"
 step 'Task 2 — Create PostgreSQL custom dump and upload to lab bucket (checkpoint 50)'
 SOURCE_DIR="/tmp/eplus-gsp1085-$PROJECT_ID"
