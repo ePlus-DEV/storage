@@ -32,10 +32,14 @@ SPANNER_REGION="$(printf '%s' "$CONFIG" | sed -nE 's/.*regional-([a-z]+-[a-z0-9]
 META_REGION="$(gcloud compute project-info describe --project="$PROJECT_ID" --format=json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next((i.get("value","") for i in d.get("commonInstanceMetadata",{}).get("items",[]) if i.get("key")=="google-compute-default-region"),""))' 2>/dev/null || true)"
 REGION="${REGION:-${META_REGION:-${SPANNER_REGION:-$(gcloud config get-value compute/region 2>/dev/null || true)}}}"
 [[ -n "$REGION" && "$REGION" != "(unset)" ]] || die 'Unable to determine region; set REGION from the lab details.'
+META_ZONE="$(gcloud compute project-info describe --project="$PROJECT_ID" --format=json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next((i.get("value","") for i in d.get("commonInstanceMetadata",{}).get("items",[]) if i.get("key")=="google-compute-default-zone"),""))' 2>/dev/null || true)"
+ZONE="${ZONE:-${META_ZONE:-$(gcloud config get-value compute/zone 2>/dev/null || true)}}"
+[[ "$ZONE" == "(unset)" ]] && ZONE=''
+# Spanner is regional/multi-regional and does not consume ZONE; it is logged for diagnostics.
 MODEL_ID="${MODEL_ID:-gemini-embedding-001}"
 [[ "$MODEL_ID" =~ ^[a-zA-Z0-9._-]+$ ]] || die 'Invalid MODEL_ID.'
 [[ "$REGION" =~ ^[a-z]+-[a-z0-9]+[0-9]$ ]] || die 'Invalid REGION.'
-info "Project: $PROJECT_ID | Spanner: $INSTANCE/$DATABASE | Region: $REGION | Model: $MODEL_ID"
+info "Project: $PROJECT_ID | Spanner: $INSTANCE/$DATABASE | Region: $REGION | Zone: ${ZONE:-n/a} | Model: $MODEL_ID"
 
 run_sql() {
   gcloud spanner databases execute-sql "$DATABASE" --instance="$INSTANCE" --project="$PROJECT_ID" --sql="$1"
