@@ -46,7 +46,12 @@ vm_zone() {
   local vm="$1" zones default_zone
   default_zone="$(gcloud compute project-info describe --project="$PROJECT_ID" --format='value(commonInstanceMetadata.items[google-compute-default-zone])' 2>/dev/null || true)"
   zones="$(gcloud compute instances list --project="$PROJECT_ID" --filter="name=$vm" --format='value(zone)' 2>/dev/null | awk -F/ 'NF && $NF != "" {print $NF}' | sort -u)"
-  [[ -n "$zones" ]] || fail "Cannot locate $vm in $PROJECT_ID (default zone: ${default_zone:-unset})"
+  if [[ -z "$zones" ]]; then
+    printf '%sERROR: Required VM %s does not exist in project %s.%s\n' "$RED" "$vm" "$PROJECT_ID" "$RESET" >&2
+    printf '%s\n' "Detected default zone: ${default_zone:-unset}" "Existing VMs:" >&2
+    gcloud compute instances list --project="$PROJECT_ID" --format='table(name,zone,status)' >&2 || true
+    fail "Lab provisioning may be incomplete, or this is a different lab. Do not substitute startup-vm for $vm without verification."
+  fi
   [[ "$zones" != *$'\n'* ]] || fail "Multiple zones found for $vm: $zones"
   [[ "$zones" =~ ^[a-z]+(-[a-z0-9]+)+[0-9]+-[a-z]$ ]] || fail "Invalid discovered zone for $vm: $zones"
   printf '%s' "$zones"
