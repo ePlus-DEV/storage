@@ -36,7 +36,8 @@ trap 'stop_spin || true' EXIT
 
 banner() {
   clear || true
-  echo -e "${CLR_TITLE}"
+  printf '%b\n' "${CLR_TITLE}ePlus.DEV - Starting Execution${CLR_RESET}"
+}
 
 need() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -192,8 +193,7 @@ FROM ML.GENERATE_TEXT(
     5 AS top_k,
     TRUE AS flatten_json_output
   )
-);
+);"
 echo
 
-echo -e \"${CLR_OK}All done!${CLR_RESET} 🚀  Don't forget to subscribe: ${CLR_ACCENT}https://eplus.dev${CLR_RESET}\"
-"
+echo -e "${CLR_OK}All done!${CLR_RESET} 🚀  Don't forget to subscribe: ${CLR_ACCENT}https://eplus.dev${CLR_RESET}"
