@@ -34,7 +34,7 @@ REGION="${REGION:-${META_REGION:-${SPANNER_REGION:-$(gcloud config get-value com
 [[ -n "$REGION" && "$REGION" != "(unset)" ]] || die 'Unable to determine region; set REGION from the lab details.'
 META_ZONE="$(gcloud compute project-info describe --project="$PROJECT_ID" --format=json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next((i.get("value","") for i in d.get("commonInstanceMetadata",{}).get("items",[]) if i.get("key")=="google-compute-default-zone"),""))' 2>/dev/null || true)"
 ZONE="${ZONE:-${META_ZONE:-$(gcloud config get-value compute/zone 2>/dev/null || true)}}"
-[[ "$ZONE" == "(unset)" ]] && ZONE=''
+if [[ "$ZONE" == "(unset)" ]]; then ZONE=''; fi
 # Spanner is regional/multi-regional and does not consume ZONE; it is logged for diagnostics.
 MODEL_ID="${MODEL_ID:-gemini-embedding-001}"
 [[ "$MODEL_ID" =~ ^[a-zA-Z0-9._-]+$ ]] || die 'Invalid MODEL_ID.'
