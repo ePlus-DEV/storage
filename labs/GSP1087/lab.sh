@@ -39,13 +39,16 @@ wait_primary() {
   fail 'Primary did not become READY within 10 minutes'
 }
 vm_zone() {
-  local vm="$1" var="${2:-}" zone
-  zone="$var"
-  [[ -n "$zone" ]] || zone="$(gcloud compute instances list --project="$PROJECT_ID" --filter="name=$vm" --format='value(zone)' 2>/dev/null | head -n1 | awk -F/ '{print $NF}')"
-  [[ -n "$zone" ]] || ask zone "Zone of $vm"
-  [[ "$zone" =~ ^[a-z]+(-[a-z0-9]+)+[0-9]+-[a-z]$ ]] || fail "Invalid zone for $vm"
+  local vm="$1" zone candidate
+  # Project metadata is a useful hint, but the provisioned VM is authoritative.
+  candidate="$(gcloud compute project-info describe --project="$PROJECT_ID" --format='value(commonInstanceMetadata.items[google-compute-default-zone])' 2>/dev/null || true)"
+  zone="$(gcloud compute instances list --project="$PROJECT_ID" --filter="name=$vm" --format='value(zone)' 2>/dev/null | awk -F/ 'NF && $NF != "" {print $NF}' | sort -u)"
+  [[ -n "$zone" ]] || fail "Could not discover zone for VM $vm (project default: ${candidate:-unset})"
+  [[ "$zone" != *$'\n'* ]] || fail "Multiple zones found for VM $vm: $zone"
+  [[ "$zone" =~ ^[a-z]+(-[a-z0-9]+)+[0-9]+-[a-z]$ ]] || fail "Invalid zone for $vm: $zone"
   printf '%s' "$zone"
 }
+
 remote_run() {
   local vm="$1" zone="$2" command="$3"
   gcloud compute ssh "$vm" --project="$PROJECT_ID" --zone="$zone" --quiet --command="$command" -- -tt
@@ -61,7 +64,7 @@ step 'Task 1 — Verify preprovisioned instance and VM'
 wait_primary
 IP="$(instance_ip)"
 [[ "$IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || fail 'No valid private IP found'
-ZONE="$(vm_zone alloydb-client "${ZONE:-}")"
+ZONE="$(vm_zone alloydb-client)"
 REMOTE_DIR="/tmp/eplus-gsp1087-$PROJECT_ID"
 remote_run alloydb-client "$ZONE" "mkdir -p -m 700 '$REMOTE_DIR'"
 cat > "$workdir/remote.sh" <<'REMOTE'
