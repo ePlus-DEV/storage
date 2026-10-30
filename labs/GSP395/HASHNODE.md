@@ -1,6 +1,14 @@
-> **Lab:** [Google Skills challenge lab](https://www.skills.google/games/7501/labs/45914)  
-> **Solution:** [Draft PR #45 — ePlus.DEV / GSP395](https://github.com/ePlus-DEV/storage/pull/45)  
-> **Status:** Draft solution; Google Skills scoring has **not** been independently verified.
+---
+title: "Create and Manage AlloyDB Instances: Challenge Lab - GSP395"
+seoTitle: "Create and Manage AlloyDB Instances: Challenge Lab - GSP395"
+seoDescription: "GSP395 AlloyDB challenge lab solution: create a cluster and primary instance, build and populate PostgreSQL HR tables, create a two-node read pool, and take an on-demand backup."
+slug: create-and-manage-alloydb-instances-challenge-lab-gsp395
+tags: create-and-manage-alloydb-instances-challenge-lab-gsp395, alloydb, gsp395
+---
+
+**Official lab:** <https://www.skills.google/games/7501/labs/45914>  
+**Source:** Official challenge requirements and the authorized Cloud Shell execution log (30 October 2026).  
+**Status:** Tasks 1–3 completed in the provided session; Task 4 failed because of AlloyDB capacity in `us-central1`; Task 5 and grader results are not yet confirmed.
 
 ## Overview
 
@@ -8,7 +16,17 @@ In this challenge, you act as a database administrator provisioning an AlloyDB f
 
 **Important:** Use only the temporary Google Skills student account and project assigned to the lab. The lab timer cannot be paused.
 
-## Required resources
+### Objectives
+
+1. Create the AlloyDB cluster and primary instance.
+2. Create the HR database tables.
+3. Load the required sample records.
+4. Provision a two-node read pool.
+5. Create an on-demand backup.
+
+## Setup and requirements
+
+### Required resources
 
 | Resource | Required configuration |
 | --- | --- |
@@ -23,7 +41,7 @@ In this challenge, you act as a database administrator provisioning an AlloyDB f
 
 Do not substitute a different region: the grader expects the one assigned to your lab.
 
-## Quick solution — Cloud Shell
+### Test the unmerged PR in Cloud Shell
 
 While this solution is still under review, run the **draft PR branch** instead of `main`:
 
@@ -213,6 +231,27 @@ gcloud alloydb backups describe lab-backup \
 
 Wait for the backup to complete, then click **Check my progress**.
 
+---
+
+## Solution of Lab
+
+### Quick
+
+> The Quick URL below targets `main`. Use it **only after PR #45 has been merged**. Until then use the draft-PR command in **Quick solution — Cloud Shell** above.
+
+```bash
+curl -LO https://raw.githubusercontent.com/ePlus-DEV/storage/refs/heads/main/labs/GSP395/lab.sh
+source lab.sh
+```
+
+### Manual
+
+Follow **Task 1–5** above for the complete manual CLI and SQL walkthrough. The published GSP1087 reference embeds YouTube tutorials here using Hashnode syntax (`%[https://www.youtube.com/watch?v=...]`), but **no GSP395-specific video has been verified**, so no unrelated video is embedded.
+
+### Other Solution
+
+Official lab: https://www.skills.google/games/7501/labs/45914. No third-party solution has been independently validated for this article.
+
 ## Troubleshooting
 
 ### Script exits before displaying the banner
@@ -241,26 +280,10 @@ Confirm that the primary instance is ready, the VM is `alloydb-client`, the IP i
 
 The automated script uses `CREATE TABLE IF NOT EXISTS` and `ON CONFLICT DO NOTHING` to make reruns safer. This does **not** repair an incorrectly defined existing schema. Inspect table definitions with `\d regions`, `\d countries`, and `\d departments` if the grader does not pass.
 
----
 
-## Solution of Lab
+## Verification
 
-### Quick
-
-> The Quick URL below targets `main`. Use it **only after PR #45 has been merged**. Until then use the draft-PR command in **Quick solution — Cloud Shell** above.
-
-```bash
-curl -LO https://raw.githubusercontent.com/ePlus-DEV/storage/refs/heads/main/labs/GSP395/lab.sh
-source lab.sh
-```
-
-### Manual
-
-Follow **Tasks 1–5** above to create the AlloyDB cluster and primary, create the three tables and insert the required records on `alloydb-client`, provision the two-node read pool and create the backup. Confirm the resource configuration and row counts after each task.
-
-### Other Solution
-
-Official lab: https://www.skills.google/games/7501/labs/45914. No third-party solution has been independently validated for this article.
+The authorized Cloud Shell log confirms that the primary instance was created and that the SQL completed with row counts of 4 regions, 9 countries and 6 departments. The read pool creation failed with an insufficient-capacity error in `us-central1`. The updated script can retry in the assigned region and proceed to the backup, but **no subsequent execution or successful Google Skills checkpoint evidence has been supplied**. Do not claim a 100% score.
 
 ## Final checklist
 
@@ -273,4 +296,4 @@ Official lab: https://www.skills.google/games/7501/labs/45914. No third-party so
 
 ---
 
-*Published as a practical lab walkthrough by ePlus.DEV. This document is based on the challenge requirements and draft automation; it does not claim a verified 100% score.*
+Copyright (c) 2026 ePlus.DEV | Unlicense. This walkthrough does not claim a verified 100% score.
