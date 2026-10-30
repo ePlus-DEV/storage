@@ -1,0 +1,99 @@
+name: Full Lab Script Audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/full_audit.py'
+      - '.github/workflows/full-lab-audit.yml'
+  workflow_dispatch:
+  schedule:
+    # Weekly Monday 09:37 Asia/Ho_Chi_Minh, after Script Health
+    - cron: '37 2 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: full-lab-audit-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  full-audit:
+    name: Static audit all lab scripts (no cloud execution)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout audit source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.sha || 'main' }}
+          fetch-depth: 1
+      - name: Verify installed tools
+        run: |
+          bash --version | head -n 1
+          python3 --version
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y shellcheck
+          fi
+          shellcheck --version
+      - name: Run repository-wide audit (read-only)
+        run: python3 scripts/full_audit.py --root . --out-dir audit-output
+      - name: Report summary
+        if: always()
+        run: |
+          if [[ -f audit-output/full-lab-audit.md ]]; then
+            head -n 45 audit-output/full-lab-audit.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload full JSON and Markdown report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-lab-script-audit
+          path: audit-output/
+          if-no-files-found: warn
+
+  report-draft-pr:
+    name: Update one draft PR for weekly audit report
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: full-audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Ensure ShellCheck is available
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y shellcheck
+          fi
+      - name: Generate deterministic audit Markdown
+        run: |
+          python3 scripts/full_audit.py --root . --out-dir audit-output
+          mkdir -p docs
+          cp audit-output/full-lab-audit.md docs/full-lab-audit.md
+      - name: Open or update one draft report PR
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: main
+          branch: automation/full-lab-audit-report
+          add-paths: docs/full-lab-audit.md
+          commit-message: 'chore(audit): refresh full lab script report'
+          title: 'chore(audit): review full lab script findings'
+          body: |
+            This PR contains the **read-only static baseline report** for the complete labs directory.
+            It does not execute any lab, change cloud permissions, or modify solutions.
+            P0 findings should be verified and repaired in **separate scoped PRs**.
+            ShellCheck and compatibility findings require human review.
+            All checks and full JSON artifacts are available in Full Lab Script Audit Actions.
+          draft: true
+          delete-branch: false
