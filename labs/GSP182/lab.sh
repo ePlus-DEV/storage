@@ -152,13 +152,20 @@ gcloud app deploy "${BASE_DIR}/sample-webapp/app.yaml" --quiet
 log "Web application deployed"
 
 step "Step 8: Creating GKE Cluster"
+echo "Checking effective resource-location policy (read-only; may be unavailable to lab users)..."
+gcloud org-policies describe gcp.resourceLocations --project="${PROJECT_ID}" --effective --format="yaml(spec.rules)" 2>/dev/null || warn "Cannot read the effective location policy; use an authorized lab region/zone."
 if gcloud container clusters describe "${CLUSTER}" --zone "${ZONE}" >/dev/null 2>&1; then
   warn "Cluster ${CLUSTER} already exists"
 else
-  gcloud container clusters create "${CLUSTER}" \
+  if ! gcloud container clusters create "${CLUSTER}" \
     --zone "${ZONE}" \
     --num-nodes=5 \
-    --machine-type=e2-medium
+    --machine-type=e2-medium; then
+    err "GKE creation failed in ${ZONE}. If constraints/gcp.resourceLocations appears, the lab project forbids this location."
+    warn "Inspect the effective org policy above and rerun with REGION=<allowed-region> ZONE=<allowed-zone> bash lab-gsp182.sh"
+    warn "Do not modify organization policies or guess arbitrary zones on a temporary lab project."
+    exit 1
+  fi
   log "GKE cluster created"
 fi
 
