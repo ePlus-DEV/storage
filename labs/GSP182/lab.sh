@@ -3,7 +3,7 @@ set -euo pipefail
 
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
-# Lab GSP182 defaults. Respect an explicitly configured region/zone.
+# GSP182 fallback for restricted Qwiklabs projects. Respect explicitly configured region/zone.
 # App Engine region is immutable once the app has been created.
 
 BLACK_TEXT=$'\033[0;90m'
@@ -67,7 +67,7 @@ ZONE="${ZONE:-$(gcloud config get-value compute/zone 2>/dev/null || true)}"
 [[ "${REGION}" == "(unset)" ]] && REGION=""
 [[ "${ZONE}" == "(unset)" ]] && ZONE=""
 if [[ -z "${REGION}" && -n "${ZONE}" ]]; then REGION="${ZONE%-*}"; fi
-if [[ -z "${REGION}" ]]; then REGION="us-east1"; fi
+if [[ -z "${REGION}" ]]; then REGION="us-central1"; fi
 if [[ -z "${ZONE}" ]]; then ZONE="${REGION}-c"; fi
 if [[ "${ZONE%-*}" != "${REGION}" ]]; then
   err "Zone ${ZONE} is not in region ${REGION}; set REGION and ZONE consistently."
@@ -139,10 +139,7 @@ step "Step 6: Creating App Engine App if needed"
 if gcloud app describe >/dev/null 2>&1; then
   warn "App Engine app already exists; keeping its immutable location"
 else
-  # App Engine does not support every GKE region. GSP182 specifies us-east1.
-  if [[ "${REGION}" != "us-east1" ]]; then
-    warn "App Engine may not support ${REGION}; GSP182 uses us-east1."
-  fi
+  # An existing App Engine application has an immutable region; otherwise use the configured supported region.
   gcloud app create --region="${REGION}"
   log "App Engine app created"
 fi
