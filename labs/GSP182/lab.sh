@@ -154,10 +154,18 @@ gcloud org-policies describe gcp.resourceLocations --project="${PROJECT_ID}" --e
 if gcloud container clusters describe "${CLUSTER}" --zone "${ZONE}" >/dev/null 2>&1; then
   warn "Cluster ${CLUSTER} already exists"
 else
+  # Optional: set GKE_NODE_SA to an existing lab-approved node service account.
+  # The active user still requires iam.serviceAccounts.actAs on that identity.
+  NODE_SA_ARGS=()
+  if [[ -n "${GKE_NODE_SA:-}" ]]; then
+    NODE_SA_ARGS=(--service-account="${GKE_NODE_SA}")
+    log "Using approved node service account: ${GKE_NODE_SA}"
+  fi
   if ! gcloud container clusters create "${CLUSTER}" \
     --zone "${ZONE}" \
     --num-nodes=5 \
-    --machine-type=e2-medium; then
+    --machine-type=e2-medium \
+    "${NODE_SA_ARGS[@]}"; then
     err "GKE cluster creation failed in ${ZONE}."
     warn "Common lab blockers: constraints/gcp.resourceLocations or missing iam.serviceAccounts.actAs on the node service account."
     warn "If the error says 'does not have access to service account', a project owner/lab administrator must grant roles/iam.serviceAccountUser on the approved node service account."
