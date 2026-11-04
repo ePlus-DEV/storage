@@ -158,9 +158,12 @@ else
     --zone "${ZONE}" \
     --num-nodes=5 \
     --machine-type=e2-medium; then
-    err "GKE creation failed in ${ZONE}. If constraints/gcp.resourceLocations appears, the lab project forbids this location."
-    warn "Inspect the effective org policy above and rerun with REGION=<allowed-region> ZONE=<allowed-zone> bash lab-gsp182.sh"
-    warn "Do not modify organization policies or guess arbitrary zones on a temporary lab project."
+    err "GKE cluster creation failed in ${ZONE}."
+    warn "Common lab blockers: constraints/gcp.resourceLocations or missing iam.serviceAccounts.actAs on the node service account."
+    warn "If the error says 'does not have access to service account', a project owner/lab administrator must grant roles/iam.serviceAccountUser on the approved node service account."
+    warn "Read-only inspection: gcloud iam service-accounts list --project=${PROJECT_ID}"
+    warn "If the location is denied, inspect the effective location policy; rerun with an authorized REGION and ZONE."
+    warn "Do not change lab IAM/org policies, randomly probe zones, or run kubectl until cluster creation succeeds."
     exit 1
   fi
   log "GKE cluster created"
