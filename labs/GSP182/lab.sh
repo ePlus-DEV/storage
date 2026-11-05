@@ -3,6 +3,9 @@ set -euo pipefail
 
 export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
+# GSP182 fallback for restricted Qwiklabs projects. Respect explicitly configured region/zone.
+# App Engine region is immutable once the app has been created.
+
 BLACK_TEXT=$'\033[0;90m'
 RED_TEXT=$'\033[0;91m'
 GREEN_TEXT=$'\033[0;92m'
@@ -25,7 +28,7 @@ NO_COLOR=$'\033[0m'
 RESET_FORMAT=$'\033[0m'
 REVERSE_TEXT=$'\033[7m'
 
-clear
+if [[ -t 1 ]]; then clear; fi
 
 echo "${CYAN_TEXT}${BOLD_TEXT}==================================================================${RESET_FORMAT}"
 echo "${CYAN_TEXT}${BOLD_TEXT}      ePlus.DEV - INITIATING EXECUTION...                          ${RESET_FORMAT}"
@@ -55,23 +58,21 @@ if [ -z "${PROJECT_ID}" ]; then
 fi
 
 if [ -z "${PROJECT_ID}" ]; then
-  err "Không lấy được PROJECT_ID"
+  err "Unable to determine PROJECT_ID"
   exit 1
 fi
 
-REGION="$(gcloud config get-value compute/region 2>/dev/null || true)"
-ZONE="$(gcloud config get-value compute/zone 2>/dev/null || true)"
-
-if [ -z "${REGION}" ]; then
-  REGION="$(gcloud compute project-info describe --format='value(commonInstanceMetadata.items[google-compute-default-region])' 2>/dev/null || true)"
+REGION="${REGION:-$(gcloud config get-value compute/region 2>/dev/null || true)}"
+ZONE="${ZONE:-$(gcloud config get-value compute/zone 2>/dev/null || true)}"
+[[ "${REGION}" == "(unset)" ]] && REGION=""
+[[ "${ZONE}" == "(unset)" ]] && ZONE=""
+if [[ -z "${REGION}" && -n "${ZONE}" ]]; then REGION="${ZONE%-*}"; fi
+if [[ -z "${REGION}" ]]; then REGION="us-central1"; fi
+if [[ -z "${ZONE}" ]]; then ZONE="${REGION}-c"; fi
+if [[ "${ZONE%-*}" != "${REGION}" ]]; then
+  err "Zone ${ZONE} is not in region ${REGION}; set REGION and ZONE consistently."
+  exit 1
 fi
-
-if [ -z "${ZONE}" ]; then
-  ZONE="$(gcloud compute project-info describe --format='value(commonInstanceMetadata.items[google-compute-default-zone])' 2>/dev/null || true)"
-fi
-
-[ -z "${REGION}" ] && REGION="us-east4"
-[ -z "${ZONE}" ] && ZONE="us-east4-b"
 
 CLUSTER="gke-load-test"
 TARGET="${PROJECT_ID}.appspot.com"
@@ -94,6 +95,7 @@ step "Step 2: Enabling required APIs"
 gcloud services enable \
   cloudbuild.googleapis.com \
   containerregistry.googleapis.com \
+  artifactregistry.googleapis.com \
   appengine.googleapis.com \
   container.googleapis.com >/dev/null
 log "Required APIs enabled"
@@ -103,30 +105,41 @@ cd "$HOME"
 if [ -d "${BASE_DIR}" ]; then
   warn "Directory already exists, skipping download"
 else
-  gsutil -m cp -r gs://spls/gsp182/distributed-load-testing-using-kubernetes .
+  gcloud storage cp -r gs://spls/gsp182/distributed-load-testing-using-kubernetes .
 fi
+[[ -f "${BASE_DIR}/sample-webapp/app.yaml" && -d "${BASE_DIR}/kubernetes-config" && -d "${BASE_DIR}/docker-image" ]] || { err "Sample resources are incomplete"; exit 1; }
 log "Resources ready"
 
 step "Step 4: Configuring Sample Web Application"
 cd "${BASE_DIR}/sample-webapp"
-sed -i 's/python37/python312/g' app.yaml || true
-grep -q "python312" app.yaml && log "app.yaml updated to python312" || warn "python312 may already be set"
+sed -i 's/python37/python312/g' app.yaml
+grep -Eq "^runtime: *python312" app.yaml || { err "Expected Python 3.12 runtime in app.yaml"; exit 1; }
+log "app.yaml uses Python 3.12"
 cd "${BASE_DIR}"
 
 step "Step 5: Building Locust Docker Image"
-gcloud builds submit --tag "gcr.io/${PROJECT_ID}/locust-tasks:latest" docker-image/.
-
-if gcloud container images list --repository="gcr.io/${PROJECT_ID}" 2>/dev/null | grep -q "locust-tasks"; then
-  log "Docker image built and pushed successfully"
+IMAGE="gcr.io/${PROJECT_ID}/locust-tasks:latest"
+if gcloud builds submit --tag "${IMAGE}" docker-image/.; then
+  log "Cloud Build completed successfully"
 else
-  err "Không thấy image locust-tasks trong gcr.io/${PROJECT_ID}"
-  exit 1
+  warn "Cloud Build failed (possibly missing iam.serviceAccounts.actAs on the build service account)."
+  warn "Trying Docker build/push directly from Cloud Shell; this requires registry write access."
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    err "Docker daemon unavailable. Contact the lab administrator to fix Cloud Build IAM."
+    exit 1
+  fi
+  gcloud auth configure-docker gcr.io --quiet
+  docker build -t "${IMAGE}" docker-image/.
+  docker push "${IMAGE}"
+  log "Docker image pushed without Cloud Build"
+  warn "The lab checker may specifically require a Cloud Build record; verify Task 2 progress."
 fi
 
 step "Step 6: Creating App Engine App if needed"
 if gcloud app describe >/dev/null 2>&1; then
-  warn "App Engine app already exists"
+  warn "App Engine app already exists; keeping its immutable location"
 else
+  # An existing App Engine application has an immutable region; otherwise use the configured supported region.
   gcloud app create --region="${REGION}"
   log "App Engine app created"
 fi
@@ -136,13 +149,31 @@ gcloud app deploy "${BASE_DIR}/sample-webapp/app.yaml" --quiet
 log "Web application deployed"
 
 step "Step 8: Creating GKE Cluster"
+echo "Checking effective resource-location policy (read-only; may be unavailable to lab users)..."
+gcloud org-policies describe gcp.resourceLocations --project="${PROJECT_ID}" --effective --format="yaml(spec.rules)" 2>/dev/null || warn "Cannot read the effective location policy; use an authorized lab region/zone."
 if gcloud container clusters describe "${CLUSTER}" --zone "${ZONE}" >/dev/null 2>&1; then
   warn "Cluster ${CLUSTER} already exists"
 else
-  gcloud container clusters create "${CLUSTER}" \
+  # Optional: set GKE_NODE_SA to an existing lab-approved node service account.
+  # The active user still requires iam.serviceAccounts.actAs on that identity.
+  NODE_SA_ARGS=()
+  if [[ -n "${GKE_NODE_SA:-}" ]]; then
+    NODE_SA_ARGS=(--service-account="${GKE_NODE_SA}")
+    log "Using approved node service account: ${GKE_NODE_SA}"
+  fi
+  if ! gcloud container clusters create "${CLUSTER}" \
     --zone "${ZONE}" \
     --num-nodes=5 \
-    --machine-type=e2-standard-4
+    --machine-type=e2-medium \
+    "${NODE_SA_ARGS[@]}"; then
+    err "GKE cluster creation failed in ${ZONE}."
+    warn "Common lab blockers: constraints/gcp.resourceLocations or missing iam.serviceAccounts.actAs on the node service account."
+    warn "If the error says 'does not have access to service account', a project owner/lab administrator must grant roles/iam.serviceAccountUser on the approved node service account."
+    warn "Read-only inspection: gcloud iam service-accounts list --project=${PROJECT_ID}"
+    warn "If the location is denied, inspect the effective location policy; rerun with an authorized REGION and ZONE."
+    warn "Do not change lab IAM/org policies, randomly probe zones, or run kubectl until cluster creation succeeds."
+    exit 1
+  fi
   log "GKE cluster created"
 fi
 
@@ -161,7 +192,8 @@ log "Kubernetes config files updated"
 step "Step 11: Deploying Locust Master"
 kubectl apply -f kubernetes-config/locust-master-controller.yaml
 kubectl apply -f kubernetes-config/locust-master-service.yaml
-log "Locust master deployed"
+kubectl rollout status deployment/locust-master --timeout=10m
+log "Locust master ready"
 
 step "Step 12: Checking Locust Master Service"
 kubectl get svc locust-master
@@ -169,21 +201,28 @@ log "Locust master service listed"
 
 step "Step 13: Deploying Locust Workers"
 kubectl apply -f kubernetes-config/locust-worker-controller.yaml
-log "Initial workers deployed"
+kubectl rollout status deployment/locust-worker --timeout=10m
+log "Initial workers ready"
 
 step "Step 14: Scaling Workers"
 kubectl scale deployment/locust-worker --replicas=20
-log "Scaled to 20 workers"
+kubectl rollout status deployment/locust-worker --timeout=15m
+READY="$(kubectl get deployment locust-worker -o jsonpath='{.status.readyReplicas}')"
+[[ "${READY:-0}" -eq 20 ]] || { err "Expected 20 ready workers; found ${READY:-0}"; exit 1; }
+log "All 20 workers ready"
+kubectl get pods -l app=locust-worker
+kubectl get svc locust-master
 
 echo
 echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
-echo "${CYAN_TEXT}${BOLD_TEXT}              LAB COMPLETED SUCCESSFULLY!              ${RESET_FORMAT}"
+echo "${CYAN_TEXT}${BOLD_TEXT}             GSP182 DEPLOYMENT VERIFIED!                            ${RESET_FORMAT}"
 echo "${CYAN_TEXT}${BOLD_TEXT}=======================================================${RESET_FORMAT}"
 echo
 echo "${GREEN_TEXT}${BOLD_TEXT}Project : ${PROJECT_ID}${RESET_FORMAT}"
 echo "${GREEN_TEXT}${BOLD_TEXT}Region  : ${REGION}${RESET_FORMAT}"
 echo "${GREEN_TEXT}${BOLD_TEXT}Zone    : ${ZONE}${RESET_FORMAT}"
 echo "${GREEN_TEXT}${BOLD_TEXT}Target  : ${TARGET}${RESET_FORMAT}"
+echo "${GREEN_TEXT}${BOLD_TEXT}Locust UI: http://$(kubectl get svc locust-master -o jsonpath='{.status.loadBalancer.ingress[0].ip}'):8089${RESET_FORMAT}"
 echo
 echo "${RED_TEXT}${BOLD_TEXT}${UNDERLINE_TEXT}https://eplus.dev${RESET_FORMAT}"
 echo "${GREEN_TEXT}${BOLD_TEXT}Don't forget to Like, Share and Subscribe for more Videos${RESET_FORMAT}"
