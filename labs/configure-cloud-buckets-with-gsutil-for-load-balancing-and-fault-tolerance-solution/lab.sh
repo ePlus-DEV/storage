@@ -20,7 +20,7 @@ echo "🌐 Enabling website configuration (index & error pages)..."
 gsutil web set -m index.html -e error.html gs://$NEW_BUCKET
 
 echo "🔓 Making bucket public..."
-gsutil iam ch allUsers:roles/storage.admin gs://$NEW_BUCKET
+gsutil iam ch allUsers:objectViewer gs://$NEW_BUCKET
 
 echo "🔄 Syncing data from old bucket to new bucket..."
 gsutil -m rsync -r gs://$OLD_BUCKET gs://$NEW_BUCKET
