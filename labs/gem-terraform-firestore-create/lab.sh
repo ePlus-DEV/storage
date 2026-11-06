@@ -1,7 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Copyright (c) 2026 ePlus.DEV | Unlicense
+set -euo pipefail
 # ============================================
 #   Cloud Firestore Terraform Setup Script
-#   © ePlus.DEV — All Rights Reserved
+#   Copyright (c) 2026 ePlus.DEV | Unlicense
 # ============================================
 
 # ====== COLOR SETUP ======
@@ -10,6 +12,7 @@ GREEN="\e[32m"
 YELLOW="\e[33m"
 CYAN="\e[36m"
 RESET="\e[0m"
+if [[ ! -t 1 || -n "${NO_COLOR:-}" ]]; then RED=""; GREEN=""; YELLOW=""; CYAN=""; RESET=""; fi
 
 echo -e "${CYAN}"
 echo "============================================"
@@ -21,13 +24,19 @@ echo -e "${RESET}"
 # ====== AUTO DETECT PROJECT / REGION / ZONE ======
 echo -e "${YELLOW}🔍 Detecting Google Cloud settings...${RESET}"
 
-PROJECT_ID=$(gcloud projects list --format="value(projectId)" --limit=1)
-REGION=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-ZONE=$(gcloud compute project-info describe --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
-
-# Default fallback
-if [ -z "$REGION" ]; then REGION="us-central1"; gcloud config set compute/region $REGION >/dev/null; fi
-if [ -z "$ZONE" ]; then ZONE="us-central1-a"; gcloud config set compute/zone $ZONE >/dev/null; fi
+PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
+[[ -n "$PROJECT_ID" && "$PROJECT_ID" != "(unset)" ]] || { echo "ERROR: Select the lab project first." >&2; exit 1; }
+REGION="$(gcloud compute project-info describe --project="$PROJECT_ID" --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null || true)"
+ZONE="$(gcloud compute project-info describe --project="$PROJECT_ID" --format="value(commonInstanceMetadata.items[google-compute-default-zone])" 2>/dev/null || true)"
+if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then REGION="$(gcloud config get-value compute/region 2>/dev/null || true)"; fi
+if [[ -z "$ZONE" || "$ZONE" == "(unset)" ]]; then ZONE="$(gcloud config get-value compute/zone 2>/dev/null || true)"; fi
+if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then read -r -p "Enter lab region: " REGION; fi
+[[ "$REGION" =~ ^[a-z]+(-[a-z]+)+[0-9]+$ ]] || { echo "ERROR: Invalid region '$REGION'." >&2; exit 1; }
+if [[ -n "$ZONE" && "$ZONE" != "(unset)" ]]; then
+  [[ "$ZONE" == "$REGION"-[a-z] ]] || { echo "ERROR: Zone '$ZONE' does not belong to region '$REGION'." >&2; exit 1; }
+fi
+command -v terraform >/dev/null || { echo "ERROR: Terraform is required." >&2; exit 1; }
+echo "ePlus.DEV – Starting Execution | Firestore | $PROJECT_ID"
 
 echo -e "${GREEN}✔ PROJECT_ID: $PROJECT_ID${RESET}"
 echo -e "${GREEN}✔ REGION:     $REGION${RESET}"
@@ -36,9 +45,7 @@ echo -e "${GREEN}✔ ZONE:       $ZONE${RESET}"
 # ====== ENABLE APIs ======
 echo -e "${CYAN}🔧 Enabling required APIs...${RESET}"
 
-gcloud config set project $PROJECT_ID >/dev/null
-gcloud services enable firestore.googleapis.com >/dev/null
-gcloud services enable cloudbuild.googleapis.com >/dev/null
+gcloud services enable firestore.googleapis.com cloudbuild.googleapis.com --project="$PROJECT_ID" >/dev/null
 
 echo -e "${GREEN}✔ APIs enabled successfully${RESET}"
 
@@ -47,14 +54,28 @@ BUCKET_NAME="${PROJECT_ID}-tf-state"
 
 echo -e "${CYAN}📦 Creating Terraform state bucket: gs://$BUCKET_NAME ...${RESET}"
 
-gsutil mb -l us gs://$BUCKET_NAME/ >/dev/null 2>/dev/null \
-    && echo -e "${GREEN}✔ Bucket created${RESET}" \
-    || echo -e "${YELLOW}⚠ Bucket already exists${RESET}"
+if gcloud storage buckets describe "gs://$BUCKET_NAME" --project="$PROJECT_ID" >/dev/null 2>&1; then
+  echo "Reusing Terraform state bucket gs://$BUCKET_NAME"
+else
+  gcloud storage buckets create "gs://$BUCKET_NAME" --project="$PROJECT_ID" --location=us --uniform-bucket-level-access
+fi
+gcloud storage buckets update "gs://$BUCKET_NAME" --versioning --project="$PROJECT_ID"
+
+# Separate state and generated configuration from other Terraform labs.
+ORIGINAL_DIR="$PWD"
+if [[ -e "$ORIGINAL_DIR/terraform.tfstate" ]]; then
+  echo "ERROR: Existing local Terraform state; migrate it manually before rerunning." >&2
+  exit 1
+fi
+WORKDIR="$HOME/terraform-firestore-$PROJECT_ID"
+mkdir -p "$WORKDIR"
+cd "$WORKDIR"
+
 
 # ====== CREATE TERRAFORM FILES ======
 echo -e "${CYAN}📝 Generating Terraform files...${RESET}"
 
-cat <<EOF > main.tf
+[[ -f main.tf ]] || cat <<EOF > main.tf
 # © ePlus.DEV
 terraform {
   required_providers {
@@ -65,7 +86,7 @@ terraform {
   }
   backend "gcs" {
     bucket = "$BUCKET_NAME"
-    prefix = "terraform/state"
+    prefix = "terraform/firestore-database"
   }
 }
 
@@ -75,7 +96,7 @@ provider "google" {
 }
 
 resource "google_firestore_database" "default" {
-  name        = "default"
+  name        = "(default)"
   project     = "$PROJECT_ID"
   location_id = "nam5"
   type        = "FIRESTORE_NATIVE"
@@ -86,7 +107,7 @@ output "firestore_database_name" {
 }
 EOF
 
-cat <<EOF > variables.tf
+[[ -f variables.tf ]] || cat <<EOF > variables.tf
 # © ePlus.DEV
 variable "project_id" {
   type    = string
@@ -99,7 +120,7 @@ variable "bucket_name" {
 }
 EOF
 
-cat <<EOF > outputs.tf
+[[ -f outputs.tf ]] || cat <<EOF > outputs.tf
 # © ePlus.DEV
 output "project_id" {
   value = var.project_id
@@ -115,9 +136,11 @@ echo -e "${GREEN}✔ Terraform files created${RESET}"
 # ====== TERRAFORM ACTIONS ======
 echo -e "${CYAN}🚀 Running Terraform...${RESET}"
 
-terraform init
-terraform plan
-terraform apply -auto-approve
+grep -q 'resource "google_firestore_database" "default"' main.tf || { echo "ERROR: Unexpected main.tf; inspect before continuing." >&2; exit 1; }
+terraform init -input=false
+terraform validate
+terraform plan -input=false
+terraform apply -auto-approve -input=false
 
 echo -e "${GREEN}"
 echo "============================================"
