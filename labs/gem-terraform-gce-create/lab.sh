@@ -1,20 +1,41 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Copyright (c) 2026 ePlus.DEV | Unlicense
+set -euo pipefail
 
-# Fetch zone and region
-ZONE=$(gcloud compute project-info describe \
-  --format="value(commonInstanceMetadata.items[google-compute-default-zone])")
-REGION=$(gcloud compute project-info describe \
-  --format="value(commonInstanceMetadata.items[google-compute-default-region])")
-PROJECT_ID=$(gcloud config get-value project)
+# Detect the lab-provided project and location; never assume a fixed region.
+PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
+[[ -n "$PROJECT_ID" && "$PROJECT_ID" != "(unset)" ]] || { echo "ERROR: Set the lab project in gcloud first." >&2; exit 1; }
+REGION="$(gcloud compute project-info describe --project="$PROJECT_ID" --format="value(commonInstanceMetadata.items[google-compute-default-region])" 2>/dev/null || true)"
+ZONE="$(gcloud compute project-info describe --project="$PROJECT_ID" --format="value(commonInstanceMetadata.items[google-compute-default-zone])" 2>/dev/null || true)"
+if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then REGION="$(gcloud config get-value compute/region 2>/dev/null || true)"; fi
+if [[ -z "$ZONE" || "$ZONE" == "(unset)" ]]; then ZONE="$(gcloud config get-value compute/zone 2>/dev/null || true)"; fi
+if [[ -z "$ZONE" || "$ZONE" == "(unset)" ]]; then read -r -p "Enter lab zone: " ZONE; fi
+[[ "$ZONE" =~ ^[a-z]+(-[a-z]+)+[0-9]+-[a-z]$ ]] || { echo "ERROR: Invalid zone '$ZONE'." >&2; exit 1; }
+ZONE_REGION="$(printf '%s' "$ZONE" | sed -E 's/-[a-z]$//')"
+if [[ -z "$REGION" || "$REGION" == "(unset)" ]]; then REGION="$ZONE_REGION"; fi
+[[ "$REGION" == "$ZONE_REGION" ]] || { echo "ERROR: Region '$REGION' does not match zone '$ZONE'." >&2; exit 1; }
+command -v terraform >/dev/null || { echo "ERROR: Terraform is required." >&2; exit 1; }
+echo "ePlus.DEV – Starting Execution | GCE Instance | $PROJECT_ID / $ZONE"
+
+BUCKET_NAME="$PROJECT_ID-tf-state"
+if gcloud storage buckets describe "gs://$BUCKET_NAME" --project="$PROJECT_ID" >/dev/null 2>&1; then
+  echo "Reusing Terraform state bucket gs://$BUCKET_NAME"
+else
+  gcloud storage buckets create "gs://$BUCKET_NAME" --project="$PROJECT_ID" --location="$REGION" --uniform-bucket-level-access
+fi
+gcloud storage buckets update "gs://$BUCKET_NAME" --versioning --project="$PROJECT_ID"
+
+ORIGINAL_DIR="$PWD"
+if [[ -e "$ORIGINAL_DIR/terraform.tfstate" ]]; then
+  echo "ERROR: Existing local Terraform state; migrate it manually to avoid recreating managed resources." >&2
+  exit 1
+fi
+WORKDIR="$HOME/terraform-gce-$PROJECT_ID"
+mkdir -p "$WORKDIR"
+cd "$WORKDIR"
 
 
-
-gcloud config set project $PROJECT_ID
-
-gsutil mb -l $REGION gs://$PROJECT_ID-tf-state
-
-
-cat > main.tf <<EOF_END
+[[ -f main.tf ]] || cat > main.tf <<EOF_END
 terraform {
   required_providers {
     google = {
@@ -24,7 +45,7 @@ terraform {
   }
   backend "gcs" {
     bucket = "$PROJECT_ID-tf-state"
-    prefix = "terraform/state"
+    prefix = "terraform/gce-instance"
   }
 }
 
@@ -55,7 +76,7 @@ EOF_END
 
 
 
-cat > variables.tf <<EOF_END
+[[ -f variables.tf ]] || cat > variables.tf <<EOF_END
 variable "project_id" {
   type        = string
   description = "The ID of the Google Cloud project"
@@ -90,8 +111,10 @@ EOF_END
 # EOF_END
 
 
-terraform init
-
-terraform plan
-
-terraform apply --auto-approve
+grep -q 'resource "google_compute_instance" "default"' main.tf || { echo "ERROR: Unexpected main.tf; inspect before continuing." >&2; exit 1; }
+terraform init -input=false
+terraform validate
+terraform plan -input=false
+terraform apply -auto-approve -input=false
+gcloud compute instances describe terraform-instance --zone="$ZONE" --project="$PROJECT_ID" >/dev/null
+echo "Verified terraform-instance exists; grader not checked."
