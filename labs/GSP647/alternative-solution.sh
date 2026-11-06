@@ -1,6 +1,6 @@
-## Configuring IAM Permissions with gcloud
-
 #!/bin/bash
+
+## Configuring IAM Permissions with gcloud
 
 # Define text formatting variables
 BLACK_TEXT=$'\033[0;90m'

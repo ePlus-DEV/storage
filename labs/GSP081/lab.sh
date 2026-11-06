@@ -21,7 +21,7 @@ command -v gcloud >/dev/null || { echo -e "${RED}gcloud not found. Install Googl
 command -v curl   >/dev/null || { echo -e "${RED}curl not found. Install curl.${RESET}"; exit 1; }
 
 # ----- Ask for region (default matches screenshot) -----
-read -rp "$(echo -e ${CYAN}${BOLD}"Enter region [us-central1]: ${RESET})" REGION
+read -rp "$(printf '%b' "${CYAN}${BOLD}Enter region [us-central1]: ${RESET}")" REGION
 REGION="${REGION:-us-central1}"
 
 # ----- Config -----
