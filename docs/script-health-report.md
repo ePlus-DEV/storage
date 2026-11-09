@@ -3,7 +3,7 @@
 > Generated automatically by the read-only script audit. A finding is not a
 > runtime test failure. Verify against the actual lab and official documentation.
 
-**Bash scripts scanned:** 434. **Findings:** 285.
+**Bash scripts scanned:** 434. **Findings:** 284.
 
 ## Summary
 
@@ -17,7 +17,7 @@
 | P1 | `service-account-key` | 17 |
 | P2 | `gcloud-alpha` | 23 |
 | P2 | `gcloud-beta` | 37 |
-| P2 | `gsutil` | 120 |
+| P2 | `gsutil` | 119 |
 | P2 | `missing-branding` | 51 |
 | P2 | `missing-color` | 28 |
 
@@ -146,7 +146,7 @@
 | P2 | `gsutil` | [`labs/GSP1079/lab.sh:82`](https://github.com/ePlus-DEV/storage/blob/main/labs/GSP1079/lab.sh#L82) | gsutil dependency; plan a tested migration to gcloud storage. |
 | P2 | `gsutil` | [`labs/GSP1079/other.sh:163`](https://github.com/ePlus-DEV/storage/blob/main/labs/GSP1079/other.sh#L163) | gsutil dependency; plan a tested migration to gcloud storage. |
 
-_Displaying 120 of 285 findings. Increase --max-rows to view more._
+_Displaying 120 of 284 findings. Increase --max-rows to view more._
 
 ## What this report does not establish
 
